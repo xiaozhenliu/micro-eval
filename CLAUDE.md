@@ -4,13 +4,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 分支策略
+
+- **main** — 干净的发布分支，只包含源码、文档、测试。不跟踪 CLAUDE.md、BRD、PRD。
+- **dev** — 日常开发分支，包含 main 的所有内容 + CLAUDE.md、micro-eval-brd.md、micro-eval-prd.md。
+
+**日常工作流：**
+1. 在 `dev` 分支上开发（当前分支）
+2. 功能完成后 merge 到 `main`（main 的 .gitignore 会自动排除 CLAUDE.md/BRD/PRD）
+3. 不要直接在 main 上开发
+
 ## 当前状态
 
-这是一个**尚未开始编码的全新仓库**。目前只有两份需求文档——`micro-eval-brd.md`(商业需求)与 `micro-eval-prd.md`(产品需求),还没有源码、依赖清单(无 `package.json` 等)、构建/测试配置,也没有任何 git commit。
-
-因此:
-- **不存在** build / lint / test 命令——这些会随技术栈落地后补充进本文件。
-- 第一次写代码前,应先与用户确认技术栈与项目骨架,再回填本节的开发命令。
+v0.1.0 MVP 已完成。Python CLI + Next.js 本地 Web UI 均可运行。25 个 pytest 测试通过。
 
 ## 项目意图(来自 PRD)
 
