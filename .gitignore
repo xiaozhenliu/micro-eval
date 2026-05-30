@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+.pytest_cache/
+
+# Node
+ui/node_modules/
+ui/.next/
+
+# micro-eval runtime
+.micro-eval/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Plan files (local only)
+.plan/
+
+# Dev-only docs (tracked on dev branch)
+CLAUDE.md
+micro-eval-brd.md
+micro-eval-prd.md

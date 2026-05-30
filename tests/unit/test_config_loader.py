@@ -1,0 +1,68 @@
+"""Tests for configuration loader."""
+
+from pathlib import Path
+
+import pytest
+
+from micro_eval.config.loader import (
+    ConfigError,
+    load_config,
+    load_tasks,
+)
+from micro_eval.models.schema import InputMode, OutputMode
+
+FIXTURES = Path(__file__).parent.parent / "fixtures"
+
+
+def test_load_config_success():
+    config = load_config(FIXTURES / "eval.yaml")
+    assert config.project_name == "test-project"
+    assert config.baseline.name == "echo-baseline"
+    assert config.candidate.name == "echo-candidate"
+    assert config.baseline.command == "cat"
+    assert config.baseline.input_mode == InputMode.stdin
+    assert config.parallel is True
+
+
+def test_load_config_missing_file():
+    with pytest.raises(ConfigError, match="not found"):
+        load_config(Path("/nonexistent/eval.yaml"))
+
+
+def test_load_config_invalid_yaml(tmp_path):
+    bad_file = tmp_path / "bad.yaml"
+    bad_file.write_text(": : : invalid")
+    with pytest.raises(ConfigError, match="Invalid YAML"):
+        load_config(bad_file)
+
+
+def test_load_config_not_mapping(tmp_path):
+    bad_file = tmp_path / "list.yaml"
+    bad_file.write_text("- item1\n- item2\n")
+    with pytest.raises(ConfigError, match="must be a YAML mapping"):
+        load_config(bad_file)
+
+
+def test_load_config_missing_baseline(tmp_path):
+    bad_file = tmp_path / "no_baseline.yaml"
+    bad_file.write_text("candidate:\n  command: echo\n")
+    with pytest.raises(ConfigError):
+        load_config(bad_file)
+
+
+def test_load_tasks_success():
+    tasks = load_tasks(FIXTURES / "tasks")
+    assert len(tasks) == 1
+    assert tasks[0].id == "task-001"
+    assert tasks[0].input_payload == "Hello, world!"
+    assert tasks[0].expected_output == "Hello, world!"
+
+
+def test_load_tasks_missing_dir():
+    with pytest.raises(ConfigError, match="not found"):
+        load_tasks(Path("/nonexistent/tasks"))
+
+
+def test_load_tasks_empty_dir(tmp_path):
+    tasks = load_tasks(tmp_path)
+    assert tasks == []

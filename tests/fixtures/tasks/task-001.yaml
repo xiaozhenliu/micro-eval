@@ -1,0 +1,10 @@
+id: task-001
+name: Simple echo test
+description: Verify agent can echo input back
+input_payload: "Hello, world!"
+expected_output: "Hello, world!"
+rubric: "Output must exactly match input"
+business_impact_tier: 1
+tags:
+  - smoke
+  - basic

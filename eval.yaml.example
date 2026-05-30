@@ -1,0 +1,74 @@
+# micro-eval 配置示例
+# 复制为 eval.yaml 并根据你的项目自定义。
+#
+# 环境变量说明：
+#   agent 的 env 字段会**合并**到当前系统环境变量中（不是替换）。
+#   所以 PATH、HOME 等系统变量始终可用。
+#   建议：敏感信息（API key）通过系统环境变量或 .env 设置，
+#   eval.yaml 中用 ${VAR_NAME} 引用（当前版本直接传字符串，不做变量展开）。
+
+project_name: my-agent-eval
+description: 对比 coding agent 在 bug-fix 任务上的表现
+
+baseline:
+  name: claude-code-v1
+  command: "claude -p --output-file {output_dir}/result.txt --max-turns 10"
+  input_mode: stdin          # stdin | file
+  output_mode: file          # stdout | file | directory
+  timeout_s: 300
+  env:
+    ANTHROPIC_API_KEY: sk-ant-xxx       # 替换为你的 key
+    ANTHROPIC_MODEL: claude-sonnet-4-20250514
+
+candidate:
+  name: claude-code-v2
+  command: "claude -p --output-file {output_dir}/result.txt --max-turns 20"
+  input_mode: stdin
+  output_mode: file
+  timeout_s: 300
+  env:
+    ANTHROPIC_API_KEY: sk-ant-xxx
+    ANTHROPIC_MODEL: claude-sonnet-4-20250514
+
+# --- 更多 agent 类型示例 ---
+
+# OpenAI 兼容 agent（含 base_url）:
+# baseline:
+#   name: gpt4o-agent
+#   command: "python agents/openai_agent.py --input-file {input_file}"
+#   input_mode: file
+#   output_mode: stdout
+#   timeout_s: 120
+#   env:
+#     OPENAI_API_KEY: sk-xxx
+#     OPENAI_BASE_URL: https://api.openai.com/v1
+#     OPENAI_MODEL: gpt-4o
+
+# 自定义代理/国内模型（DeepSeek、Qwen 等）:
+# candidate:
+#   name: deepseek-agent
+#   command: "python agents/deepseek_agent.py"
+#   input_mode: stdin
+#   output_mode: stdout
+#   timeout_s: 180
+#   env:
+#     OPENAI_API_KEY: sk-xxx
+#     OPENAI_BASE_URL: https://api.deepseek.com/v1
+#     MODEL_NAME: deepseek-chat
+
+# LangGraph workflow:
+# candidate:
+#   name: langgraph-router-v2
+#   command: "python agents/router_v2.py --input-file {input_file} --output-dir {output_dir}"
+#   input_mode: file
+#   output_mode: directory
+#   timeout_s: 600
+#   env:
+#     OPENAI_API_KEY: sk-xxx
+#     OPENAI_BASE_URL: https://api.openai.com/v1
+#     LANGCHAIN_TRACING_V2: "true"
+#     LANGCHAIN_API_KEY: ls__xxx
+
+tasks_dir: tasks
+output_dir: .micro-eval/runs
+parallel: true
