@@ -1157,9 +1157,221 @@ class WorkspaceProvider(Protocol):
 
 ---
 
-## 11. 与现有 MVP 的关系
+## 11. Secrets 与 BYOK 安全模型
 
-### 11.1 保留
+### 11.1 问题定义
+
+Agent 评测需要 API keys（调用 LLM provider）和可能的其他凭证（GitHub token、数据库连接等）。
+安全挑战随部署形态递增：
+
+| 形态 | 风险等级 | 核心问题 |
+|------|---------|---------|
+| 本地 CLI | 低 | 用户自己的 key，进程级隔离 |
+| 本地 Docker | 中 | key 注入容器，容器内代码可读取 |
+| 远程沙盒 | 高 | key 离开用户机器，经过第三方基础设施 |
+| 多用户/团队 | 高 | 不同用户的 key 需要隔离 |
+
+### 11.2 设计原则
+
+1. **Secrets 永不持久化到 micro-eval 存储** — 不写入 JSON、不写入 run artifacts、不出现在日志中
+2. **最小权限** — 每个 Configuration 只获得它需要的 secrets
+3. **用户控制** — BYOK 意味着用户决定用哪个 key、给哪个 agent、什么权限
+4. **分层安全** — 本地简单（env vars），远程严格（短期 token + proxy）
+
+### 11.3 Secrets 来源层级
+
+```yaml
+# eval.yaml — 声明需要哪些 secrets（不包含值）
+secrets:
+  ANTHROPIC_API_KEY:
+    description: "Claude API key for agent execution"
+    required: true
+    scope: [agent]              # 谁能访问
+
+  OPENAI_API_KEY:
+    description: "OpenAI key for baseline comparison"
+    required: false
+    scope: [agent]
+
+  GITHUB_TOKEN:
+    description: "GitHub token for repo access"
+    required: false
+    scope: [agent, workspace]   # workspace setup 也需要
+```
+
+**值的来源（按优先级）**：
+
+```
+1. 环境变量（最简单）     — export ANTHROPIC_API_KEY=sk-...
+2. .env 文件（本地开发）  — .micro-eval/.env（gitignored）
+3. OS Keychain（更安全）  — keyring get micro-eval ANTHROPIC_API_KEY
+4. Vault 集成（团队/远程）— vault://micro-eval/ANTHROPIC_API_KEY
+```
+
+### 11.4 注入机制
+
+#### 本地执行（Phase 1）
+
+最简单的模型：通过环境变量注入到 agent 进程。
+
+```python
+class LocalSecretsInjector:
+    def inject(self, config: Configuration, secrets: dict[str, str]) -> dict[str, str]:
+        """返回要注入到 agent 进程的 env vars"""
+        allowed = self.filter_by_scope(secrets, config)
+        return {
+            **allowed,
+            # micro-eval 自己的关联 ID（非 secret）
+            "MICRO_EVAL_TRACE_ID": config.trace_id,
+        }
+```
+
+安全措施：
+- agent 进程的 stderr/stdout 在持久化前做 secret redaction
+- artifacts 保存前扫描已知 secret patterns（sk-xxx, ghp_xxx 等）
+- `.micro-eval/.env` 自动加入 `.gitignore`
+
+#### Docker 执行（Phase 2）
+
+参考 [Cloudflare Sandbox SDK](https://developers.cloudflare.com/sandbox/configuration/environment-variables/) 的三层注入模型：
+
+```python
+class DockerSecretsInjector:
+    def inject(self, config: Configuration, secrets: dict[str, str]) -> DockerEnvConfig:
+        """三层注入：sandbox 级 / session 级 / command 级"""
+        return DockerEnvConfig(
+            # sandbox 级：所有命令可见
+            sandbox_env=self.filter_by_scope(secrets, scope="workspace"),
+            # command 级：只在 agent 命令执行时注入
+            command_env=self.filter_by_scope(secrets, scope="agent"),
+        )
+```
+
+安全措施：
+- 网络隔离：`--network=none` 或白名单出站（只允许访问 LLM provider endpoints）
+- 文件系统隔离：secrets 不写入容器文件系统
+- 执行后清理：容器销毁时 secrets 随之消失
+
+#### 远程沙盒（Phase 3）
+
+参考 [E2B 的 envs 注入](https://changelog.e2b.dev/docs/sandbox/environment-variables) + [Warp 的 BYOK 模型](https://docs.warp.dev/agent-platform/inference/bring-your-own-api-key/)：
+
+```python
+class RemoteSecretsInjector:
+    def inject(self, config: Configuration, secrets: dict[str, str]) -> RemoteEnvConfig:
+        """远程沙盒：secrets 经过加密通道传输，per-sandbox 隔离"""
+        # 方案 A：直接注入（E2B 模式）
+        # secrets 通过 TLS 传到远程 sandbox，作为 env vars 存在
+        # 风险：sandbox 内代码可读取所有 env vars
+        
+        # 方案 B：Proxy 模式（推荐）
+        # secrets 不进入 sandbox，agent 通过 proxy 访问 LLM
+        # proxy 在 sandbox 外注入 credentials
+        return RemoteEnvConfig(
+            mode="proxy",  # 或 "direct"
+            proxy_endpoint="https://eval-proxy.internal/v1",
+            sandbox_env={
+                # agent 看到的是 proxy URL，不是真实 key
+                "ANTHROPIC_API_KEY": "proxy-token-xxx",
+                "ANTHROPIC_BASE_URL": "https://eval-proxy.internal/v1",
+            }
+        )
+```
+
+### 11.5 BYOK（Bring Your Own Key）模式
+
+当 micro-eval 交付给其他团队使用时，他们需要用自己的 API keys。
+
+**设计**：
+
+```yaml
+# 用户的 .micro-eval/.env（不进版本控制）
+ANTHROPIC_API_KEY=sk-ant-xxx
+OPENAI_API_KEY=sk-xxx
+
+# 或者用 keychain
+# micro-eval secrets set ANTHROPIC_API_KEY
+# (交互式输入，存入 OS keychain)
+```
+
+**CLI 支持**：
+
+```bash
+# 设置 secret（存入 OS keychain）
+micro-eval secrets set ANTHROPIC_API_KEY
+
+# 列出已配置的 secrets（只显示名称，不显示值）
+micro-eval secrets list
+
+# 验证 secrets 是否可用
+micro-eval doctor --check-secrets
+
+# 从 .env 文件导入
+micro-eval secrets import .env
+```
+
+**Per-Configuration key 覆盖**：
+
+不同 Configuration 可能需要不同的 key（比如测 Claude 用 Anthropic key，测 GPT 用 OpenAI key）：
+
+```yaml
+configurations:
+  - id: claude-agent
+    agent: claude-code
+    secrets_override:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}  # 从环境取
+  - id: openai-agent
+    agent: gpt-agent
+    secrets_override:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+```
+
+### 11.6 Secret Redaction（泄露防护）
+
+所有输出路径都经过 redaction：
+
+```python
+class SecretRedactor:
+    """在持久化前扫描并遮蔽 secrets"""
+    
+    patterns = [
+        r"sk-ant-[a-zA-Z0-9-_]{20,}",   # Anthropic
+        r"sk-[a-zA-Z0-9]{20,}",          # OpenAI
+        r"ghp_[a-zA-Z0-9]{36,}",         # GitHub PAT
+        r"gho_[a-zA-Z0-9]{36,}",         # GitHub OAuth
+    ]
+    
+    def redact(self, text: str, known_secrets: list[str]) -> str:
+        """替换已知 secrets + 匹配 patterns"""
+        for secret in known_secrets:
+            text = text.replace(secret, f"[REDACTED:{secret[:4]}...]")
+        for pattern in self.patterns:
+            text = re.sub(pattern, "[REDACTED]", text)
+        return text
+```
+
+应用位置：
+- `stdout` / `stderr` 持久化前
+- Artifacts 保存前
+- TraceData 归一化时
+- Web UI 展示时
+- LLM Judge 的 input 中（避免 judge 看到 secrets）
+
+### 11.7 安全分阶段路径
+
+| Phase | 形态 | Secrets 方案 | BYOK 方式 |
+|-------|------|-------------|-----------|
+| 1 | 本地 CLI | env vars + .env 文件 + redaction | 用户设环境变量 |
+| 2 | 本地 Docker | per-container env injection + network isolation | 同上 + `micro-eval secrets` CLI |
+| 3 | 远程沙盒 | Proxy 模式 + 短期 token + audit log | Vault 集成 / Proxy token exchange |
+
+
+
+---
+
+## 12. 与现有 MVP 的关系
+
+### 12.1 保留
 
 - Python CLI + Typer 框架
 - Next.js Web UI 骨架
@@ -1167,7 +1379,7 @@ class WorkspaceProvider(Protocol):
 - git worktree workspace 隔离（升级为 Provider）
 - JSON 文件存储（升级结构）
 
-### 11.2 重写
+### 12.2 重写
 
 - **领域模型**：从 baseline/candidate 二元 → Configuration 矩阵（Agent × Skill × Environment × Params × Repetitions）
 - **Task 模型**：从 input_payload + expected_output → prompt + workspace + expectations
@@ -1175,7 +1387,7 @@ class WorkspaceProvider(Protocol):
 - **执行引擎**：从硬编码 subprocess → AgentExecutor + SkillExecutor + WorkspaceProvider + TraceProvider
 - **Web UI 数据层**：从读 flat JSON → 读结构化 run 目录 + 多维度聚合
 
-### 11.3 新增
+### 12.3 新增
 
 - `micro-eval init` / `micro-eval doctor`
 - LLM-as-judge grading 系统
@@ -1187,7 +1399,7 @@ class WorkspaceProvider(Protocol):
 
 ---
 
-## 12. 技术栈（不变）
+## 13. 技术栈（不变）
 
 | 层 | 技术 |
 |----|------|
@@ -1200,7 +1412,7 @@ class WorkspaceProvider(Protocol):
 
 ---
 
-## 13. 不做（Unicorn 范围外）
+## 14. 不做（Unicorn 范围外）
 
 - 多团队协作 / RBAC / SSO
 - 托管式 Web dashboard
