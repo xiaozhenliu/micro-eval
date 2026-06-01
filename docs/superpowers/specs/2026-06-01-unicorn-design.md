@@ -474,15 +474,15 @@ class WorkspaceProvider(Protocol):
 my_k8s = "my_package:K8sProvider"
 ```
 
-#### 3.3.5 分阶段实现
+#### 3.3.5 内置 Provider 实现层级
 
-| Phase | 实现 | 覆盖信任等级 |
-|-------|------|------------|
-| 1 | GitWorktreeProvider（Level 0） | trusted |
-| 2 | SeatbeltProvider + BubblewrapProvider（Level 1） | semi_trusted |
-| 3 | E2BProvider / ModalProvider（Level 3-4） | untrusted, adversarial |
+| Provider | 支持的隔离级别 | 覆盖信任等级 | 平台 |
+|----------|--------------|------------|------|
+| GitWorktreeProvider | Level 0 | trusted | 全平台 |
+| SeatbeltProvider + BubblewrapProvider | Level 1 | semi_trusted | macOS / Linux |
+| E2BProvider / ModalProvider | Level 3-4 | untrusted, adversarial | 远程 |
 
-Phase 1 不实现 Docker/gVisor。理由：
+Level 3+ 隔离通过远程 Provider 实现，不使用本地 Docker。理由：
 - Docker 启动慢（1-3s）、需要 daemon、macOS 体验差
 - gVisor 仅 Linux，对本地开发者不友好
 - 如果需要 Level 3+ 隔离，直接用远程 Provider（E2B/Modal），更快更轻
@@ -1100,12 +1100,12 @@ axes:
 
 论文提出的 rubric 构建方法论，micro-eval 分阶段采纳：
 
-**Phase 1（手动 + 模板）**：
+**基础模式（手动 + 模板）**：
 - 提供预置 rubric 模板（coding / document / ui_design）
 - 用户可自定义 axes 和 levels
 - Task 通过 `rubric_template` 字段选择模板
 
-**Phase 2（半自动生成）**：
+**进阶模式（半自动生成）**：
 - 从 task description 自动推导 expectations
 - 从 expectations 自动生成 rubric criteria
 - 用户确认/修改后使用
@@ -1121,7 +1121,7 @@ class RubricGenerator:
         ...
 ```
 
-**Phase 3（动态演化）**：
+**高级模式（动态演化）**：
 - Contrastive generation：对比两个 agent 产出的差异，自动发现新的评分维度
 - 去重压缩：合并重叠的 criteria
 - Meta-evaluation：评估 rubric 本身的质量（区分力、一致性）
@@ -1485,8 +1485,8 @@ project-root/
 
 ### 7.2 存储策略
 
-- **Phase 1**：JSON 文件（当前，够用）
-- **Phase 2**：SQLite（当需要跨 run 查询、趋势分析时迁移）
+- **默认：JSON 文件**（当前，够用）
+- **可选升级：SQLite**（当需要跨 run 查询、趋势分析时迁移）
 - `schema_version` 字段保证向前兼容
 
 ---
@@ -1558,19 +1558,19 @@ WorkspaceSpec（3.3 节）已详细定义了四层隔离模型和 Provider 接�
 | Modal | <1s | 容器 | 云端 | 大规模并行 |
 | Daytona | ~90ms | 容器 | 云端 | OpenHands 集成 |
 
-### 10.2 演进路径
+### 10.2 实现优先级
 
 ```
-Phase 1（现在）: GitWorktreeProvider
+优先级 1: GitWorktreeProvider（核心）
   → 零开销，覆盖 90% 场景
   → 可选 ProcessSandboxProvider（seatbelt/bwrap）
 
-Phase 2: ProcessSandboxProvider 成熟
+优先级 2: ProcessSandboxProvider 成熟
   → 网络白名单（只允许 LLM provider）
   → ulimit 资源限制
   → secret redaction 集成
 
-Phase 3: 远程 Provider（按需）
+优先级 3: 远程 Provider（按需）
   → E2BProvider（不可信 agent）
   → ModalProvider（大规模并行评测）
   → DaytonaProvider（OpenHands 集成）
@@ -1640,7 +1640,7 @@ secrets:
 
 ### 11.4 注入机制
 
-#### 本地执行（Phase 1）
+#### 本地执行
 
 最简单的模型：通过环境变量注入到 agent 进程。
 
@@ -1661,7 +1661,7 @@ class LocalSecretsInjector:
 - artifacts 保存前扫描已知 secret patterns（sk-xxx, ghp_xxx 等）
 - `.micro-eval/.env` 自动加入 `.gitignore`
 
-#### Docker 执行（Phase 2）
+#### 容器执行
 
 参考 [Cloudflare Sandbox SDK](https://developers.cloudflare.com/sandbox/configuration/environment-variables/) 的三层注入模型：
 
@@ -1682,7 +1682,7 @@ class DockerSecretsInjector:
 - 文件系统隔离：secrets 不写入容器文件系统
 - 执行后清理：容器销毁时 secrets 随之消失
 
-#### 远程沙盒（Phase 3）
+#### 远程沙盒
 
 参考 [E2B 的 envs 注入](https://changelog.e2b.dev/docs/sandbox/environment-variables) + [Warp 的 BYOK 模型](https://docs.warp.dev/agent-platform/inference/bring-your-own-api-key/)：
 
@@ -1787,13 +1787,13 @@ class SecretRedactor:
 - Web UI 展示时
 - LLM Judge 的 input 中（避免 judge 看到 secrets）
 
-### 11.7 安全分阶段路径
+### 11.7 安全模型按形态
 
-| Phase | 形态 | Secrets 方案 | BYOK 方式 |
-|-------|------|-------------|-----------|
-| 1 | 本地 CLI | env vars + .env 文件 + redaction | 用户设环境变量 |
-| 2 | 本地 Docker | per-container env injection + network isolation | 同上 + `micro-eval secrets` CLI |
-| 3 | 远程沙盒 | Proxy 模式 + 短期 token + audit log | Vault 集成 / Proxy token exchange |
+| 形态 | Secrets 方案 | BYOK 方式 |
+|------|-------------|-----------|
+| 本地 CLI | env vars + .env 文件 + redaction | 用户设环境变量 |
+| 容器执行 | per-container env injection + network isolation | 同上 + `micro-eval secrets` CLI |
+| 远程沙盒 | Proxy 模式 + 短期 token + audit log | Vault 集成 / Proxy token exchange |
 
 
 
@@ -2058,7 +2058,7 @@ class SecretRedactor:
 - 托管式 Web dashboard
 - 自动化 CI 集成（用户自己接）
 - 复杂的推荐引擎
-- OpenHands 深度集成（留给 Phase 3）
+- OpenHands 深度集成（远程沙盒形态下考虑）
 - 自动生成 task（用户手写或用 LLM 辅助生成）
 
 ---
@@ -2163,7 +2163,7 @@ Inspect AI（UK AISI 开发，MIT 协议，[GitHub](https://github.com/UKGovernm
 6. 非开发者友好（不是"10 分钟上手"的产品体验）
 7. 无在线观测集成（Langfuse/LangSmith TraceProvider）
 
-**策略**：Phase 1 自建核心验证产品假设，Phase 2+ 评估将 Inspect 作为可选执行后端。
+**策略**：初期自建核心验证产品假设，后续评估将 Inspect 作为可选执行后端。
 
 ### A.7 Configuration 矩阵 / 实验设计
 
