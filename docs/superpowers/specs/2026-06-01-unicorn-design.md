@@ -13,7 +13,7 @@
 
 核心问题：当前实现把 agent 简化为 `command + stdin/stdout`，评分用精确匹配——这对真实的 coding agent、workflow agent、skill 评测毫无意义。
 
-**Unicorn 要回答的根本问题**：
+**micro-eval 要回答的根本问题**：
 - 什么是 agent？→ 一个在特定环境中执行任务的程序
 - 什么是输入？→ 任务描述 + 执行环境（workspace）
 - 什么是输出？→ 产出物（artifacts）+ 执行轨迹（trace）+ 成本（cost）
@@ -315,7 +315,7 @@ BeyondScale 四层边界模型 `[S3]`、OpenAI Codex Sandbox 设计 `[S4]`、Fly
 | **Remote-managed** | 按需付费，弹性扩缩 | CI/大规模评测 |
 | **Hybrid** | 本地编排 + 远程执行 | 混合场景 |
 
-#### 3.3.2 Unicorn 的沙箱配置模型
+#### 3.3.2 micro-eval 的沙箱配置模型
 
 基于上述框架，WorkspaceSpec 的配置结构：
 
@@ -704,13 +704,13 @@ scoring:
 ### 4.4 Rubric 框架（基于 Rubrics Survey 论文）
 
 参考论文 "The Rules of the Game: A Survey of Rubrics for Large Language Models"（2026）`[R1]`，
-对 Unicorn 评分系统做以下增强。
+对 micro-eval 评分系统做以下增强。
 
 #### 4.4.1 核心差异分析
 
-论文揭示了当前 Unicorn 设计的三个盲区：
+论文揭示了当前 micro-eval 设计的三个盲区：
 
-| 维度 | 论文框架 | Unicorn 当前设计 | 差距 |
+| 维度 | 论文框架 | micro-eval 当前设计 | 差距 |
 |------|---------|-----------------|------|
 | 评测对象 | 过程（trajectory）+ 结果（output） | 只评结果 | 缺少过程评测 |
 | Rubric 粒度 | 多维度 × 多等级（1-5 per axis） | 粗糙的 3 轴 | 维度不够精细 |
@@ -761,7 +761,7 @@ trajectory_grading:
 
 基于 QQJ `[R6]`、DSGBench `[R7]`、Interactive Evaluation Design Science `[R8]`、
 LMArena/GDPval Pairwise Comparison `[R9]` 的综合分析，
-Unicorn 的评分系统应支持**五种评分模式**，覆盖从完全确定到完全主观的全光谱：
+micro-eval 的评分系统应支持**五种评分模式**，覆盖从完全确定到完全主观的全光谱：
 
 ```
 确定性 ←──────────────────────────────────────────→ 主观性
@@ -975,7 +975,7 @@ scoring:
 
 #### 4.4.4 多维度 Rubric 体系
 
-论文将评测维度按任务类型精细化。Unicorn 采用 **task-adaptive rubric** `[R2]`：
+论文将评测维度按任务类型精细化。micro-eval 采用 **task-adaptive rubric** `[R2]`：
 根据 task 的 tags/类型自动选择合适的 rubric 模板。
 
 **Coding 任务默认 Rubric（4 轴，参考 Agentic Rubrics `[R5]`）**：
@@ -1098,7 +1098,7 @@ axes:
 
 #### 4.4.5 Rubric 自动生成与迭代优化
 
-论文提出的 rubric 构建方法论，Unicorn 分阶段采纳：
+论文提出的 rubric 构建方法论，micro-eval 分阶段采纳：
 
 **Phase 1（手动 + 模板）**：
 - 提供预置 rubric 模板（coding / document / ui_design）
@@ -1128,7 +1128,7 @@ class RubricGenerator:
 
 #### 4.4.6 评分可靠性保障
 
-论文指出单 judge 评分存在偏见和不一致。Unicorn 采用：
+论文指出单 judge 评分存在偏见和不一致。micro-eval 采用：
 
 ```yaml
 judge:
@@ -2134,7 +2134,7 @@ Inspect AI（UK AISI 开发，MIT 协议，[GitHub](https://github.com/UKGovernm
 
 **为什么不直接用 Inspect？**
 
-| 维度 | Inspect | micro-eval/Unicorn |
+| 维度 | Inspect | micro-eval |
 |------|---------|-------------------|
 | 定位 | Benchmark 框架（学术/安全评测） | 团队评测工作台（产品） |
 | 用户画像 | 研究员写 Python 代码定义 eval | 开发者用 YAML + Web UI |
@@ -2154,7 +2154,7 @@ Inspect AI（UK AISI 开发，MIT 协议，[GitHub](https://github.com/UKGovernm
 7. EvalLog 分层读取（header_only / sample_summaries / 流式）
 8. 静态 bundle 发布（`inspect view bundle` 打包为无服务器站点）
 
-**Inspect 不做的（Unicorn 差异化）**：
+**Inspect 不做的（micro-eval 差异化）**：
 1. 无 Skill/Prompt 版本管理
 2. 无 Web UI 内标注/复盘流
 3. 无 side-by-side diff 对比可视化

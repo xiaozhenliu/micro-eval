@@ -36,15 +36,15 @@ Tasks × Configurations × Repetitions -> ResultMatrix -> 对比/溯源/报告
 
 | 维度 | AWS Deep Agent Eval | Unicorn (micro-eval) | 优势方 |
 |------|-------------------|---------------------|--------|
-| **架构模型** | 线性管道（pytest = 运行器，每次执行 = 一次实验） | 矩阵模型（Run = Tasks x Configs x Reps，显式笛卡尔积） | Unicorn |
-| **Task 定义** | 硬编码在 pytest 函数体内，无独立 schema | 结构化对象（input + expectations + workspace + rubric + tier） | Unicorn |
-| **Agent 执行** | 进程内调用（LangChain agent.invoke()），框架耦合 | 黑盒 subprocess（stdin/文件传参），协议耦合 | Unicorn |
-| **评分机制** | 三种混合（断言 + LLM judge + 人工校准），ad-hoc rubric | 三层递进（Validation → Grading → Annotation），结构化 rubric 框架 | Unicorn |
+| **架构模型** | 线性管道（pytest = 运行器，每次执行 = 一次实验） | 矩阵模型（Run = Tasks x Configs x Reps，显式笛卡尔积） | micro-eval |
+| **Task 定义** | 硬编码在 pytest 函数体内，无独立 schema | 结构化对象（input + expectations + workspace + rubric + tier） | micro-eval |
+| **Agent 执行** | 进程内调用（LangChain agent.invoke()），框架耦合 | 黑盒 subprocess（stdin/文件传参），协议耦合 | micro-eval |
+| **评分机制** | 三种混合（断言 + LLM judge + 人工校准），ad-hoc rubric | 三层递进（Validation → Grading → Annotation），结构化 rubric 框架 | micro-eval |
 | **Trace/观测** | LangSmith 自动 tracing，零配置但锁定生态 | 多 provider 回退（Langfuse/LangSmith/self_report/builtin），非侵入式 | 各有优势 |
-| **沙箱隔离** | 几乎没有（SQL readonly + pytest tmp_path） | 5 维模型，Level 0-4 渐进式隔离 | Unicorn |
-| **多配置对比** | 不原生支持，需手动跑多次 + LangSmith UI 并排 | 核心设计目标，矩阵列 = 不同 Configuration | Unicorn |
-| **安全模型** | 最小化（环境变量注入，无 redaction） | 完整 BYOK + redaction + proxy mode + OWASP 威胁建模 | Unicorn |
-| **扩展性** | 无 plugin 系统，写新 pytest 函数 = 唯一扩展方式 | 多层 provider 协议 + entry points 注册 | Unicorn |
+| **沙箱隔离** | 几乎没有（SQL readonly + pytest tmp_path） | 5 维模型，Level 0-4 渐进式隔离 | micro-eval |
+| **多配置对比** | 不原生支持，需手动跑多次 + LangSmith UI 并排 | 核心设计目标，矩阵列 = 不同 Configuration | micro-eval |
+| **安全模型** | 最小化（环境变量注入，无 redaction） | 完整 BYOK + redaction + proxy mode + OWASP 威胁建模 | micro-eval |
+| **扩展性** | 无 plugin 系统，写新 pytest 函数 = 唯一扩展方式 | 多层 provider 协议 + entry points 注册 | micro-eval |
 | **成熟度** | 小而完整的 demo，可直接运行 | 大而部分实现的平台，设计完成度高但实现在 Phase 1 | AWS（可运行性） |
 
 ---
@@ -94,7 +94,7 @@ Tasks × Configurations × Repetitions -> ResultMatrix -> 对比/溯源/报告
 
 ---
 
-## 4. Unicorn 可借鉴之处
+## 4. micro-eval 可借鉴之处
 
 ### 4.1 pytest 作为运行器骨架
 
@@ -111,7 +111,7 @@ def test_simple_query(sql_agent):
     assert "8" in result["messages"][-1].content
 ```
 
-**借鉴建议**: Unicorn 不需要重写测试发现和执行调度。矩阵展开可以在 pytest 之上实现——通过 `pytest.mark.parametrize` 或自定义 plugin 生成笛卡尔积。这样既保留了矩阵模型的表达力，又复用了 pytest 的并行执行（pytest-xdist）、报告、CI 集成等成熟能力。
+**借鉴建议**: micro-eval 不需要重写测试发现和执行调度。矩阵展开可以在 pytest 之上实现——通过 `pytest.mark.parametrize` 或自定义 plugin 生成笛卡尔积。这样既保留了矩阵模型的表达力，又复用了 pytest 的并行执行（pytest-xdist）、报告、CI 集成等成熟能力。
 
 **优先级**: 中。当前自写调度器已经工作，但长期维护成本高于 pytest plugin 方案。
 
@@ -119,7 +119,7 @@ def test_simple_query(sql_agent):
 
 **AWS 做法**: 博客中提到 pass@k（k 次中至少一次通过的概率）作为评估指标，虽然代码未实现。
 
-**借鉴建议**: Unicorn 已有 repetitions 维度，应为其定义标准聚合方式：
+**借鉴建议**: micro-eval 已有 repetitions 维度，应为其定义标准聚合方式：
 - `pass@k`: P(至少 1 次通过 | k 次尝试) — 衡量 agent 的"能力上限"
 - `pass^k`: P(全部通过 | k 次尝试) — 衡量 agent 的"可靠性下限"
 - `consistency`: std(scores) across repetitions — 衡量稳定性
@@ -132,7 +132,7 @@ def test_simple_query(sql_agent):
 
 **AWS 做法**: 博客描述了对生产 trace 的实时评分——agent 在生产环境处理真实请求时，LangSmith 自动采集 trace 并触发评分。
 
-**借鉴建议**: Unicorn 当前只有离线评估（手动触发 Run）。可在 Phase 2+ 规划"监控模式"：
+**借鉴建议**: micro-eval 当前只有离线评估（手动触发 Run）。可在 Phase 2+ 规划"监控模式"：
 - 监听 Langfuse/LangSmith 的新 trace
 - 对满足条件的 trace 自动触发评分
 - 生成趋势报告（"本周 agent 质量是否退化？"）
@@ -152,7 +152,7 @@ assert "8" in answer  # 先用断言
 scores = llm_judge(answer, rubric)
 ```
 
-**借鉴建议**: Unicorn 的 Layer 1 Validation（exit code 验证）已体现这个思路，但应更激进地扩展：
+**借鉴建议**: micro-eval 的 Layer 1 Validation（exit code 验证）已体现这个思路，但应更激进地扩展：
 - 对 coding task：运行测试套件 > LLM 评分
 - 对 SQL task：执行查询对比结果集 > LLM 评分
 - 对 API task：schema 验证 + 状态码检查 > LLM 评分
@@ -165,7 +165,7 @@ scores = llm_judge(answer, rubric)
 
 **AWS 做法**: deepagents 框架中 Skill 定义为 `SKILL.md`，包含 YAML frontmatter（元数据）+ Markdown body（工作流步骤）。非工程师可直接编辑。
 
-**借鉴建议**: Unicorn 的 Skill 概念已存在，但配置格式未最终确定。参考 AWS 的 frontmatter + workflow steps 格式：
+**借鉴建议**: micro-eval 的 Skill 概念已存在，但配置格式未最终确定。参考 AWS 的 frontmatter + workflow steps 格式：
 
 ```markdown
 ---
@@ -188,11 +188,11 @@ temperature: 0.3
 
 ---
 
-## 5. Unicorn 的优势
+## 5. micro-eval 的优势
 
 ### 5.1 多配置对比（核心差异化）
 
-Unicorn 的矩阵模型是产品存在的理由。AWS 方案要对比两个 agent 需要：修改代码 -> 跑两次 pytest -> 在 LangSmith UI 手动并排。Unicorn 只需在 Configuration 列表中多加一项，Run 自动展开笛卡尔积。
+micro-eval 的矩阵模型是产品存在的理由。AWS 方案要对比两个 agent 需要：修改代码 -> 跑两次 pytest -> 在 LangSmith UI 手动并排。micro-eval 只需在 Configuration 列表中多加一项，Run 自动展开笛卡尔积。
 
 **具体优势**:
 - 声明式矩阵定义，自动展开
@@ -204,7 +204,7 @@ Unicorn 的矩阵模型是产品存在的理由。AWS 方案要对比两个 agen
 
 ### 5.2 黑盒 Agent 协议
 
-AWS 方案锁死在 LangChain 生态——只能评估通过 `agent.invoke()` 调用的进程内对象。Unicorn 的黑盒协议（stdin/stdout + 环境变量）可以评估：
+AWS 方案锁死在 LangChain 生态——只能评估通过 `agent.invoke()` 调用的进程内对象。micro-eval 的黑盒协议（stdin/stdout + 环境变量）可以评估：
 
 - Claude Code、Cursor、Copilot（CLI 模式）
 - Docker 容器中的任意 agent
@@ -218,7 +218,7 @@ AWS 方案锁死在 LangChain 生态——只能评估通过 `agent.invoke()` �
 
 AWS 的"隔离"仅限于 SQLite readonly mode。对于运行任意代码的 agent 评测场景，这完全不可接受。
 
-Unicorn 的 5 维沙箱模型提供了：
+micro-eval 的 5 维沙箱模型提供了：
 - **渐进式隔离**: Level 0 (git worktree) 到 Level 4 (Firecracker VM)，按风险选择
 - **多轴约束**: filesystem / network / process / resources 独立控制
 - **信任分级**: trusted -> semi_trusted -> untrusted -> adversarial
@@ -228,7 +228,7 @@ Unicorn 的 5 维沙箱模型提供了：
 
 ### 5.4 评分系统深度
 
-| 能力 | AWS | Unicorn |
+| 能力 | AWS | micro-eval |
 |------|-----|---------|
 | 确定性断言 | 有 | 有（Layer 1 Validation） |
 | LLM-as-judge | 有（单 judge，内联 rubric） | 有（多 judge，结构化 rubric） |
@@ -239,11 +239,11 @@ Unicorn 的 5 维沙箱模型提供了：
 | 人工标注 UI | 依赖 LangSmith | 内建 Web UI |
 | Rubric 版本管理 | 无 | 有 |
 
-特别是 **trajectory evaluation**（不只看结果，还看过程）是 Unicorn 的差异化能力。两个 agent 可能都通过了 task，但一个用了 3 步 $0.03，另一个用了 30 步 $0.30——这个差异只有通过轨迹评估才能发现。
+特别是 **trajectory evaluation**（不只看结果，还看过程）是 micro-eval 的差异化能力。两个 agent 可能都通过了 task，但一个用了 3 步 $0.03，另一个用了 30 步 $0.30——这个差异只有通过轨迹评估才能发现。
 
 ### 5.5 安全模型
 
-AWS 假设可信环境（你自己的 AWS 账号、你自己的 agent）。Unicorn 假设半可信/不可信环境，提供：
+AWS 假设可信环境（你自己的 AWS 账号、你自己的 agent）。micro-eval 假设半可信/不可信环境，提供：
 
 - **Secrets 隔离**: per-Configuration key override，proxy mode（secrets 不进沙箱）
 - **输出 Redaction**: 正则模式匹配（sk-ant-*, sk-*, ghp-*），防止 agent 泄露 key
@@ -256,7 +256,7 @@ AWS 假设可信环境（你自己的 AWS 账号、你自己的 agent）。Unico
 
 ## 6. 建议调整
 
-基于本次对比分析，对 Unicorn 设计规格提出以下具体调整建议：
+基于本次对比分析，对 micro-eval 设计规格提出以下具体调整建议：
 
 ### 6.1 Phase 1 立即执行
 
@@ -318,7 +318,7 @@ from micro_eval.trace.builtin import BuiltinTraceProvider
 
 **R5: 设计 Skill 的 Markdown 配置格式**
 
-参考 AWS deepagents 的 SKILL.md 格式，为 Unicorn 的 Skill 定义标准文件格式：
+参考 AWS deepagents 的 SKILL.md 格式，为 micro-eval 的 Skill 定义标准文件格式：
 
 ```yaml
 # .micro-eval/skills/code-review-v2.skill.md
@@ -372,17 +372,17 @@ AWS demo 的核心教训：500 行代码就能产生有用的评估结果。建�
 
 ### 总体评估
 
-AWS Deep Agent Eval 和 Unicorn 不在同一个层面上竞争。AWS 是一个精心设计的教学 demo，证明了"pytest + LangSmith 就能做 agent 评测"；Unicorn 是一个生产级评测平台的完整设计，解决的是"多 agent 对比 + 可复现 + 可溯源"的系统性问题。
+AWS Deep Agent Eval 和 micro-eval 不在同一个层面上竞争。AWS 是一个精心设计的教学 demo，证明了"pytest + LangSmith 就能做 agent 评测"；micro-eval 是一个生产级评测平台的完整设计，解决的是"多 agent 对比 + 可复现 + 可溯源"的系统性问题。
 
 **两者的关系不是替代，而是互补**：
-- AWS 验证了"最小可行评测"的形态——这是 Unicorn Phase 1 应该达到的体验标准
-- Unicorn 的设计深度解决了 AWS 方案在扩展时必然遇到的问题
+- AWS 验证了"最小可行评测"的形态——这是 micro-eval Phase 1 应该达到的体验标准
+- micro-eval 的设计深度解决了 AWS 方案在扩展时必然遇到的问题
 
 ### 关键判断
 
-1. **Unicorn 的架构方向正确**。矩阵模型、黑盒协议、分层评分、渐进式隔离——这些设计决策经得起与工业级方案的对比。
+1. **micro-eval 的架构方向正确**。矩阵模型、黑盒协议、分层评分、渐进式隔离——这些设计决策经得起与工业级方案的对比。
 
-2. **最大风险不是设计不足，而是实现过慢**。Unicorn 的设计广度远超 AWS，但 AWS 500 行代码已经能跑。建议严格遵循 Phase 1 -> 2 -> 3 串行路线，每个 Phase 交付可运行的增量价值。
+2. **最大风险不是设计不足，而是实现过慢**。micro-eval 的设计广度远超 AWS，但 AWS 500 行代码已经能跑。建议严格遵循 Phase 1 -> 2 -> 3 串行路线，每个 Phase 交付可运行的增量价值。
 
 3. **从 AWS 借鉴的核心不是技术，而是态度**："先跑起来再说"。一个能跑的 MVP 比一份完美的设计文档更有价值。
 
