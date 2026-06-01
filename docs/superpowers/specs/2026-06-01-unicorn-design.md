@@ -623,10 +623,11 @@ micro-eval run --config eval.yaml
   │     ├─ 并行/串行/轮转（可配置）
   │     ├─ 每个 (target, task) 在独立 workspace 中运行
   │     └─ 收集 artifacts + metrics
-  ├─ 4. 自动验证 → ValidationRunner.run()
-  ├─ 5. LLM 评分 → Grader.grade()
-  ├─ 6. 聚合结果 → RunResult[]
-  └─ 7. 持久化 → .micro-eval/runs/<run-id>/
+  ├─ 4. 采集 trace → TraceProvider.collect()          ← 新增
+  ├─ 5. 自动验证 → ValidationRunner.run()
+  ├─ 6. LLM 评分 → Grader.grade()
+  ├─ 7. 聚合结果 → RunResult[]
+  └─ 8. 持久化 → .micro-eval/runs/<run-id>/
 ```
 
 ### 5.2 Agent 执行协议
@@ -687,6 +688,169 @@ execution:
   retry_on_error: 1       # 错误重试次数
   global_timeout_s: 3600  # 全局超时
 ```
+
+### 5.5 Trace 采集（TraceProvider 架构）
+
+Agent 执行过程的观测数据（tool calls、token 消耗、LLM 调用链）是 trajectory evaluation 的数据来源。
+不同团队有不同的 observability 基础设施，所以 trace 采集抽象为 **Provider 接口**。
+
+#### 设计原则
+
+1. **执行后拉取，不侵入执行** — micro-eval 不注入 agent 运行时，agent 跑完后 Provider 去对应系统拉数据
+2. **关联通过环境变量** — 执行前注入 `MICRO_EVAL_TRACE_ID`，agent 如果支持就传给 trace 系统
+3. **多 Provider 并存，按优先级 fallback** — 最丰富的数据源优先，进程级采集兜底
+4. **输出归一化** — 不管来源是什么，最终都归一化为统一的 TraceData 结构
+
+#### Provider 接口
+
+```python
+class TraceProvider(Protocol):
+    """从任意来源采集 agent 执行轨迹"""
+
+    name: str  # 如 "langfuse", "langsmith", "self_report"
+
+    def supports(self, target: EvalTarget) -> bool:
+        """判断此 provider 是否能为该 target 提供 trace"""
+        ...
+
+    def collect(self, ctx: RunContext) -> TraceData | None:
+        """在 agent 执行结束后，采集 trace 数据。无数据返回 None。"""
+        ...
+```
+
+#### 配置
+
+```yaml
+# eval.yaml
+trace_providers:
+  - type: langfuse
+    priority: 1
+    config:
+      host: "https://cloud.langfuse.com"
+      public_key: "pk-..."
+      secret_key: "sk-..."
+      match_by: metadata.eval_trace_id  # 关联方式
+
+  - type: langsmith
+    priority: 2
+    config:
+      api_key: "ls-..."
+      project: "my-agent-eval"
+      match_by: metadata.eval_trace_id
+
+  - type: self_report
+    priority: 3
+    config:
+      trace_file: "{output_dir}/trace.json"
+      format: opentelemetry | micro_eval  # 支持的格式
+
+  - type: builtin
+    priority: 99  # 兜底，始终可用
+    # 进程级采集：wall clock time、exit code、stderr token 信息
+```
+
+#### 关联机制
+
+Agent 执行前，micro-eval 通过环境变量注入关联 ID：
+
+```python
+env_inject = {
+    "MICRO_EVAL_TRACE_ID": f"{run_id}--{task_id}--{target_id}",
+    "MICRO_EVAL_RUN_ID": run_id,
+}
+```
+
+各 Provider 用这个 ID 去对应系统查询 trace：
+
+```python
+class LangfuseProvider:
+    def collect(self, ctx: RunContext) -> TraceData | None:
+        traces = self.client.get_traces(
+            metadata={"eval_trace_id": ctx.trace_id}
+        )
+        if not traces:
+            return None
+        return self.normalize(traces)
+```
+
+#### 归一化输出（TraceData）
+
+```python
+@dataclass
+class TraceData:
+    """所有 Provider 的输出都归一化为此结构"""
+    steps: list[TraceStep]
+    total_tokens: int
+    total_cost_usd: float
+    total_duration_s: float
+    tool_calls: dict[str, int]      # tool name → count
+    llm_calls: list[LLMCall]        # 每次 LLM 调用详情
+    errors: list[TraceError]
+
+@dataclass
+class TraceStep:
+    timestamp: str
+    type: Literal["llm_call", "tool_use", "thinking", "error"]
+    name: str
+    duration_s: float
+    tokens: int | None
+    input_summary: str              # 截断摘要（≤500 chars）
+    output_summary: str
+
+@dataclass
+class LLMCall:
+    model: str
+    input_tokens: int
+    output_tokens: int
+    duration_s: float
+    cost_usd: float | None
+
+@dataclass
+class TraceError:
+    timestamp: str
+    message: str
+    recovered: bool
+```
+
+#### 第三方 Provider 注册
+
+内置：`langfuse`, `langsmith`, `self_report`, `builtin`
+
+第三方通过 Python entry point 注册，无需修改 micro-eval 代码：
+
+```toml
+# 第三方 provider 的 pyproject.toml
+[project.entry-points."micro_eval.trace_providers"]
+arize_phoenix = "my_package.providers:ArizePhoenixProvider"
+custom_otel = "my_package.providers:OTelProvider"
+```
+
+用户安装包后即可在 eval.yaml 中使用：
+
+```yaml
+trace_providers:
+  - type: arize_phoenix
+    priority: 1
+    config:
+      endpoint: "http://localhost:6006"
+```
+
+#### 与 Trajectory Evaluation 的关系
+
+TraceData 是 4.4.2 节 Trajectory Evaluation 的数据输入：
+
+```
+Agent 执行 → TraceProvider.collect() → TraceData
+                                           ↓
+                              Grader 评估 trajectory_grading：
+                                - tool_efficiency（从 tool_calls 计算）
+                                - reasoning_quality（从 steps 分析）
+                                - resource_usage（从 tokens/duration 计算）
+                                - error_recovery（从 errors 分析）
+```
+
+没有 trace 数据时（所有 Provider 返回 None），trajectory_grading 跳过，
+只保留 builtin Provider 提供的进程级指标（duration、exit code）。
 
 ---
 
