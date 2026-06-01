@@ -753,7 +753,227 @@ trajectory_grading:
 - Agent 是否过度使用工具（每步都 grep 而不是理解代码）
 - Agent 遇到错误后是否能优雅恢复
 
-#### 4.4.3 多维度 Rubric 体系
+#### 4.4.3 评分模式分类（确定性 → 主观性光谱）
+
+当前设计隐含一个假设：所有评分维度都可以用等级描述来锚定（"5 分 = 精确修改了正确的文件"）。
+但当 agent 任务本身就是开放式、创造性的（如做一个游戏、设计一个 UI、写一篇文章），
+**等级描述本身就是主观的**——"美观"、"可玩性"、"数值平衡"没有客观标准。
+
+基于 QQJ `[R6]`、DSGBench `[R7]`、Interactive Evaluation Design Science `[R8]`、
+LMArena/GDPval Pairwise Comparison `[R9]` 的综合分析，
+Unicorn 的评分系统应支持**五种评分模式**，覆盖从完全确定到完全主观的全光谱：
+
+```
+确定性 ←──────────────────────────────────────────→ 主观性
+
+Mode 1        Mode 2          Mode 3          Mode 4         Mode 5
+确定性断言    锚定式 Rubric    校准式 Rubric    Pairwise       人工判断
+assert/exit   等级描述+LLM    专家校准+LLM    盲评A/B→Elo    纯人工
+```
+
+##### Mode 1: 确定性断言（Deterministic Assertion）
+
+**适用**: 有明确对错的任务（测试通过、编译成功、API 返回正确值）
+
+```yaml
+scoring:
+  mode: deterministic
+  validation:
+    commands: ["npm test", "npm run lint"]
+    pass_criteria: all_pass
+```
+
+无需 LLM judge。exit code 0 = pass。
+
+##### Mode 2: 锚定式 Rubric（Anchored Rubric）
+
+**适用**: 有明确标准但需要判断的任务（代码质量、文档完整性）
+
+```yaml
+scoring:
+  mode: anchored_rubric
+  rubric_template: coding  # 预定义模板
+  axes:
+    - axis: spec_alignment
+      levels:
+        5: "完全满足任务描述的所有要求"
+        1: "未满足核心要求"
+```
+
+等级描述足够具体，LLM judge 可以稳定评分。这是当前 4.4.3 已有的模式。
+
+##### Mode 3: 校准式 Rubric（Calibrated Rubric）`[R6]`
+
+**适用**: 主观但可对齐的任务（美观、可读性、用户体验）。
+等级描述本身是主观的，需要**专家标注样本来校准 LLM judge**。
+
+核心思路（来自 QQJ 论文）：
+1. 领域专家定义评分维度（如"视觉美感"、"交互流畅度"）
+2. 专家对少量样本（10-30 个）做标注 + 写出评分理由
+3. 用这些标注样本作为 few-shot 校准 LLM judge
+4. LLM judge 在校准后对新样本评分
+
+```yaml
+scoring:
+  mode: calibrated_rubric
+  axes:
+    - axis: visual_aesthetics
+      description: "游戏画面的视觉吸引力"
+      # 没有固定等级描述——由校准样本定义"好"和"差"的含义
+      calibration:
+        samples: ./calibration/visual_aesthetics/  # 专家标注样本
+        min_samples: 10
+        agreement_threshold: 0.7  # 专家间一致性要求
+    - axis: gameplay_balance
+      description: "游戏数值系统的平衡性"
+      calibration:
+        samples: ./calibration/gameplay_balance/
+        min_samples: 15
+
+  judge:
+    model: claude-sonnet-4-20250514
+    calibration_mode: few_shot    # few_shot | fine_tune
+    # judge prompt 中包含校准样本作为参考
+```
+
+**校准样本格式**：
+```yaml
+# calibration/visual_aesthetics/sample-001.yaml
+input: "一个像素风格的 2D 平台跳跃游戏"
+output_artifact: ./artifacts/game-001/
+expert_score: 4
+expert_reasoning: |
+  色彩搭配和谐，像素画风格一致，
+  但动画帧数偏少导致角色移动略显生硬。
+  整体视觉效果在同类游戏中属于中上水平。
+```
+
+**与 Mode 2 的关键区别**：
+- Mode 2 的等级描述是**先验的**（写在 rubric 里，评分前就确定）
+- Mode 3 的评分标准是**后验的**（从专家标注中学习，评分标准随样本演化）
+
+##### Mode 4: Pairwise Comparison（配对比较）`[R9]`
+
+**适用**: 无法绝对评分的任务（"哪个游戏更好玩"、"哪个设计更美观"）。
+不给绝对分数，只做相对比较。
+
+核心思路（来自 LMArena / Chatbot Arena / GDPval）：
+1. 两个 Configuration 的产出匿名标记为 A / B
+2. Judge（LLM 或人工）只回答"A 更好 / B 更好 / 平局"
+3. 多轮比较后用 Elo/Bradley-Terry 模型计算排名
+
+```yaml
+scoring:
+  mode: pairwise
+  comparison:
+    method: round_robin          # round_robin | swiss | random_pairs
+    judges_per_pair: 3           # 每对比较的 judge 数量
+    dimensions:                  # 可选：按维度分别比较
+      - "整体质量"
+      - "视觉美感"
+      - "可玩性"
+      - "创新性"
+    ranking_algorithm: bradley_terry  # elo | bradley_terry | win_rate
+    min_comparisons_per_config: 10   # 最少比较次数（保证排名稳定）
+```
+
+**输出不是分数，而是排名**：
+```yaml
+pairwise_result:
+  rankings:
+    - {config_id: claude-v2-skill-v2, elo: 1250, wins: 8, losses: 2}
+    - {config_id: cursor-agent, elo: 1180, wins: 6, losses: 4}
+    - {config_id: codex-agent, elo: 1070, wins: 3, losses: 7}
+  per_dimension:
+    visual_aesthetics:
+      - {config_id: claude-v2-skill-v2, elo: 1300}
+      - ...
+```
+
+**何时用 Pairwise 而不是 Rubric**：
+- 当你无法定义"5 分是什么样"但能判断"A 比 B 好"时
+- 当评分维度高度主观且专家间分歧大时
+- 当你有 3+ 个 Configuration 需要排名时
+
+##### Mode 5: 人工判断（Human-only）
+
+**适用**: 任何自动化方法都不可靠的任务（高度创意、涉及品味、需要领域深度专业知识）。
+
+```yaml
+scoring:
+  mode: human_only
+  annotation:
+    dimensions:
+      - "整体印象"
+      - "技术实现质量"
+      - "创新性"
+    scale: 1-10
+    require_reasoning: true      # 强制写评分理由
+    min_annotators: 2            # 最少标注人数
+    agreement_check: true        # 检查标注者间一致性
+```
+
+##### 模式选择指南
+
+| 任务类型 | 推荐模式 | 理由 |
+|---------|---------|------|
+| Bug 修复 | Mode 1 + Mode 2 | 测试通过 = 确定性，代码质量 = 锚定 rubric |
+| Feature 开发 | Mode 1 + Mode 2 | 功能正确 = 确定性，设计质量 = 锚定 rubric |
+| 游戏开发 | Mode 3 + Mode 4 | 美观/可玩性 = 校准 rubric，"哪个更好" = pairwise |
+| UI 设计 | Mode 3 + Mode 4 | 视觉质量 = 校准 rubric，设计偏好 = pairwise |
+| 文档撰写 | Mode 2 + Mode 3 | 完整性 = 锚定 rubric，可读性 = 校准 rubric |
+| 架构设计 | Mode 3 + Mode 5 | 设计质量 = 校准 rubric，战略判断 = 人工 |
+| 创意写作 | Mode 4 + Mode 5 | 无客观标准，只能相对比较或人工判断 |
+
+##### 混合模式（一个 Task 可以组合多种模式）
+
+```yaml
+# 游戏开发任务的评分配置
+scoring:
+  layers:
+    # Layer 1: 确定性验证（能跑起来吗）
+    - mode: deterministic
+      validation:
+        commands: ["npm run build", "npm run test"]
+
+    # Layer 2: 锚定 rubric（代码质量）
+    - mode: anchored_rubric
+      axes:
+        - axis: code_quality
+          weight: 1
+          levels: {5: "...", 3: "...", 1: "..."}
+
+    # Layer 3: 校准 rubric（主观质量）
+    - mode: calibrated_rubric
+      axes:
+        - axis: visual_aesthetics
+          weight: 2
+          calibration: {samples: ./calibration/visual/}
+        - axis: gameplay_feel
+          weight: 3
+          calibration: {samples: ./calibration/gameplay/}
+
+    # Layer 4: Pairwise（跨 Configuration 排名）
+    - mode: pairwise
+      dimensions: ["整体体验", "创新性"]
+```
+
+**聚合规则**：
+- Mode 1 是门槛（不通过则整体失败）
+- Mode 2/3 产出绝对分数（可加权聚合）
+- Mode 4 产出相对排名（独立展示，不与绝对分数混合）
+- Mode 5 产出人工标注（作为 ground truth 校准其他模式）
+
+##### 参考来源
+
+| ID | 来源 | 贡献 |
+|----|------|------|
+| [R6] | [QQJ: Quantifying Qualitative Judgment (2026)](https://arxiv.org/abs/2605.17382) | 校准式 rubric：专家标注 → 校准 LLM judge，主观任务对齐人类判断 |
+| [R7] | [DSGBench (2025)](https://letsdatascience.com/news/dsgbench-introduces-a-strategic-game-benchmark-for-llm-agent-3ec6abb2) | 游戏策略评测：5 维度 + 轨迹追踪，超越 win/loss 的多维评分 |
+| [R8] | [Interactive Evaluation Requires a Design Science (2026)](https://hyper.ai/en/papers/2605.17829) | 交互评测范式：轨迹评估器、环境保真度边界、评估器稳定性检验 |
+| [R9] | [LMArena / Chatbot Arena](https://en.wikipedia.org/wiki/LMArena) + [GDPval](https://artificialanalysis.ai/evaluations/gdpval-aa) | Pairwise comparison + Elo 排名：处理无法绝对评分的主观任务 |
+
+#### 4.4.4 多维度 Rubric 体系
 
 论文将评测维度按任务类型精细化。Unicorn 采用 **task-adaptive rubric** `[R2]`：
 根据 task 的 tags/类型自动选择合适的 rubric 模板。
@@ -876,7 +1096,7 @@ axes:
       1: "代码混乱、难以维护"
 ```
 
-#### 4.4.4 Rubric 自动生成与迭代优化
+#### 4.4.5 Rubric 自动生成与迭代优化
 
 论文提出的 rubric 构建方法论，Unicorn 分阶段采纳：
 
@@ -906,7 +1126,7 @@ class RubricGenerator:
 - 去重压缩：合并重叠的 criteria
 - Meta-evaluation：评估 rubric 本身的质量（区分力、一致性）
 
-#### 4.4.5 评分可靠性保障
+#### 4.4.6 评分可靠性保障
 
 论文指出单 judge 评分存在偏见和不一致。Unicorn 采用：
 
@@ -933,7 +1153,7 @@ judge:
 - 评分方差大的 task（单 judge 不稳定）
 - Blind comparison 场景
 
-#### 4.4.6 Rubric 与现有三层评分的关系
+#### 4.4.7 Rubric 与现有三层评分的关系
 
 ```
 Layer 1: Validation（自动验证）
