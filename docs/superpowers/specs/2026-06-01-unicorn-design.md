@@ -2067,15 +2067,23 @@ class SecretRedactor:
 
 本文档各设计决策的来源引用，按领域分类。
 
-### A.1 评分系统 / Rubric 框架
+### A.1 评分系统 / Rubric / 评测框架
 
 | ID | 来源 | 影响的章节 | 贡献 |
 |----|------|-----------|------|
 | [R1] | [The Rules of the Game: A Survey of Rubrics for LLMs (2026)](https://8421bcd.github.io/_pages/Rubrics_Survey.pdf) | §4.4 | 多维度 rubric 体系、task-adaptive rubric、rubric 自动生成路径、过程评测 |
-| [R2] | [Adarubric (2026)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.3 | Task-adaptive rubrics：rubric 应根据 task 类型自动适配 |
+| [R2] | [Adarubric (2026)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.4 | Task-adaptive rubrics：rubric 应根据 task 类型自动适配 |
 | [R3] | [Traject-bench (2025)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.2 | Trajectory-aware benchmark：评估 agent 工具调用轨迹 |
 | [R4] | [SCRIBE (2026)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.2 | 结构化中间层监督（mid-level supervision for tool-using LLMs） |
-| [R5] | Agentic Rubrics (2025) — via Rubrics Survey | §4.4.3 | File Change / Spec Alignment / Integrity / Runtime 四轴评分 |
+| [R5] | Agentic Rubrics (2025) — via Rubrics Survey | §4.4.4 | File Change / Spec Alignment / Integrity / Runtime 四轴评分 |
+| [R6] | [QQJ: Quantifying Qualitative Judgment (2026)](https://arxiv.org/abs/2605.17382) | §4.4.3 Mode 3 | 校准式 rubric：专家标注 → 校准 LLM judge，主观任务对齐人类判断 |
+| [R7] | [DSGBench (2025)](https://letsdatascience.com/news/dsgbench-introduces-a-strategic-game-benchmark-for-llm-agent-3ec6abb2) | §4.4.3 | 游戏策略评测：5 维度 + 轨迹追踪，超越 win/loss 的多维评分 |
+| [R8] | [Interactive Evaluation Requires a Design Science (2026)](https://hyper.ai/en/papers/2605.17829) | §4.4.3 | 交互评测范式：轨迹评估器、环境保真度边界、评估器稳定性检验 |
+| [R9] | [LMArena / Chatbot Arena](https://en.wikipedia.org/wiki/LMArena) + [GDPval](https://artificialanalysis.ai/evaluations/gdpval-aa) | §4.4.3 Mode 4 | Pairwise comparison + Elo 排名：处理无法绝对评分的主观任务 |
+| [E1] | Skill Creator（内部产品） | §1, §4.3 | Blind comparison、comparator 模式、expectations 驱动评分 |
+| [E2] | [SWE-bench](https://www.swebench.com/) | §10 | Docker-based 可复现评测环境、coding agent 标准 benchmark |
+| [E3] | [DeepEval](https://github.com/confident-ai/deepeval) | §14 | Custom metric 框架、LLM-as-judge 集成 |
+| [E4] | [Inspect AI (UK AISI)](https://github.com/UKGovernmentBEIS/inspect_ai) | §全局 | 见 A.8 详细分析 |
 
 ### A.2 沙箱 / 隔离架构
 
@@ -2119,14 +2127,43 @@ class SecretRedactor:
 | [SEC4] | [Sysdig: First LLM-Agent Intrusion in the Wild (2026)](https://www.techtimes.com/articles/317423/20260530/ai-vs-ai-cybersecurity-sysdig-documents-first-llm-agent-intrusion-wild.htm) | §12.2 T12 | AI 对 AI 攻击已进入实战 |
 | [SEC5] | [NVIDIA OpenShell: Secure Autonomous AI Agents](https://blogs.nvidia.com/blog/secure-autonomous-ai-agents-openshell/) | §12.3 | 策略与执行分离、基础设施层执行安全策略 |
 
-### A.6 评测框架 / 行业实践
+### A.6 Inspect AI 详细定位分析
 
-| ID | 来源 | 影响的章节 | 贡献 |
-|----|------|-----------|------|
-| [E1] | Skill Creator（内部产品） | §1, §4.3 | Blind comparison、comparator 模式、expectations 驱动评分 |
-| [E2] | [SWE-bench](https://www.swebench.com/) | §10 | Docker-based 可复现评测环境、coding agent 标准 benchmark |
-| [E3] | [DeepEval](https://github.com/confident-ai/deepeval) | §14 | Custom metric 框架、LLM-as-judge 集成 |
-| [E4] | [Inspect (METR)](https://hawk.metr.org/) | §4 | Agent evaluation 框架，多维度评分 |
+Inspect AI（UK AISI 开发，MIT 协议，[GitHub](https://github.com/UKGovernmentBEIS/inspect_ai)）
+与 micro-eval 目标高度重叠，但定位不同。
+
+**为什么不直接用 Inspect？**
+
+| 维度 | Inspect | micro-eval/Unicorn |
+|------|---------|-------------------|
+| 定位 | Benchmark 框架（学术/安全评测） | 团队评测工作台（产品） |
+| 用户画像 | 研究员写 Python 代码定义 eval | 开发者用 YAML + Web UI |
+| Agent 协议 | 进程内调用（LangChain/SDK 耦合） | 黑盒 subprocess（任何可执行程序） |
+| 对比能力 | 多模型跑同一 task | 矩阵对比（Agent × Skill × Env × Params） |
+| Skill 概念 | 无 | 核心概念（版本化 + 挂载） |
+| 人工标注 | 无 | 内建（Web UI review + annotate） |
+| 上手时间 | 需要写 Python 代码 | `micro-eval init` + YAML，10 分钟 |
+
+**Inspect 做得好的（应借鉴）**：
+1. `@task`/`@solver`/`@scorer` 装饰器模式（声明即注册）
+2. Per-sample 沙箱隔离（每个 sample 独立容器）
+3. `eval_set()` + 断点续传（大规模评测的断点恢复）
+4. Epochs + Reducer（pass@k, at_least 聚合）
+5. Agent Bridge（拦截 SDK 调用评测第三方 agent）
+6. DataFrame 分析层（`evals_df()`/`samples_df()` 直出 Pandas）
+7. EvalLog 分层读取（header_only / sample_summaries / 流式）
+8. 静态 bundle 发布（`inspect view bundle` 打包为无服务器站点）
+
+**Inspect 不做的（Unicorn 差异化）**：
+1. 无 Skill/Prompt 版本管理
+2. 无 Web UI 内标注/复盘流
+3. 无 side-by-side diff 对比可视化
+4. 无业务影响分层（business_impact_tier）
+5. 无成本优化分析（花 2x 预算只提升 5% 值不值？）
+6. 非开发者友好（不是"10 分钟上手"的产品体验）
+7. 无在线观测集成（Langfuse/LangSmith TraceProvider）
+
+**策略**：Phase 1 自建核心验证产品假设，Phase 2+ 评估将 Inspect 作为可选执行后端。
 
 ### A.7 Configuration 矩阵 / 实验设计
 
