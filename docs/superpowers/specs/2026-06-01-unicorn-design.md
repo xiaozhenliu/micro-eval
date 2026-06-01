@@ -26,48 +26,141 @@
 1. **环境即输入**：agent 的输入不只是文本，而是 task description + workspace state
 2. **断言式评分**：用 expectations（可验证断言）取代 expected_output（精确匹配）
 3. **三层评分递进**：validation → grading → annotation
-4. **N-way 对比**：不限于 2 个 agent，支持任意数量的 EvalTarget 对比
+4. **矩阵对比**：结果空间是 Tasks × Configurations（Agent × Skill × Environment × Params × Repetitions）
 5. **Workspace 抽象**：执行环境是独立概念，为沙盒扩展预留
 6. **Skill 是一等公民**：既能单独测 Skill，也能集成测（Skill 挂载到 Agent 上）
+7. **Provider 可插拔**：Workspace、Trace、Scorer 均为 Provider 接口，第三方可注册扩展
 
 ---
 
 ## 3. 领域模型
 
-### 3.1 EvalTarget（被评测对象）
+### 3.1 Configuration（评测配置 — 核心概念）
 
-被评测的东西。三种类型，统一接口。
+一个 Configuration 是结果矩阵的"列"——描述一个完整的被评测实体及其运行条件。
 
 ```yaml
-# Agent：完整的可执行程序
-- type: agent
-  name: claude-code-v2
-  command: "claude -p --output-file {output_dir}/result.txt"
-  input_mode: stdin | file | arg
-  output_mode: stdout | file | directory
-  timeout_s: 300
-  env: {ANTHROPIC_API_KEY: "..."}
-  workspace_needs: git_repo  # 需要什么类型的 workspace
+# Configuration = Agent × Skill(optional) × Environment × Params
+configurations:
+  - id: claude-v2-skill-v1-local
+    agent:
+      name: claude-code-v2
+      command: "claude -p --output-file {output_dir}/result.txt"
+      input_mode: stdin
+      output_mode: file
+      env: {ANTHROPIC_API_KEY: "..."}
+    skill:                          # 可选：挂载的 Skill
+      path: ./skills/frontend-design/
+      version: "1.0"
+    environment:                    # 运行环境
+      type: worktree
+      resource_limits: {timeout_s: 300}
+    params:                         # 可调参数
+      max_turns: 10
+      temperature: 0
+    repetitions: 3                  # 重复次数（观察方差）
 
-# Skill：挂载到 host agent 上的能力单元
-- type: skill
-  name: frontend-design-v2
-  skill_path: ./skills/frontend-design/
-  host_agent: claude-code  # 挂载到哪个 agent
-  version: "2.1"
+  - id: claude-v2-skill-v2-local
+    agent:
+      name: claude-code-v2
+      command: "claude -p --output-file {output_dir}/result.txt"
+      input_mode: stdin
+      output_mode: file
+      env: {ANTHROPIC_API_KEY: "..."}
+    skill:
+      path: ./skills/frontend-design/
+      version: "2.0"
+    environment:
+      type: worktree
+      resource_limits: {timeout_s: 300}
+    params:
+      max_turns: 10
+      temperature: 0
+    repetitions: 3
+```
 
-# Workflow：编排式管线
-- type: workflow
-  name: langgraph-router-v2
-  entrypoint: "python agents/router_v2.py"
-  config: ./configs/router-v2.yaml
-  output_mode: directory
+**笛卡尔积展开（可选语法糖）**：
+
+当你想测试多个维度的组合时，不需要手动列举每一个 Configuration：
+
+```yaml
+# 声明式矩阵：系统自动展开为 3 × 2 × 2 = 12 个 Configuration
+matrix:
+  agents:
+    - {name: claude-code, command: "claude -p ...", ...}
+    - {name: cursor-agent, command: "cursor-agent ...", ...}
+    - {name: codex, command: "codex ...", ...}
+  skills:
+    - {path: ./skills/frontend-design/, version: "1.0"}
+    - {path: ./skills/frontend-design/, version: "2.0"}
+  environments:
+    - {type: worktree, resource_limits: {timeout_s: 300}}
+    - {type: docker, image: "node:20", resource_limits: {timeout_s: 300, memory_mb: 4096}}
+  params:
+    - {max_turns: 10, temperature: 0}  # 只用一组参数时退化为单值
+  repetitions: 3
+```
+
+展开规则：
+- 所有维度做笛卡尔积
+- `skill` 维度可以包含 `null`（表示不挂载 skill）
+- 每个组合重复 `repetitions` 次
+
+#### Configuration 的组成维度
+
+| 维度 | 含义 | 示例 |
+|------|------|------|
+| Agent | 被评测的完整程序 | claude-code, cursor, codex |
+| Skill | 挂载到 agent 的能力单元（可选） | frontend-design v1/v2, null |
+| Environment | 执行环境 | worktree, docker, remote sandbox |
+| Params | 可调参数 | temperature, max_turns, token_budget |
+| Repetitions | 重复次数 | 3（用于统计显著性） |
+
+### 3.2 AgentSpec / SkillSpec / WorkflowSpec（组件定义）
+
+Configuration 中的 `agent` 字段引用一个 AgentSpec：
+
+```yaml
+# agents.yaml 或 eval.yaml 内联
+agents:
+  claude-code-v2:
+    type: command
+    command: "claude -p --output-file {output_dir}/result.txt"
+    input_mode: stdin | file | arg
+    output_mode: stdout | file | directory
+    timeout_s: 300
+    env: {ANTHROPIC_API_KEY: "..."}
+
+  cursor-agent:
+    type: command
+    command: "cursor-agent --task {input_file} --output {output_dir}"
+    input_mode: file
+    output_mode: directory
+    timeout_s: 600
+
+  langgraph-v2:
+    type: workflow
+    entrypoint: "python agents/router_v2.py"
+    config: ./configs/router-v2.yaml
+    output_mode: directory
+```
+
+SkillSpec：
+
+```yaml
+skills:
+  frontend-design-v1:
+    path: ./skills/frontend-design/
+    version: "1.0"
+  frontend-design-v2:
+    path: ./skills/frontend-design-v2/
+    version: "2.0"
 ```
 
 **关键设计**：
 - Agent 是"黑盒"——只关心 command + 输入输出协议
-- Skill 必须指定 host_agent——因为 Skill 不能独立运行
-- Workflow 是带配置的可执行脚本
+- Skill 必须挂载到 Agent 上——不能独立运行
+- Workflow 是带配置的可执行脚本（Agent 的子类型）
 
 ### 3.2 Task（评测任务）
 
@@ -199,53 +292,95 @@ class WorkspaceProvider(Protocol):
 
 ### 3.4 Run（评测执行）
 
+一个 Run 的本质是 **Tasks × Configurations × Repetitions → ResultMatrix**。
+
 ```yaml
 id: run-20260601-143022
 timestamp: "2026-06-01T14:30:22Z"
 status: completed  # pending | running | completed | failed | cancelled
 
-# 被对比的目标（支持 N 个）
-targets:
-  - {type: agent, name: claude-code-v1, ...}
-  - {type: agent, name: claude-code-v2, ...}
-  - {type: skill, name: frontend-design-v2, host_agent: claude-code, ...}
+# 配置集（矩阵的"列"）
+configurations:
+  - id: claude-v2-skill-v1
+    agent: claude-code-v2
+    skill: frontend-design-v1
+    environment: {type: worktree}
+    params: {max_turns: 10}
+  - id: claude-v2-skill-v2
+    agent: claude-code-v2
+    skill: frontend-design-v2
+    environment: {type: worktree}
+    params: {max_turns: 10}
+  - id: cursor-no-skill
+    agent: cursor-agent
+    skill: null
+    environment: {type: docker, image: "node:20"}
+    params: {max_turns: 20}
 
-# 任务集
+# 或者用矩阵声明（系统自动展开）
+# matrix:
+#   agents: [claude-code-v2, cursor-agent]
+#   skills: [frontend-design-v1, frontend-design-v2, null]
+#   environments: [{type: worktree}, {type: docker}]
+#   params: [{max_turns: 10}]
+#   repetitions: 3
+
+# 任务集（矩阵的"行"）
 task_set:
-  source: ./tasks/           # 目录或显式列表
+  source: ./tasks/
   filter:
-    tags: [bug-fix]          # 可选过滤
-    ids: [fix-auth, fix-nav] # 可选指定
+    tags: [bug-fix]
+    ids: [fix-auth, fix-nav]
 
 # 执行配置
 execution:
-  mode: parallel             # parallel | sequential | round_robin
+  mode: parallel
   max_concurrent: 4
-  randomize_order: true      # 避免顺序效应
+  randomize_order: true
+  repetitions: 3              # 每个 (task, config) 跑几次
 
 # 环境快照
-environment:
+snapshot:
   git_commit: abc123
   config_hash: sha256:...
-  python_version: "3.11.9"
   timestamp: "2026-06-01T14:30:22Z"
 ```
 
-### 3.5 RunResult（单个 task × target 的结果）
+**结果矩阵的形状**：
+
+```
+              Config-A    Config-B    Config-C
+Task-1 rep1   [result]    [result]    [result]
+Task-1 rep2   [result]    [result]    [result]
+Task-1 rep3   [result]    [result]    [result]
+Task-2 rep1   [result]    [result]    [result]
+...
+```
+
+聚合时可按任意维度 group by：
+- 按 agent 聚合 → 对比不同 agent 的整体表现
+- 按 skill 聚合 → 对比 skill 版本的效果差异
+- 按 environment 聚合 → 对比环境对结果的影响
+- 按 task tag 聚合 → 对比不同任务类型的表现
+
+### 3.5 RunResult（单个 cell 的结果）
+
+一个 RunResult 对应矩阵中的一个 cell：`(task_id, config_id, repetition)`。
 
 ```yaml
 task_id: fix-auth-redirect
-target_id: claude-code-v2
+config_id: claude-v2-skill-v2
+repetition: 1
 status: completed
 
 # 产出物
 artifacts:
   - type: diff
-    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-code-v2/changes.patch
+    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-v2-skill-v2/rep-1/changes.patch
   - type: file
-    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-code-v2/output.txt
+    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-v2-skill-v2/rep-1/output.txt
   - type: directory
-    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-code-v2/workspace/
+    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-v2-skill-v2/rep-1/workspace/
 
 # 执行指标
 metrics:
@@ -755,8 +890,9 @@ Agent 执行前，micro-eval 通过环境变量注入关联 ID：
 
 ```python
 env_inject = {
-    "MICRO_EVAL_TRACE_ID": f"{run_id}--{task_id}--{target_id}",
+    "MICRO_EVAL_TRACE_ID": f"{run_id}--{task_id}--{config_id}--rep{repetition}",
     "MICRO_EVAL_RUN_ID": run_id,
+    "MICRO_EVAL_CONFIG_ID": config_id,
 }
 ```
 
@@ -859,16 +995,19 @@ Agent 执行 → TraceProvider.collect() → TraceData
 ```bash
 # 核心命令
 micro-eval init                          # 生成 eval.yaml + tasks/ 模板
-micro-eval run [--config eval.yaml]      # 执行评测
-micro-eval run --targets a,b --tasks t1  # 指定 target 和 task
+micro-eval run [--config eval.yaml]      # 执行评测（全矩阵）
+micro-eval run --configs a,b --tasks t1  # 指定 configuration 和 task
+micro-eval run --matrix                  # 展开矩阵声明并执行
 micro-eval grade <run-id>                # 对已有 run 补充 LLM 评分
 micro-eval compare <run-id-1> <run-id-2> # 跨 run 对比
 micro-eval report <run-id>               # 生成 HTML 报告
+micro-eval report <run-id> --group-by agent   # 按维度聚合报告
 
 # 辅助命令
 micro-eval doctor                        # 检查环境依赖
 micro-eval list runs                     # 列出历史 run
 micro-eval list tasks                    # 列出可用 task
+micro-eval list configs                  # 列出已定义的 configuration
 micro-eval show <run-id>                 # 终端中查看 run 结果
 micro-eval ui                            # 启动 Web UI
 ```
@@ -881,7 +1020,7 @@ micro-eval ui                            # 启动 Web UI
 
 ```
 project-root/
-├── eval.yaml                    # 项目配置（targets + 执行参数）
+├── eval.yaml                    # 项目配置（configurations + 执行参数）
 ├── tasks/
 │   ├── fix-auth-redirect.yaml   # 单个 task
 │   ├── add-search-api.yaml
@@ -895,20 +1034,26 @@ project-root/
 └── .micro-eval/
     ├── runs/
     │   └── run-20260601-143022/
-    │       ├── manifest.json    # Run 元数据
+    │       ├── manifest.json    # Run 元数据（configurations, tasks, matrix）
     │       ├── results/
-    │       │   ├── fix-auth--claude-v1.json
-    │       │   └── fix-auth--claude-v2.json
-    │       └── artifacts/
-    │           ├── fix-auth--claude-v1/
-    │           │   ├── changes.patch
-    │           │   └── stdout.txt
-    │           └── fix-auth--claude-v2/
-    │               ├── changes.patch
-    │               └── stdout.txt
+    │       │   ├── fix-auth--claude-v2-skill-v1--rep1.json
+    │       │   ├── fix-auth--claude-v2-skill-v1--rep2.json
+    │       │   ├── fix-auth--claude-v2-skill-v2--rep1.json
+    │       │   └── fix-auth--cursor-no-skill--rep1.json
+    │       ├── artifacts/
+    │       │   ├── fix-auth--claude-v2-skill-v1--rep1/
+    │       │   │   ├── changes.patch
+    │       │   │   ├── stdout.txt
+    │       │   │   └── trace.json
+    │       │   └── fix-auth--claude-v2-skill-v2--rep1/
+    │       │       └── ...
+    │       └── aggregations/    # 按维度聚合的统计
+    │           ├── by-agent.json
+    │           ├── by-skill.json
+    │           └── by-environment.json
     ├── annotations/             # 人工标注（持久化）
     │   └── run-20260601-143022.json
-    └── config.json              # 全局配置（judge model 等）
+    └── config.json              # 全局配置（judge model, providers 等）
 ```
 
 ### 7.2 存储策略
@@ -1024,11 +1169,11 @@ class WorkspaceProvider(Protocol):
 
 ### 11.2 重写
 
-- **领域模型**：从 baseline/candidate 二元 → N-way EvalTarget
+- **领域模型**：从 baseline/candidate 二元 → Configuration 矩阵（Agent × Skill × Environment × Params × Repetitions）
 - **Task 模型**：从 input_payload + expected_output → prompt + workspace + expectations
-- **评分引擎**：从精确匹配 → validation + LLM judge + annotation 三层
-- **执行引擎**：从硬编码 subprocess → AgentExecutor + SkillExecutor + WorkspaceProvider
-- **Web UI 数据层**：从读 flat JSON → 读结构化 run 目录
+- **评分引擎**：从精确匹配 → validation + LLM judge（task-adaptive rubric）+ annotation 三层
+- **执行引擎**：从硬编码 subprocess → AgentExecutor + SkillExecutor + WorkspaceProvider + TraceProvider
+- **Web UI 数据层**：从读 flat JSON → 读结构化 run 目录 + 多维度聚合
 
 ### 11.3 新增
 
