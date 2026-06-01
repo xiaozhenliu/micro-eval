@@ -228,65 +228,317 @@ scoring:
 | 文档撰写 | files | "覆盖所有章节" "无事实错误" | 无（LLM judge） |
 | Skill 测试 | git_repo | "Skill 被正确触发" "产出符合预期" | 自定义脚本 |
 
-### 3.3 WorkspaceSpec（执行环境）
+### 3.3 WorkspaceSpec（执行环境与沙箱）
 
-执行环境的抽象层。当前实现 worktree，未来扩展 Docker/远程沙盒。
+#### 设计背景
+
+Agent 评测需要隔离，但隔离级别应匹配实际风险：
+
+| 风险场景 | 需要什么 | 不需要什么 |
+|---------|---------|-----------|
+| 自己的 agent 互相踩踏 | 文件系统隔离 | 内核级隔离 |
+| Agent 意外修改宿主机 | 限制写入范围 | 完整容器 |
+| 不可信第三方 agent | 内核级隔离 + 网络限制 | — |
+| CI/远程评测 | 完全隔离 + 可复现 | — |
+
+**业界现状（2026）**：
+- OpenHands V1：本地默认无容器（subprocess），生产才用 Docker
+- Claude Code：内置 git worktree + seatbelt 沙箱（macOS）
+- SWE-bench：Docker（因为需要完全可复现）
+- iso-code/agentree/ccswarm：git worktree 已成为 agent 隔离的事实标准
+
+#### 三层沙箱模型
+
+```
+Level 0: Git Worktree（文件隔离）
+  → 零开销，agent 之间互不干扰
+  → 不防止 agent 访问 worktree 外的文件
+
+Level 1: Process Sandbox（进程级限制）
+  → seatbelt (macOS) / bubblewrap (Linux)
+  → 限制文件访问范围 + 可选网络限制
+  → 启动开销 ~0ms
+
+Level 2: Container / microVM（完全隔离）
+  → E2B (Firecracker microVM) / Modal / Docker
+  → 内核级隔离，适合不可信代码
+  → 启动开销 <1s (E2B) ~ 3s (Docker)
+```
+
+#### WorkspaceSpec 定义
 
 ```yaml
-# 类型 1：Git repo（最常见）
 workspace:
-  type: git_repo
+  # === 文件来源 ===
   source:
+    type: git_repo | files | blank
+    # git_repo 选项
     repo: ./fixtures/my-app       # 本地路径或 URL
     commit: abc123                 # 可选，默认 HEAD
     branch: main                  # 可选
-  setup_commands:
-    - npm install
-  resource_limits:
-    timeout_s: 300
-    memory_mb: 4096               # 未来 Docker 用
-    cpu_cores: 2                  # 未来 Docker 用
-  cleanup: auto
-
-# 类型 2：文件集合（文档撰写等）
-workspace:
-  type: files
-  source:
+    # files 选项
     paths:
       - ./fixtures/context-docs/
       - ./fixtures/reference.md
-  resource_limits:
-    timeout_s: 120
 
-# 类型 3：空白（从头创建）
-workspace:
-  type: blank
-  resource_limits:
-    timeout_s: 600
+  # === 隔离级别 ===
+  isolation:
+    level: worktree | sandbox | container | remote
+    # 各级别的详细配置见下方
 
-# 类型 4：Docker（未来）
-workspace:
-  type: docker
-  image: node:20-slim
-  source:
-    repo: ./fixtures/my-app
-    commit: abc123
+  # === 环境准备 ===
   setup_commands:
     - npm install
-  resource_limits:
+    - pip install -r requirements.txt
+
+  # === 资源限制 ===
+  limits:
     timeout_s: 300
-    memory_mb: 8192
-    cpu_cores: 4
-  network: none                   # 网络隔离
+    max_output_mb: 100            # 防止 agent 产出过大文件
+    # Level 1+ 可用
+    memory_mb: 4096
+    cpu_cores: 2
+    # Level 1+ 可用
+    network: allow_list | none | unrestricted
+    network_allow:                # 当 network: allow_list 时
+      - "api.anthropic.com"
+      - "api.openai.com"
+
+  # === 清理策略 ===
+  cleanup: auto | manual | on_success
 ```
 
-**Provider 接口**（内部实现）：
+#### Level 0: Git Worktree（默认，Phase 1）
+
+最轻量的隔离。每个 (task, config, repetition) 在独立的 git worktree 中运行。
+
+```yaml
+isolation:
+  level: worktree
+  # worktree 特有选项
+  base_ref: HEAD                  # worktree 基于哪个 commit
+  keep_on_failure: true           # 失败时保留 worktree 供调试
+  collect_diff: true              # 执行后自动收集 git diff
+```
+
+**实现**（参考 iso-code 的安全检查）：
+```python
+class GitWorktreeProvider:
+    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle:
+        # 1. 创建 worktree
+        worktree_path = f".micro-eval/workspaces/{run_id}/{config_id}/rep-{rep}"
+        await run(f"git worktree add {worktree_path} {spec.source.commit}")
+        # 2. 运行 setup commands
+        for cmd in spec.setup_commands:
+            await run(cmd, cwd=worktree_path)
+        return WorkspaceHandle(path=worktree_path, type="worktree")
+
+    async def collect_artifacts(self, handle) -> list[Artifact]:
+        # 收集 git diff 作为主要 artifact
+        diff = await run("git diff", cwd=handle.path)
+        return [Artifact(type="diff", content=diff)]
+
+    async def cleanup(self, handle) -> None:
+        await run(f"git worktree remove {handle.path} --force")
+```
+
+**优势**：零依赖、零启动开销、跨平台、与 git 生态天然集成
+**局限**：不防止 agent 读写 worktree 外的文件、不限制网络
+
+#### Level 1: Process Sandbox（Phase 2）
+
+在 worktree 基础上加进程级限制。**启动开销为零**。
+
+**macOS（seatbelt）**：
+```yaml
+isolation:
+  level: sandbox
+  sandbox_profile: coding_agent   # 预置 profile 名称
+```
+
+预置 profile 示例：
+```scheme
+;; .micro-eval/sandbox-profiles/coding_agent.sb
+(version 1)
+(deny default)
+;; 允许读写 worktree 目录
+(allow file-read* file-write*
+  (subpath "${WORKSPACE_PATH}"))
+;; 允许读系统库和工具链
+(allow file-read*
+  (subpath "/usr/lib")
+  (subpath "/usr/bin")
+  (subpath "/opt/homebrew"))
+;; 允许执行
+(allow process-exec)
+;; 网络：只允许访问 LLM provider
+(allow network-outbound
+  (remote tcp "api.anthropic.com:443")
+  (remote tcp "api.openai.com:443"))
+;; 禁止其他网络
+(deny network*)
+```
+
+**Linux（bubblewrap）**：
+```yaml
+isolation:
+  level: sandbox
+  sandbox_backend: bwrap          # bubblewrap
+```
+
+等效实现：
+```bash
+bwrap \
+  --ro-bind /usr /usr \
+  --ro-bind /bin /bin \
+  --ro-bind /lib /lib \
+  --bind ${WORKSPACE_PATH} ${WORKSPACE_PATH} \
+  --tmpfs /tmp \
+  --unshare-net \                 # 网络隔离（可选）
+  --die-with-parent \
+  -- ${AGENT_COMMAND}
+```
+
+**Provider 实现**：
+```python
+class ProcessSandboxProvider:
+    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle:
+        # 1. 先创建 worktree（复用 Level 0）
+        handle = await GitWorktreeProvider().create(spec)
+        # 2. 生成 sandbox wrapper
+        handle.command_prefix = self.build_sandbox_prefix(
+            workspace_path=handle.path,
+            network=spec.limits.network,
+            network_allow=spec.limits.network_allow,
+        )
+        return handle
+
+    def build_sandbox_prefix(self, workspace_path, network, network_allow):
+        if sys.platform == "darwin":
+            profile = self.render_seatbelt_profile(workspace_path, network_allow)
+            return f"sandbox-exec -f {profile}"
+        elif sys.platform == "linux":
+            return self.build_bwrap_command(workspace_path, network)
+        else:
+            # Windows: 降级为无沙箱
+            return ""
+```
+
+**优势**：零启动开销、限制文件访问范围、可选网络隔离
+**局限**：macOS seatbelt 已 deprecated（仍可用）、不防内核漏洞
+
+#### Level 2: Container（Phase 3 可选）
+
+当需要完全隔离时（不可信 agent、CI 环境）。**不推荐作为默认**。
+
+```yaml
+isolation:
+  level: container
+  backend: e2b | modal | docker   # 选择后端
+  # E2B 选项
+  e2b:
+    template: "base"              # 或自定义 template
+    timeout_s: 300
+  # Modal 选项
+  modal:
+    image: "python:3.11-slim"
+    gpu: false
+  # Docker 选项（最重，不推荐）
+  docker:
+    image: "node:20-slim"
+    network: none
+```
+
+**推荐优先级**：E2B（<1s 启动，Firecracker microVM）> Modal（按需付费）> Docker（本地重量级）
+
+**Provider 实现**（E2B 示例）：
+```python
+class E2BProvider:
+    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle:
+        sandbox = await Sandbox.create(
+            template=spec.isolation.e2b.template,
+            timeout=spec.limits.timeout_s,
+            envs=self.inject_secrets(spec),
+        )
+        # 上传 workspace 文件
+        if spec.source.type == "git_repo":
+            await sandbox.commands.run(f"git clone {spec.source.repo} /workspace")
+            await sandbox.commands.run(f"git checkout {spec.source.commit}", cwd="/workspace")
+        # 运行 setup
+        for cmd in spec.setup_commands:
+            await sandbox.commands.run(cmd, cwd="/workspace")
+        return WorkspaceHandle(path="/workspace", type="e2b", sandbox=sandbox)
+
+    async def cleanup(self, handle) -> None:
+        await handle.sandbox.kill()
+```
+
+#### Level 3: Remote Sandbox（Phase 3+）
+
+托管式远程执行，适合 CI 集成和大规模并行评测。
+
+```yaml
+isolation:
+  level: remote
+  provider: e2b | modal | daytona
+  # Daytona（OpenHands 集成）
+  daytona:
+    workspace_class: "standard"
+    region: "us-east-1"
+```
+
+#### Provider 接口（统一）
+
+所有级别实现同一接口：
+
 ```python
 class WorkspaceProvider(Protocol):
-    def create(self, spec: WorkspaceSpec) -> WorkspaceHandle: ...
-    def collect_artifacts(self, handle: WorkspaceHandle) -> list[Artifact]: ...
-    def cleanup(self, handle: WorkspaceHandle) -> None: ...
+    name: str  # "worktree", "sandbox", "e2b", "docker", ...
+
+    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle: ...
+    async def exec_command(self, handle: WorkspaceHandle, cmd: str,
+                           env: dict | None = None) -> CommandResult: ...
+    async def collect_artifacts(self, handle: WorkspaceHandle) -> list[Artifact]: ...
+    async def collect_diff(self, handle: WorkspaceHandle) -> str | None: ...
+    async def cleanup(self, handle: WorkspaceHandle) -> None: ...
+
+@dataclass
+class WorkspaceHandle:
+    path: str
+    type: str
+    command_prefix: str = ""      # sandbox wrapper（Level 1）
+    sandbox: Any = None           # remote sandbox instance（Level 2+）
+
+@dataclass
+class CommandResult:
+    exit_code: int
+    stdout: str
+    stderr: str
+    duration_s: float
+    timed_out: bool
 ```
+
+#### 分阶段实现路径
+
+| Phase | 实现 | 隔离级别 | 启动开销 | 适用场景 |
+|-------|------|---------|---------|---------|
+| 1 | GitWorktreeProvider | Level 0 | 0ms | 自己的 agent，本地开发 |
+| 2 | ProcessSandboxProvider | Level 1 | 0ms | 防意外破坏，限制网络 |
+| 3 | E2BProvider / ModalProvider | Level 2 | <1s | 不可信 agent，CI |
+| 3+ | DaytonaProvider | Level 3 | ~90ms | 大规模并行，远程 |
+
+**Phase 1 不实现 Docker**。Docker 启动慢（1-3s）、需要 daemon、对 macOS 开发者体验差。
+如果需要容器级隔离，直接跳到 E2B/Modal（更快、更轻、按需付费）。
+
+#### 第三方 Provider 注册
+
+```toml
+# pyproject.toml
+[project.entry-points."micro_eval.workspace_providers"]
+my_k8s = "my_package:K8sWorkspaceProvider"
+```
+
+
 
 当前只实现 `GitWorktreeProvider` 和 `FilesProvider`，未来加 `DockerProvider`。
 
@@ -1108,52 +1360,55 @@ project-root/
 
 ## 10. 沙盒扩展路径
 
-### 10.1 当前（Phase 1）
+WorkspaceSpec（3.3 节）已详细定义了四层隔离模型和 Provider 接口。
+本节补充**决策依据和演进策略**。
 
-```python
-class GitWorktreeProvider:
-    """零依赖，本地秒开。适合大部分 coding agent 评测。"""
-    def create(self, spec) -> WorkspaceHandle: ...
+### 10.1 为什么不用 Docker 作为默认
 
-class FilesProvider:
-    """复制文件到临时目录。适合文档撰写等场景。"""
-    def create(self, spec) -> WorkspaceHandle: ...
+| 问题 | 影响 |
+|------|------|
+| 启动慢（1-3s per container） | 10 task × 3 config × 3 rep = 90 次启动 → 额外 90-270s |
+| 需要 Docker daemon | macOS 开发者需装 Docker Desktop（重量级） |
+| 资源占用 | 每个容器占内存，并行时压力大 |
+| 对我们的场景过度 | 跑的是自己的 agent，不是不可信代码 |
+
+**替代方案对比**（来自调研）：
+
+| 方案 | 启动 | 隔离级别 | 平台 | 适合 |
+|------|------|---------|------|------|
+| git worktree | 0ms | 文件隔离 | 全平台 | 自己的 agent |
+| seatbelt (macOS) | 0ms | 进程级 | macOS | 防意外破坏 |
+| bubblewrap (Linux) | 0ms | namespace | Linux | 防意外破坏 |
+| E2B (Firecracker) | <1s | microVM | 云端 | 不可信代码 |
+| Modal | <1s | 容器 | 云端 | 大规模并行 |
+| Daytona | ~90ms | 容器 | 云端 | OpenHands 集成 |
+
+### 10.2 演进路径
+
+```
+Phase 1（现在）: GitWorktreeProvider
+  → 零开销，覆盖 90% 场景
+  → 可选 ProcessSandboxProvider（seatbelt/bwrap）
+
+Phase 2: ProcessSandboxProvider 成熟
+  → 网络白名单（只允许 LLM provider）
+  → ulimit 资源限制
+  → secret redaction 集成
+
+Phase 3: 远程 Provider（按需）
+  → E2BProvider（不可信 agent）
+  → ModalProvider（大规模并行评测）
+  → DaytonaProvider（OpenHands 集成）
 ```
 
-### 10.2 未来（Phase 2+）
+**跳过 Docker**：如果需要容器级隔离，直接用 E2B/Modal（更快、更轻、按需付费）。
 
-```python
-class DockerProvider:
-    """Docker container 隔离。支持 resource limits、网络隔离。"""
-    def create(self, spec) -> WorkspaceHandle: ...
+### 10.3 参考实现
 
-class RemoteSandboxProvider:
-    """远程沙盒（E2B、OpenHands 等）。完全隔离。"""
-    def create(self, spec) -> WorkspaceHandle: ...
-```
-
-**Provider 注册机制**：
-```yaml
-# .micro-eval/config.json
-workspace_providers:
-  git_repo: builtin.git_worktree
-  docker: builtin.docker        # 需要 Docker 安装
-  remote: plugins.e2b           # 第三方插件
-```
-
-### 10.3 接口契约
-
-所有 Provider 实现同一接口：
-```python
-class WorkspaceProvider(Protocol):
-    def create(self, spec: WorkspaceSpec) -> WorkspaceHandle: ...
-    def exec_command(self, handle, cmd: str) -> CommandResult: ...
-    def collect_artifacts(self, handle) -> list[Artifact]: ...
-    def collect_diff(self, handle) -> Optional[str]: ...
-    def cleanup(self, handle) -> None: ...
-```
-
-新增 Provider 不影响上层任何代码。
+- [iso-code](https://isocode.dev/)：生产级 git worktree 隔离，含崩溃安全和端口租约
+- [agent-seatbelt-sandbox](https://github.com/michaelneale/agent-seatbelt-sandbox)：Claude Code 使用的 seatbelt 方案
+- [E2B](https://github.com/e2b-dev/e2b)：Firecracker microVM，<1s 启动
+- [OpenHands V1](https://arxiv.org/html/2511.03690v2)：本地无容器 + 生产 Docker 的混合模式
 
 ---
 
