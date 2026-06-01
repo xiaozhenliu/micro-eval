@@ -23,12 +23,12 @@
 
 ## 2. 设计原则
 
-1. **环境即输入**：agent 的输入不只是文本，而是 task description + workspace state
-2. **断言式评分**：用 expectations（可验证断言）取代 expected_output（精确匹配）
-3. **三层评分递进**：validation → grading → annotation
-4. **矩阵对比**：结果空间是 Tasks × Configurations（Agent × Skill × Environment × Params × Repetitions）
-5. **Workspace 抽象**：执行环境是独立概念，为沙盒扩展预留
-6. **Skill 是一等公民**：既能单独测 Skill，也能集成测（Skill 挂载到 Agent 上）
+1. **环境即输入**：agent 的输入不只是文本，而是 task description + workspace state `[E1]`
+2. **断言式评分**：用 expectations（可验证断言）取代 expected_output（精确匹配） `[E1]`
+3. **三层评分递进**：validation → grading → annotation `[R1]`
+4. **矩阵对比**：结果空间是 Tasks × Configurations（Agent × Skill × Environment × Params × Repetitions） `[M1][M2][M3]`
+5. **Workspace 抽象**：执行环境是独立概念，为沙盒扩展预留 `[S1-S11]`
+6. **Skill 是一等公民**：既能单独测 Skill，也能集成测（Skill 挂载到 Agent 上） `[E1]`
 7. **Provider 可插拔**：Workspace、Trace、Scorer 均为 Provider 接口，第三方可注册扩展
 
 ---
@@ -232,8 +232,8 @@ scoring:
 
 #### 3.3.1 沙箱分类框架
 
-基于 AWS Agentic AI Security Scoping Matrix、ARMO Progressive Enforcement Model、
-BeyondScale 四层边界模型、OpenAI Codex Sandbox 设计、Fly.io Isolated Runtimes 的综合分析，
+基于 AWS Agentic AI Security Scoping Matrix `[S1]`、ARMO Progressive Enforcement Model `[S2]`、
+BeyondScale 四层边界模型 `[S3]`、OpenAI Codex Sandbox 设计 `[S4]`、Fly.io Isolated Runtimes `[S5]` 的综合分析，
 提出一个**产品无关、长期可用**的沙箱分类体系。
 
 ##### 维度一：隔离边界类型（What is constrained）
@@ -703,7 +703,7 @@ scoring:
 
 ### 4.4 Rubric 框架（基于 Rubrics Survey 论文）
 
-参考论文 "The Rules of the Game: A Survey of Rubrics for Large Language Models"（2026），
+参考论文 "The Rules of the Game: A Survey of Rubrics for Large Language Models"（2026）`[R1]`，
 对 Unicorn 评分系统做以下增强。
 
 #### 4.4.1 核心差异分析
@@ -719,7 +719,7 @@ scoring:
 
 #### 4.4.2 过程评测（Trajectory Evaluation）
 
-Agent 评测不能只看最终产出。论文指出 trajectory-aware 评测对 agent 至关重要：
+Agent 评测不能只看最终产出。论文指出 trajectory-aware 评测对 agent 至关重要 `[R3][R4]`：
 
 ```yaml
 # RunResult 增加 trajectory 评分
@@ -755,10 +755,10 @@ trajectory_grading:
 
 #### 4.4.3 多维度 Rubric 体系
 
-论文将评测维度按任务类型精细化。Unicorn 采用 **task-adaptive rubric**：
+论文将评测维度按任务类型精细化。Unicorn 采用 **task-adaptive rubric** `[R2]`：
 根据 task 的 tags/类型自动选择合适的 rubric 模板。
 
-**Coding 任务默认 Rubric（4 轴，参考 Agentic Rubrics）**：
+**Coding 任务默认 Rubric（4 轴，参考 Agentic Rubrics `[R5]`）**：
 
 ```yaml
 rubric_template: coding
@@ -1840,3 +1840,78 @@ class SecretRedactor:
 - 复杂的推荐引擎
 - OpenHands 深度集成（留给 Phase 3）
 - 自动生成 task（用户手写或用 LLM 辅助生成）
+
+---
+
+## 附录 A：参考文献索引
+
+本文档各设计决策的来源引用，按领域分类。
+
+### A.1 评分系统 / Rubric 框架
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [R1] | [The Rules of the Game: A Survey of Rubrics for LLMs (2026)](https://8421bcd.github.io/_pages/Rubrics_Survey.pdf) | §4.4 | 多维度 rubric 体系、task-adaptive rubric、rubric 自动生成路径、过程评测 |
+| [R2] | [Adarubric (2026)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.3 | Task-adaptive rubrics：rubric 应根据 task 类型自动适配 |
+| [R3] | [Traject-bench (2025)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.2 | Trajectory-aware benchmark：评估 agent 工具调用轨迹 |
+| [R4] | [SCRIBE (2026)](https://github.com/RUC-NLPIR/Rubrics_Survey) | §4.4.2 | 结构化中间层监督（mid-level supervision for tool-using LLMs） |
+| [R5] | Agentic Rubrics (2025) — via Rubrics Survey | §4.4.3 | File Change / Spec Alignment / Integrity / Runtime 四轴评分 |
+
+### A.2 沙箱 / 隔离架构
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [S1] | [AWS Agentic AI Security Scoping Matrix](https://aws.amazon.com/ai/security/agentic-ai-scoping-matrix/) | §3.3.1 维度三 | 4 级 agency 模型（No Agency → Full Agency），6 维安全分类 |
+| [S2] | [ARMO: AI Agent Sandboxing & Progressive Enforcement](https://www.armosec.io/blog/ai-agent-sandboxing-progressive-enforcement-guide/) | §3.3.1 维度一/二 | 隔离 vs 行为沙箱区分、4 阶段渐进式执行模型、eBPF 行为基线 |
+| [S3] | [BeyondScale: AI Agent Sandboxing Enterprise Security Guide](https://beyondscale.tech/blog/ai-agent-sandboxing-enterprise-security-guide) | §3.3.1 维度一 | 四独立隔离边界（网络/文件/进程/密钥）、Firecracker vs gVisor vs V8 对比 |
+| [S4] | [OpenAI Codex Windows Sandbox Controls](https://winbuzzer.com/2026/05/14/building-a-safe-effective-sandbox-to-enable-codex-xcxwbn/) | §3.3.1 | 双用户模型、offline-by-default、command-tree tracking |
+| [S5] | [Fly.io: Isolated Runtimes for Testing AI Agent Behavior](https://fly.io/learn/agent-sandbox/) | §3.3.1 维度四 | Snapshot/Restore 生命周期模型、隔离 + 可观测 + 可复现三原则 |
+| [S6] | [Gemini Managed Agents: Linux Sandboxes](https://mer.vin/2026/05/gemini-managed-agents-explained-linux-sandboxes-for-ai-that-can-actually-run-code/) | §3.3 | 控制面 vs 数据面分离、网络白名单 + per-domain header injection |
+| [S7] | [Code Sandboxes for LLMs and AI Agents (Amir Malik, 2025)](https://amirmalik.net/2025/03/07/code-sandboxes-for-llm-ai-agents) | §3.3.1 维度二 | 容器 → 用户态内核 → VM 的隔离强度分级 |
+| [S8] | [iso-code](https://isocode.dev/) | §10 | 生产级 git worktree 隔离，崩溃安全、端口租约 |
+| [S9] | [agent-seatbelt-sandbox (Claude Code)](https://github.com/michaelneale/agent-seatbelt-sandbox) | §10 | macOS seatbelt 进程沙箱方案 |
+| [S10] | [E2B](https://github.com/e2b-dev/e2b) | §3.3.5, §10 | Firecracker microVM，<1s 启动，env vars 注入模型 |
+| [S11] | [OpenHands V1 Architecture](https://arxiv.org/html/2511.03690v2) | §10 | 本地无容器 + 生产 Docker 的混合模式 |
+
+### A.3 Trace / 可观测性
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [T1] | [Langfuse](https://langfuse.com/) | §5.5 | Trace 采集模型、session-based 关联、LLM 调用详情记录 |
+| [T2] | [LangSmith](https://docs.smith.langchain.com/) | §5.5 | 项目级 trace 管理、evaluation 集成 |
+| [T3] | [Cloudflare Sandbox SDK - Environment Variables](https://developers.cloudflare.com/sandbox/configuration/environment-variables/) | §5.5, §11 | 三层 env 注入模型（sandbox/session/command 级别） |
+
+### A.4 Secrets / BYOK
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [K1] | [Warp BYOK Documentation](https://docs.warp.dev/agent-platform/inference/bring-your-own-api-key/) | §11.5 | 本地存储 + 传输中使用 + 不持久化模型 |
+| [K2] | [Secure AI Agent API Credentials (Apidog)](http://apidog.com/blog/secure-ai-agent-api-credentials) | §11.3, §11.4 | Credential Vault Pattern、Proxy Pattern、短期 token 轮转 |
+| [K3] | [E2B Sandbox Environment Variables](https://changelog.e2b.dev/docs/sandbox/environment-variables) | §11.4 | per-sandbox / per-command 级别的 env vars 注入 |
+
+### A.5 安全威胁模型
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [SEC1] | [OWASP Top 10 for LLM Applications 2025](https://owasp.org/www-project-top-10-for-large-language-model-applications/) | §12 | Prompt Injection、信息泄露、供应链、无界消耗等 10 类 LLM 风险 |
+| [SEC2] | [OWASP Agentic AI Top 10 (2026)](https://beyondscale.tech/blog/owasp-agentic-top-10-guide) | §12 | Excessive Agency、Identity Gaps、Data Exfiltration 等 agent 特有风险 |
+| [SEC3] | [AWS Bedrock DNS Escape Incident](https://www.csoonline.com/article/4146202/aws-bedrocks-isolated-sandbox-comes-with-a-dns-escape-hatch.html) | §12.2 T3 | 即使"隔离"沙箱也可能通过 DNS 外泄数据 |
+| [SEC4] | [Sysdig: First LLM-Agent Intrusion in the Wild (2026)](https://www.techtimes.com/articles/317423/20260530/ai-vs-ai-cybersecurity-sysdig-documents-first-llm-agent-intrusion-wild.htm) | §12.2 T12 | AI 对 AI 攻击已进入实战 |
+| [SEC5] | [NVIDIA OpenShell: Secure Autonomous AI Agents](https://blogs.nvidia.com/blog/secure-autonomous-ai-agents-openshell/) | §12.3 | 策略与执行分离、基础设施层执行安全策略 |
+
+### A.6 评测框架 / 行业实践
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [E1] | Skill Creator（内部产品） | §1, §4.3 | Blind comparison、comparator 模式、expectations 驱动评分 |
+| [E2] | [SWE-bench](https://www.swebench.com/) | §10 | Docker-based 可复现评测环境、coding agent 标准 benchmark |
+| [E3] | [DeepEval](https://github.com/confident-ai/deepeval) | §14 | Custom metric 框架、LLM-as-judge 集成 |
+| [E4] | [Inspect (METR)](https://hawk.metr.org/) | §4 | Agent evaluation 框架，多维度评分 |
+
+### A.7 Configuration 矩阵 / 实验设计
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [M1] | Hyperparameter sweep（通用 ML 实践） | §3.1 | 笛卡尔积展开、repetitions 消除随机性 |
+| [M2] | A/B testing 统计方法论 | §3.4 | 多次重复运行、统计显著性检验 |
+| [M3] | [GitHub Actions Matrix Strategy](https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs) | §3.1 | 矩阵声明语法糖的灵感来源 |
