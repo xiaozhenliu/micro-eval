@@ -645,23 +645,54 @@ Layer 3: Annotation（人工标注）
   ↓ 主观评价 + 备注
 ```
 
-**Layer 1: Validation**
-- 运行 task 定义的 validation.commands
-- 纯机械判断：exit code 0 = pass
-- 适用于有测试的 coding 任务
-- 没有 validation commands 时跳过此层
+**Layer 1: Validation（确定性验证）**
 
-**Layer 2: Grading（核心创新）**
-- 独立的 Grader agent 评估产出
+设计原则：**确定性验证 > LLM 判断**。能用 exit code 判定的绝不用 LLM。
+
+- 运行 task 定义的 validation commands（pytest / npm test / cargo test 等）
+- 纯机械判断：exit code 0 = pass
+- **短路规则**：build 失败 → 跳过所有后续验证（代码不可运行，无需评判质量）
+- **不可覆盖**：确定性验证失败时，LLM 评分不可翻转结果
+- 没有 validation commands 时跳过此层
+- 验证器以只读方式访问 workspace（防止 agent 操纵评分管线）
+
+内置验证能力（不需要独立框架，subprocess 调用即可）：
+- 测试运行（自动检测 pytest/npm test/cargo test/make test）
+- 构建验证（exit code）
+- Lint/Type 检查（ruff/eslint/mypy 的 JSON 输出）
+- Diff 分析（必须修改/禁止修改的路径）
+- Schema 验证（JSON Schema / Pydantic）
+- 自定义脚本（用户提供，约定 exit 0=pass, 1=fail, 2=partial）
+
+**Layer 2: Grading（LLM-as-judge）**
+- 复用 DeepEval GEval 或直接调用 Anthropic SDK
 - 输入：task.expectations + agent 产出的 artifacts + execution trace
 - 输出：逐条 {text, passed, evidence} + rubric_scores + claims 验证
 - Grader 不是执行 agent 本身——避免自评偏见
 - 支持 blind comparison：两个产出匿名对比
+- **成本约束**：验证成本不应超过 agent 执行成本的 30%
 
-**Layer 3: Annotation**
+**Layer 3: Annotation（人工标注）**
 - 人工在 Web UI 中标注
 - 持久化到 RunResult（不再用 localStorage）
 - 支持导出为训练数据
+- 人工标注可作为 ground truth 校准 LLM judge（参见 §4.4.3 Mode 3）
+
+**聚合与短路**：
+
+```python
+# 聚合策略（用户在 scoring.aggregation 中选择）
+aggregation:
+  method: weighted_mean | min_critical | dimension_aware
+  # weighted_mean: Σ(score_i × weight_i) / Σ(weight_i)
+  # min_critical: 关键维度一票否决（任一 critical axis < threshold → 整体失败）
+  # dimension_aware: 防止高分维度掩盖低分维度
+
+# 短路逻辑（内建，无需配置）
+# 1. build 失败 → 跳过所有后续验证
+# 2. 全部确定性检查通过 + 无 LLM 维度 → 跳过 LLM 评判
+# 3. test 通过率 < 50% → 跳过 style/quality 评判（已明确失败）
+```
 
 ### 4.2 评分策略（ScoringSpec）
 
