@@ -228,319 +228,274 @@ scoring:
 | 文档撰写 | files | "覆盖所有章节" "无事实错误" | 无（LLM judge） |
 | Skill 测试 | git_repo | "Skill 被正确触发" "产出符合预期" | 自定义脚本 |
 
-### 3.3 WorkspaceSpec（执行环境与沙箱）
+### 3.3 WorkspaceSpec（执行环境与沙箱框架）
 
-#### 设计背景
+#### 3.3.1 沙箱分类框架
 
-Agent 评测需要隔离，但隔离级别应匹配实际风险：
+基于 AWS Agentic AI Security Scoping Matrix、ARMO Progressive Enforcement Model、
+BeyondScale 四层边界模型、OpenAI Codex Sandbox 设计、Fly.io Isolated Runtimes 的综合分析，
+提出一个**产品无关、长期可用**的沙箱分类体系。
 
-| 风险场景 | 需要什么 | 不需要什么 |
-|---------|---------|-----------|
-| 自己的 agent 互相踩踏 | 文件系统隔离 | 内核级隔离 |
-| Agent 意外修改宿主机 | 限制写入范围 | 完整容器 |
-| 不可信第三方 agent | 内核级隔离 + 网络限制 | — |
-| CI/远程评测 | 完全隔离 + 可复现 | — |
+##### 维度一：隔离边界类型（What is constrained）
 
-**业界现状（2026）**：
-- OpenHands V1：本地默认无容器（subprocess），生产才用 Docker
-- Claude Code：内置 git worktree + seatbelt 沙箱（macOS）
-- SWE-bench：Docker（因为需要完全可复现）
-- iso-code/agentree/ccswarm：git worktree 已成为 agent 隔离的事实标准
+沙箱的本质是约束 agent 的能力边界。四个独立的约束维度：
 
-#### 三层沙箱模型
+| 边界 | 约束什么 | 不约束什么 | 威胁模型 |
+|------|---------|-----------|---------|
+| **文件系统边界** | agent 可读写的路径范围 | 进程行为、网络 | 防止踩踏其他 workspace、修改宿主配置 |
+| **网络边界** | agent 可访问的外部端点 | 本地文件、进程 | 防止数据泄露、未授权 API 调用 |
+| **进程边界** | agent 可执行的系统调用和子进程 | 文件、网络 | 防止提权、安装恶意软件 |
+| **资源边界** | CPU/内存/时间/输出大小上限 | 功能性约束 | 防止资源耗尽、无限循环 |
+
+**关键洞察**（来自 BeyondScale）：部分沙箱化（如只限网络不限文件）会制造虚假安全感。
+但对评测场景，**按需组合**比全量隔离更实际——因为大部分时候跑的是自己的 agent。
+
+##### 维度二：隔离技术层级（How it is enforced）
+
+从轻到重，五个技术层级：
 
 ```
-Level 0: Git Worktree（文件隔离）
-  → 零开销，agent 之间互不干扰
-  → 不防止 agent 访问 worktree 外的文件
-
-Level 1: Process Sandbox（进程级限制）
-  → seatbelt (macOS) / bubblewrap (Linux)
-  → 限制文件访问范围 + 可选网络限制
-  → 启动开销 ~0ms
-
-Level 2: Container / microVM（完全隔离）
-  → E2B (Firecracker microVM) / Modal / Docker
-  → 内核级隔离，适合不可信代码
-  → 启动开销 <1s (E2B) ~ 3s (Docker)
+┌─────────────────────────────────────────────────────────────────┐
+│ Level 4: Hardware VM（硬件虚拟化）                                │
+│   独立内核 + 独立用户空间                                         │
+│   实现：Firecracker microVM, QEMU, Kata Containers              │
+│   启动：125ms ~ 3s | 开销：5-50 MiB/实例                        │
+│   防御：内核漏洞、容器逃逸                                        │
+├─────────────────────────────────────────────────────────────────┤
+│ Level 3: OS Container（操作系统容器）                              │
+│   共享内核 + 隔离用户空间（namespace + cgroup）                    │
+│   实现：Docker, Podman, LXC, OCI runtime                        │
+│   启动：1-3s | 开销：10-100 MiB/实例                             │
+│   防御：进程间干扰、资源争抢（不防内核漏洞）                        │
+├─────────────────────────────────────────────────────────────────┤
+│ Level 2: Syscall Filter（系统调用过滤）                            │
+│   共享内核 + 拦截/限制系统调用                                     │
+│   实现：gVisor (Sentry), seccomp-bpf, Landlock                  │
+│   启动：~0ms | 开销：极低                                        │
+│   防御：未授权系统调用（不防已允许调用的滥用）                       │
+├─────────────────────────────────────────────────────────────────┤
+│ Level 1: OS Policy（操作系统策略）                                 │
+│   共享一切 + 策略限制文件/网络/进程访问                             │
+│   实现：seatbelt(macOS), AppArmor, SELinux, bubblewrap          │
+│   启动：0ms | 开销：零                                           │
+│   防御：意外越界（不防恶意绕过）                                    │
+├─────────────────────────────────────────────────────────────────┤
+│ Level 0: Logical Isolation（逻辑隔离）                            │
+│   共享一切 + 约定式隔离（独立目录/worktree）                        │
+│   实现：git worktree, tmpdir, chroot                            │
+│   启动：0ms | 开销：零                                           │
+│   防御：互相踩踏（不防任何恶意行为）                                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-#### WorkspaceSpec 定义
+##### 维度三：信任等级（Why this level）
+
+参考 AWS Scoping Matrix 的 4 级 agency 模型，映射到评测场景：
+
+| 信任等级 | 场景描述 | 推荐隔离级别 | 需要的边界 |
+|---------|---------|------------|-----------|
+| **Trusted** | 自己开发的 agent，本地评测 | Level 0-1 | 文件系统 |
+| **Semi-trusted** | 团队内其他人的 agent，共享环境 | Level 1-2 | 文件系统 + 资源 |
+| **Untrusted** | 第三方 agent，开源社区提交 | Level 3-4 | 全部四个边界 |
+| **Adversarial** | 安全评测，故意测试逃逸 | Level 4 | 全部 + 监控 |
+
+##### 维度四：生命周期模型（When isolation applies）
+
+| 模型 | 描述 | 适用场景 |
+|------|------|---------|
+| **Ephemeral** | 每次执行创建新环境，执行后销毁 | 评测（默认） |
+| **Persistent** | 环境跨执行保留，支持增量操作 | 迭代开发式评测 |
+| **Snapshot/Restore** | 执行前快照，执行后可回滚到快照 | A/B 对比评测 |
+
+##### 维度五：执行位置（Where it runs）
+
+| 位置 | 特点 | 适用场景 |
+|------|------|---------|
+| **Local** | 零延迟，用户机器资源 | 开发阶段评测 |
+| **Remote-managed** | 按需付费，弹性扩缩 | CI/大规模评测 |
+| **Hybrid** | 本地编排 + 远程执行 | 混合场景 |
+
+#### 3.3.2 Unicorn 的沙箱配置模型
+
+基于上述框架，WorkspaceSpec 的配置结构：
 
 ```yaml
 workspace:
-  # === 文件来源 ===
+  # === 文件来源（与隔离正交）===
   source:
     type: git_repo | files | blank
-    # git_repo 选项
-    repo: ./fixtures/my-app       # 本地路径或 URL
-    commit: abc123                 # 可选，默认 HEAD
-    branch: main                  # 可选
-    # files 选项
-    paths:
-      - ./fixtures/context-docs/
-      - ./fixtures/reference.md
+    repo: ./fixtures/my-app
+    commit: abc123
+    branch: main
+    paths: [./fixtures/docs/]
 
-  # === 隔离级别 ===
+  # === 隔离配置 ===
   isolation:
-    level: worktree | sandbox | container | remote
-    # 各级别的详细配置见下方
+    # 信任等级（决定默认行为）
+    trust: trusted | semi_trusted | untrusted | adversarial
+
+    # 技术层级（可显式覆盖，否则由 trust 推导）
+    level: logical | os_policy | syscall_filter | container | vm
+
+    # 四个边界的独立配置
+    boundaries:
+      filesystem:
+        mode: unrestricted | workspace_only | readonly_system | custom
+        writable_paths: ["{workspace}"]
+        readable_paths: ["{workspace}", "/usr", "/opt/homebrew"]
+        blocked_paths: [".git/hooks", ".claude", "~/.ssh"]
+
+      network:
+        mode: unrestricted | allowlist | denylist | none
+        allow:
+          - "api.anthropic.com:443"
+          - "api.openai.com:443"
+          - "registry.npmjs.org:443"
+        deny: []
+
+      process:
+        mode: unrestricted | restricted
+        allow_exec: ["/usr/bin/*", "/opt/homebrew/bin/*"]
+        deny_exec: ["rm -rf /", "curl * | sh"]
+        max_subprocesses: 50
+
+      resources:
+        timeout_s: 300
+        memory_mb: 4096
+        cpu_cores: 2
+        max_output_mb: 100
+        max_file_count: 1000
+
+  # === 生命周期 ===
+  lifecycle: ephemeral | persistent | snapshot_restore
+
+  # === 执行位置 ===
+  location: local | remote
+  remote_config:                    # 当 location: remote 时
+    provider: e2b | modal | daytona | custom
+    region: us-east-1
+    instance_type: standard
 
   # === 环境准备 ===
   setup_commands:
     - npm install
     - pip install -r requirements.txt
 
-  # === 资源限制 ===
-  limits:
-    timeout_s: 300
-    max_output_mb: 100            # 防止 agent 产出过大文件
-    # Level 1+ 可用
-    memory_mb: 4096
-    cpu_cores: 2
-    # Level 1+ 可用
-    network: allow_list | none | unrestricted
-    network_allow:                # 当 network: allow_list 时
-      - "api.anthropic.com"
-      - "api.openai.com"
-
   # === 清理策略 ===
-  cleanup: auto | manual | on_success
+  cleanup: auto | manual | on_success | on_failure_keep
 ```
 
-#### Level 0: Git Worktree（默认，Phase 1）
+#### 3.3.3 信任等级到默认配置的映射
 
-最轻量的隔离。每个 (task, config, repetition) 在独立的 git worktree 中运行。
+用户只需声明 `trust` 级别，系统自动推导合理默认值：
 
-```yaml
-isolation:
-  level: worktree
-  # worktree 特有选项
-  base_ref: HEAD                  # worktree 基于哪个 commit
-  keep_on_failure: true           # 失败时保留 worktree 供调试
-  collect_diff: true              # 执行后自动收集 git diff
-```
-
-**实现**（参考 iso-code 的安全检查）：
 ```python
-class GitWorktreeProvider:
-    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle:
-        # 1. 创建 worktree
-        worktree_path = f".micro-eval/workspaces/{run_id}/{config_id}/rep-{rep}"
-        await run(f"git worktree add {worktree_path} {spec.source.commit}")
-        # 2. 运行 setup commands
-        for cmd in spec.setup_commands:
-            await run(cmd, cwd=worktree_path)
-        return WorkspaceHandle(path=worktree_path, type="worktree")
-
-    async def collect_artifacts(self, handle) -> list[Artifact]:
-        # 收集 git diff 作为主要 artifact
-        diff = await run("git diff", cwd=handle.path)
-        return [Artifact(type="diff", content=diff)]
-
-    async def cleanup(self, handle) -> None:
-        await run(f"git worktree remove {handle.path} --force")
+TRUST_DEFAULTS = {
+    "trusted": {
+        "level": "logical",
+        "boundaries": {
+            "filesystem": {"mode": "workspace_only"},
+            "network": {"mode": "unrestricted"},
+            "process": {"mode": "unrestricted"},
+            "resources": {"timeout_s": 300, "memory_mb": 4096},
+        },
+        "lifecycle": "ephemeral",
+        "location": "local",
+    },
+    "semi_trusted": {
+        "level": "os_policy",
+        "boundaries": {
+            "filesystem": {"mode": "workspace_only"},
+            "network": {"mode": "allowlist"},
+            "process": {"mode": "unrestricted"},
+            "resources": {"timeout_s": 300, "memory_mb": 4096},
+        },
+        "lifecycle": "ephemeral",
+        "location": "local",
+    },
+    "untrusted": {
+        "level": "container",
+        "boundaries": {
+            "filesystem": {"mode": "workspace_only"},
+            "network": {"mode": "allowlist"},
+            "process": {"mode": "restricted"},
+            "resources": {"timeout_s": 300, "memory_mb": 2048},
+        },
+        "lifecycle": "ephemeral",
+        "location": "remote",
+    },
+    "adversarial": {
+        "level": "vm",
+        "boundaries": {
+            "filesystem": {"mode": "workspace_only"},
+            "network": {"mode": "none"},
+            "process": {"mode": "restricted"},
+            "resources": {"timeout_s": 120, "memory_mb": 1024},
+        },
+        "lifecycle": "snapshot_restore",
+        "location": "remote",
+    },
+}
 ```
 
-**优势**：零依赖、零启动开销、跨平台、与 git 生态天然集成
-**局限**：不防止 agent 读写 worktree 外的文件、不限制网络
+#### 3.3.4 Provider 接口
 
-#### Level 1: Process Sandbox（Phase 2）
-
-在 worktree 基础上加进程级限制。**启动开销为零**。
-
-**macOS（seatbelt）**：
-```yaml
-isolation:
-  level: sandbox
-  sandbox_profile: coding_agent   # 预置 profile 名称
-```
-
-预置 profile 示例：
-```scheme
-;; .micro-eval/sandbox-profiles/coding_agent.sb
-(version 1)
-(deny default)
-;; 允许读写 worktree 目录
-(allow file-read* file-write*
-  (subpath "${WORKSPACE_PATH}"))
-;; 允许读系统库和工具链
-(allow file-read*
-  (subpath "/usr/lib")
-  (subpath "/usr/bin")
-  (subpath "/opt/homebrew"))
-;; 允许执行
-(allow process-exec)
-;; 网络：只允许访问 LLM provider
-(allow network-outbound
-  (remote tcp "api.anthropic.com:443")
-  (remote tcp "api.openai.com:443"))
-;; 禁止其他网络
-(deny network*)
-```
-
-**Linux（bubblewrap）**：
-```yaml
-isolation:
-  level: sandbox
-  sandbox_backend: bwrap          # bubblewrap
-```
-
-等效实现：
-```bash
-bwrap \
-  --ro-bind /usr /usr \
-  --ro-bind /bin /bin \
-  --ro-bind /lib /lib \
-  --bind ${WORKSPACE_PATH} ${WORKSPACE_PATH} \
-  --tmpfs /tmp \
-  --unshare-net \                 # 网络隔离（可选）
-  --die-with-parent \
-  -- ${AGENT_COMMAND}
-```
-
-**Provider 实现**：
-```python
-class ProcessSandboxProvider:
-    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle:
-        # 1. 先创建 worktree（复用 Level 0）
-        handle = await GitWorktreeProvider().create(spec)
-        # 2. 生成 sandbox wrapper
-        handle.command_prefix = self.build_sandbox_prefix(
-            workspace_path=handle.path,
-            network=spec.limits.network,
-            network_allow=spec.limits.network_allow,
-        )
-        return handle
-
-    def build_sandbox_prefix(self, workspace_path, network, network_allow):
-        if sys.platform == "darwin":
-            profile = self.render_seatbelt_profile(workspace_path, network_allow)
-            return f"sandbox-exec -f {profile}"
-        elif sys.platform == "linux":
-            return self.build_bwrap_command(workspace_path, network)
-        else:
-            # Windows: 降级为无沙箱
-            return ""
-```
-
-**优势**：零启动开销、限制文件访问范围、可选网络隔离
-**局限**：macOS seatbelt 已 deprecated（仍可用）、不防内核漏洞
-
-#### Level 2: Container（Phase 3 可选）
-
-当需要完全隔离时（不可信 agent、CI 环境）。**不推荐作为默认**。
-
-```yaml
-isolation:
-  level: container
-  backend: e2b | modal | docker   # 选择后端
-  # E2B 选项
-  e2b:
-    template: "base"              # 或自定义 template
-    timeout_s: 300
-  # Modal 选项
-  modal:
-    image: "python:3.11-slim"
-    gpu: false
-  # Docker 选项（最重，不推荐）
-  docker:
-    image: "node:20-slim"
-    network: none
-```
-
-**推荐优先级**：E2B（<1s 启动，Firecracker microVM）> Modal（按需付费）> Docker（本地重量级）
-
-**Provider 实现**（E2B 示例）：
-```python
-class E2BProvider:
-    async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle:
-        sandbox = await Sandbox.create(
-            template=spec.isolation.e2b.template,
-            timeout=spec.limits.timeout_s,
-            envs=self.inject_secrets(spec),
-        )
-        # 上传 workspace 文件
-        if spec.source.type == "git_repo":
-            await sandbox.commands.run(f"git clone {spec.source.repo} /workspace")
-            await sandbox.commands.run(f"git checkout {spec.source.commit}", cwd="/workspace")
-        # 运行 setup
-        for cmd in spec.setup_commands:
-            await sandbox.commands.run(cmd, cwd="/workspace")
-        return WorkspaceHandle(path="/workspace", type="e2b", sandbox=sandbox)
-
-    async def cleanup(self, handle) -> None:
-        await handle.sandbox.kill()
-```
-
-#### Level 3: Remote Sandbox（Phase 3+）
-
-托管式远程执行，适合 CI 集成和大规模并行评测。
-
-```yaml
-isolation:
-  level: remote
-  provider: e2b | modal | daytona
-  # Daytona（OpenHands 集成）
-  daytona:
-    workspace_class: "standard"
-    region: "us-east-1"
-```
-
-#### Provider 接口（统一）
-
-所有级别实现同一接口：
+所有隔离级别实现统一接口：
 
 ```python
 class WorkspaceProvider(Protocol):
-    name: str  # "worktree", "sandbox", "e2b", "docker", ...
+    name: str
+    supported_levels: list[IsolationLevel]
 
     async def create(self, spec: WorkspaceSpec) -> WorkspaceHandle: ...
     async def exec_command(self, handle: WorkspaceHandle, cmd: str,
                            env: dict | None = None) -> CommandResult: ...
     async def collect_artifacts(self, handle: WorkspaceHandle) -> list[Artifact]: ...
     async def collect_diff(self, handle: WorkspaceHandle) -> str | None: ...
+    async def snapshot(self, handle: WorkspaceHandle) -> SnapshotID: ...
+    async def restore(self, handle: WorkspaceHandle, snap: SnapshotID) -> None: ...
     async def cleanup(self, handle: WorkspaceHandle) -> None: ...
-
-@dataclass
-class WorkspaceHandle:
-    path: str
-    type: str
-    command_prefix: str = ""      # sandbox wrapper（Level 1）
-    sandbox: Any = None           # remote sandbox instance（Level 2+）
-
-@dataclass
-class CommandResult:
-    exit_code: int
-    stdout: str
-    stderr: str
-    duration_s: float
-    timed_out: bool
 ```
 
-#### 分阶段实现路径
+内置 Provider 映射：
 
-| Phase | 实现 | 隔离级别 | 启动开销 | 适用场景 |
-|-------|------|---------|---------|---------|
-| 1 | GitWorktreeProvider | Level 0 | 0ms | 自己的 agent，本地开发 |
-| 2 | ProcessSandboxProvider | Level 1 | 0ms | 防意外破坏，限制网络 |
-| 3 | E2BProvider / ModalProvider | Level 2 | <1s | 不可信 agent，CI |
-| 3+ | DaytonaProvider | Level 3 | ~90ms | 大规模并行，远程 |
+| Provider | 支持的 Level | 平台 |
+|----------|-------------|------|
+| `GitWorktreeProvider` | logical | 全平台 |
+| `SeatbeltProvider` | os_policy | macOS |
+| `BubblewrapProvider` | os_policy | Linux |
+| `GVisorProvider` | syscall_filter | Linux |
+| `E2BProvider` | vm | 远程 |
+| `ModalProvider` | container | 远程 |
 
-**Phase 1 不实现 Docker**。Docker 启动慢（1-3s）、需要 daemon、对 macOS 开发者体验差。
-如果需要容器级隔离，直接跳到 E2B/Modal（更快、更轻、按需付费）。
-
-#### 第三方 Provider 注册
-
+第三方注册：
 ```toml
-# pyproject.toml
 [project.entry-points."micro_eval.workspace_providers"]
-my_k8s = "my_package:K8sWorkspaceProvider"
+my_k8s = "my_package:K8sProvider"
 ```
 
+#### 3.3.5 分阶段实现
 
+| Phase | 实现 | 覆盖信任等级 |
+|-------|------|------------|
+| 1 | GitWorktreeProvider（Level 0） | trusted |
+| 2 | SeatbeltProvider + BubblewrapProvider（Level 1） | semi_trusted |
+| 3 | E2BProvider / ModalProvider（Level 3-4） | untrusted, adversarial |
 
-当前只实现 `GitWorktreeProvider` 和 `FilesProvider`，未来加 `DockerProvider`。
+Phase 1 不实现 Docker/gVisor。理由：
+- Docker 启动慢（1-3s）、需要 daemon、macOS 体验差
+- gVisor 仅 Linux，对本地开发者不友好
+- 如果需要 Level 3+ 隔离，直接用远程 Provider（E2B/Modal），更快更轻
+
+#### 3.3.6 参考来源
+
+- [AWS Agentic AI Security Scoping Matrix](https://aws.amazon.com/ai/security/agentic-ai-scoping-matrix/)
+- [ARMO: AI Agent Sandboxing & Progressive Enforcement](https://www.armosec.io/blog/ai-agent-sandboxing-progressive-enforcement-guide/)
+- [BeyondScale: AI Agent Sandboxing Enterprise Security Guide](https://beyondscale.tech/blog/ai-agent-sandboxing-enterprise-security-guide)
+- [OpenAI Codex Windows Sandbox Controls](https://winbuzzer.com/2026/05/14/building-a-safe-effective-sandbox-to-enable-codex-xcxwbn/)
+- [Fly.io: Isolated Runtimes for Testing AI Agent Behavior](https://fly.io/learn/agent-sandbox/)
+- [Gemini Managed Agents: Linux Sandboxes](https://mer.vin/2026/05/gemini-managed-agents-explained-linux-sandboxes-for-ai-that-can-actually-run-code/)
+- [Code Sandboxes for LLMs and AI Agents](https://amirmalik.net/2025/03/07/code-sandboxes-for-llm-ai-agents)
 
 ### 3.4 Run（评测执行）
 
