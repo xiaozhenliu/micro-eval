@@ -359,6 +359,255 @@ scoring:
 
 适用场景：当你不确定哪个版本更好，需要消除确认偏误。
 
+### 4.4 Rubric 框架（基于 Rubrics Survey 论文）
+
+参考论文 "The Rules of the Game: A Survey of Rubrics for Large Language Models"（2026），
+对 Unicorn 评分系统做以下增强。
+
+#### 4.4.1 核心差异分析
+
+论文揭示了当前 Unicorn 设计的三个盲区：
+
+| 维度 | 论文框架 | Unicorn 当前设计 | 差距 |
+|------|---------|-----------------|------|
+| 评测对象 | 过程（trajectory）+ 结果（output） | 只评结果 | 缺少过程评测 |
+| Rubric 粒度 | 多维度 × 多等级（1-5 per axis） | 粗糙的 3 轴 | 维度不够精细 |
+| Rubric 来源 | 自动生成 + 迭代优化 + 动态演化 | 用户手写 | 缺少自动化 |
+| 评分一致性 | 多 judge 投票 + 校准 | 单 judge | 缺少可靠性保障 |
+
+#### 4.4.2 过程评测（Trajectory Evaluation）
+
+Agent 评测不能只看最终产出。论文指出 trajectory-aware 评测对 agent 至关重要：
+
+```yaml
+# RunResult 增加 trajectory 评分
+trajectory_grading:
+  # 工具调用效率
+  tool_efficiency:
+    total_calls: 18
+    redundant_calls: 2        # 重复/无效调用
+    score: 0.89               # (total - redundant) / total
+  
+  # 推理路径质量
+  reasoning_quality:
+    backtrack_count: 1        # 回溯次数
+    dead_end_count: 0         # 死胡同次数
+    progressive: true         # 是否持续推进
+  
+  # 资源使用合理性
+  resource_usage:
+    tokens_vs_complexity: 0.85  # token 消耗与任务复杂度的比值
+    time_vs_baseline: 1.2       # 相对基线的时间倍数
+  
+  # 错误恢复能力
+  error_recovery:
+    errors_encountered: 1
+    recovered: 1
+    recovery_quality: "clean"   # clean | messy | failed
+```
+
+适用场景：
+- Coding agent 是否在无效方向上浪费了大量 token
+- Agent 是否过度使用工具（每步都 grep 而不是理解代码）
+- Agent 遇到错误后是否能优雅恢复
+
+#### 4.4.3 多维度 Rubric 体系
+
+论文将评测维度按任务类型精细化。Unicorn 采用 **task-adaptive rubric**：
+根据 task 的 tags/类型自动选择合适的 rubric 模板。
+
+**Coding 任务默认 Rubric（4 轴，参考 Agentic Rubrics）**：
+
+```yaml
+rubric_template: coding
+axes:
+  - axis: file_change
+    weight: 2
+    levels:
+      5: "精确修改了正确的文件和位置"
+      3: "修改了正确文件但位置不精确"
+      1: "修改了错误的文件或遗漏关键文件"
+    criteria:
+      - "是否修改了正确的文件"
+      - "修改范围是否最小化"
+      - "是否有不必要的改动"
+
+  - axis: spec_alignment
+    weight: 3
+    levels:
+      5: "完全满足任务描述的所有要求"
+      3: "满足主要要求但遗漏细节"
+      1: "未满足核心要求"
+    criteria:
+      - "是否解决了描述的问题"
+      - "是否覆盖了所有边界条件"
+      - "是否符合隐含约束"
+
+  - axis: integrity
+    weight: 3
+    levels:
+      5: "现有功能完全不受影响"
+      3: "轻微副作用但不影响核心功能"
+      1: "破坏了现有功能"
+    criteria:
+      - "现有测试是否通过"
+      - "是否引入新的 lint/type 错误"
+      - "是否破坏了其他模块"
+
+  - axis: runtime
+    weight: 2
+    levels:
+      5: "代码可运行且行为正确"
+      3: "代码可运行但有边界问题"
+      1: "代码无法运行或行为错误"
+    criteria:
+      - "是否能通过编译/构建"
+      - "运行时行为是否符合预期"
+      - "性能是否在可接受范围"
+```
+
+**文档撰写任务默认 Rubric**：
+
+```yaml
+rubric_template: document
+axes:
+  - axis: content_factuality
+    weight: 3
+    levels:
+      5: "所有陈述均有依据，无事实错误"
+      3: "主要内容正确，有少量不精确"
+      1: "存在明显事实错误或虚构内容"
+
+  - axis: completeness
+    weight: 3
+    levels:
+      5: "覆盖所有要求的章节和要点"
+      3: "覆盖主要内容但有遗漏"
+      1: "大量内容缺失"
+
+  - axis: professional_presentation
+    weight: 2
+    levels:
+      5: "结构清晰、格式专业、语言精准"
+      3: "结构合理但有格式或语言问题"
+      1: "结构混乱、格式不一致"
+
+  - axis: practical_utility
+    weight: 2
+    levels:
+      5: "读者可直接据此行动"
+      3: "有参考价值但需补充信息"
+      1: "对读者无实际帮助"
+```
+
+**UI/设计任务默认 Rubric**：
+
+```yaml
+rubric_template: ui_design
+axes:
+  - axis: visual_fidelity
+    weight: 2
+    levels:
+      5: "完全符合设计规范"
+      3: "大体符合但有细节偏差"
+      1: "与设计规范严重不符"
+
+  - axis: functionality
+    weight: 3
+    levels:
+      5: "所有交互正常工作"
+      3: "核心交互正常但有边缘问题"
+      1: "核心交互不工作"
+
+  - axis: accessibility
+    weight: 2
+    levels:
+      5: "符合 WCAG AA 标准"
+      3: "基本可访问但有改进空间"
+      1: "存在严重可访问性问题"
+
+  - axis: code_quality
+    weight: 1
+    levels:
+      5: "组件化良好、可维护"
+      3: "可工作但结构有改进空间"
+      1: "代码混乱、难以维护"
+```
+
+#### 4.4.4 Rubric 自动生成与迭代优化
+
+论文提出的 rubric 构建方法论，Unicorn 分阶段采纳：
+
+**Phase 1（手动 + 模板）**：
+- 提供预置 rubric 模板（coding / document / ui_design）
+- 用户可自定义 axes 和 levels
+- Task 通过 `rubric_template` 字段选择模板
+
+**Phase 2（半自动生成）**：
+- 从 task description 自动推导 expectations
+- 从 expectations 自动生成 rubric criteria
+- 用户确认/修改后使用
+
+```python
+class RubricGenerator:
+    def generate_from_task(self, task: Task) -> Rubric:
+        """从 task 描述自动生成 rubric（LLM 辅助）"""
+        ...
+    
+    def refine_from_results(self, rubric: Rubric, results: list[GradingResult]) -> Rubric:
+        """基于评分结果迭代优化 rubric（去除无区分力的 criteria）"""
+        ...
+```
+
+**Phase 3（动态演化）**：
+- Contrastive generation：对比两个 agent 产出的差异，自动发现新的评分维度
+- 去重压缩：合并重叠的 criteria
+- Meta-evaluation：评估 rubric 本身的质量（区分力、一致性）
+
+#### 4.4.5 评分可靠性保障
+
+论文指出单 judge 评分存在偏见和不一致。Unicorn 采用：
+
+```yaml
+judge:
+  # 多 judge 投票（可选，提高可靠性）
+  ensemble:
+    enabled: false              # 默认关闭（省成本）
+    judges: 3                   # judge 数量
+    agreement_threshold: 0.67   # 2/3 一致即通过
+    models:                     # 可用不同模型
+      - claude-sonnet-4-20250514
+      - claude-sonnet-4-20250514
+      - claude-sonnet-4-20250514
+
+  # 校准机制
+  calibration:
+    reference_examples: []      # 参考评分样例（few-shot）
+    anchor_tasks: []            # 锚定任务（已知正确评分的 task）
+```
+
+**何时启用 ensemble**：
+- 高风险决策（决定是否上线某个 agent 版本）
+- 评分方差大的 task（单 judge 不稳定）
+- Blind comparison 场景
+
+#### 4.4.6 Rubric 与现有三层评分的关系
+
+```
+Layer 1: Validation（自动验证）
+  → 不变，仍然是 exit code 判断
+  
+Layer 2: Grading（LLM-as-judge）
+  → 增强：
+    a) Expectation 验证（逐条断言）
+    b) Rubric 评分（多维度 × 多等级）    ← 新增
+    c) Trajectory 评分（过程评测）        ← 新增
+    d) Claims 验证（隐含声明检查）
+  
+Layer 3: Annotation（人工标注）
+  → 不变，但可参考 Rubric 结构化标注
+```
+
 ---
 
 ## 5. 执行引擎
