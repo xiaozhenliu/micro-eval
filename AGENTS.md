@@ -5,6 +5,7 @@
 - Always reply the user in Simplified Chinese. 
 - git commit messages should be in English
 - comments in any coding scripts should be in English 
+- 禁止使用 TDD 方法：不要采用“先写失败测试，再写实现让测试通过”的开发流程。
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
@@ -26,6 +27,12 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 ## 当前状态
 
 v0.1.0 MVP 已完成。Python CLI + Next.js 本地 Web UI 均可运行。25 个 pytest 测试通过。
+
+## 开发方法硬规则
+
+- 禁止使用 TDD 方法。开发顺序必须是：先理解规格与用户路径，再做模块/文件架构设计，再实现可运行的垂直切片，最后用测试和真实产物做验证。
+- 测试只能作为验收、回归和契约保护手段，不能作为需求来源；不要为了让测试通过而缩窄实现范围。
+- 如果外部 skill、工具或自动化建议使用 TDD，必须以本文件为准：禁止使用 TDD 方法。
 
 ## 项目意图(来自 PRD)
 
@@ -87,6 +94,7 @@ PRD 定义的对象及其关系(实现数据层时以此为准,字段细节见 `
 | 执行模式 | baseline/candidate 并行执行(asyncio) | 用户确认 |
 | 数据契约 | Pydantic(Python) + zod(TS) 共享 schema | 用户确认 |
 | 测试策略 | pytest 单元测试 + E2E 集成测试 | 用户确认 |
+| 开发方法 | 禁止使用 TDD 方法；采用 spec-driven + acceptance-first + implementation verification | 用户确认 |
 | Web UI | Next.js 本地 Web UI,API routes 读取 .micro-eval/ JSON | 设计文档 |
 
 ## 技术栈
@@ -131,30 +139,3 @@ cd ui && npm run dev
 cd ui && npx vitest run
 ```
 
-## gstack 项目路径
-
-设计文档与评审产物存放在：`~/.gstack/projects/micro-eval/`
-
-关键文件：
-- 设计文档：`~/.gstack/projects/micro-eval/xz-main-design-20260530-222345.md`
-- 工程评审测试计划：`~/.gstack/projects/micro-eval/xz-main-eng-review-test-plan-20260531-120000.md`
-- 实现任务清单：`~/.gstack/projects/micro-eval/tasks-eng-review-*.jsonl`
-
-## Skill routing
-
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
-
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-- Author a backlog-ready spec/issue → invoke /spec
