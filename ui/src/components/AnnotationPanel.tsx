@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useMemo, useSyncExternalStore } from "react";
 
 interface Annotation {
   task_id: string;
@@ -18,27 +18,58 @@ function getStorageKey(runId: string) {
 }
 
 export function AnnotationPanel({ runId, tasks }: AnnotationPanelProps) {
-  const [annotations, setAnnotations] = useState<Record<string, Annotation>>({});
+  return <AnnotationPanelState key={runId} runId={runId} tasks={tasks} />;
+}
 
-  useEffect(() => {
-    const stored = localStorage.getItem(getStorageKey(runId));
-    if (stored) {
-      try {
-        setAnnotations(JSON.parse(stored));
-      } catch {
-        // ignore corrupt data
-      }
-    }
-  }, [runId]);
+function getStoredAnnotationJson(runId: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return localStorage.getItem(getStorageKey(runId));
+}
+
+function parseAnnotations(stored: string | null): Record<string, Annotation> {
+  if (!stored) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(stored);
+  } catch {
+    // ignore corrupt data
+    return {};
+  }
+}
+
+function subscribeAnnotations(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function AnnotationPanelState({ runId, tasks }: AnnotationPanelProps) {
+  const storedAnnotationJson = useSyncExternalStore(
+    subscribeAnnotations,
+    () => getStoredAnnotationJson(runId),
+    () => null
+  );
+  const storedAnnotations = useMemo(
+    () => parseAnnotations(storedAnnotationJson),
+    [storedAnnotationJson]
+  );
+  const [draftAnnotations, setDraftAnnotations] =
+    useState<Record<string, Annotation> | null>(null);
+  const annotations = draftAnnotations ?? storedAnnotations;
 
   const updateAnnotation = useCallback(
     (taskId: string, field: "score" | "notes", value: string | number) => {
-      setAnnotations((prev) => {
-        const existing = prev[taskId] || { task_id: taskId, score: 5, notes: "" };
-        return { ...prev, [taskId]: { ...existing, [field]: value } };
+      setDraftAnnotations((prev) => {
+        const base = prev ?? storedAnnotations;
+        const existing = base[taskId] || { task_id: taskId, score: 5, notes: "" };
+        return { ...base, [taskId]: { ...existing, [field]: value } };
       });
     },
-    []
+    [storedAnnotations]
   );
 
   const save = useCallback(() => {
