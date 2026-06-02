@@ -205,7 +205,7 @@ Schema 版本：
 - **Future levels**：N 维 Cartesian matrix、sweep、preset、skill version comparison、历史复用。
 - **Must not bypass**：`configuration_id`、repetition identity、cost/time guardrails。
 - **EvaluationContract 最小字段**：`comparison_subject`、`task_set_version`、`success_criteria`、`budget`、`decision_threshold`、`inconclusive_policy`。
-- **详见**：Part II §3.1（Configuration）、§3.4（Run）。
+- **详见**：Part II §3.1（Configuration）、§3.5（Run）。
 
 ### 5.3 Execution Kernel
 
@@ -243,7 +243,7 @@ Schema 版本：
 - **Future levels**：trust levels、Level 0–4 隔离、Docker、remote/E2B sandbox、deterministic replay。
 - **Must not bypass**：`SameStartSnapshot`——没有快照的结果不能严肃比较。
 - **Legacy gap**：当前 `WorkspaceManager`（git worktree 原型）**未接入主 run 流程**；`EnvironmentSnapshot` 仅有 git/config/python/timestamp（见 §10）。
-- **详见**：Part II §3.3（沙箱框架）、§10（沙盒扩展）、§11（Secrets）。
+- **详见**：Part II §3.4（沙箱框架）、§10（沙盒扩展）、§11（Secrets）。
 
 ### 5.6 Artifact / Trace Layer
 
@@ -254,6 +254,7 @@ Schema 版本：
 - **Outputs**：`EvidenceBundle`、`ArtifactRef`、`TraceRef`。
 - **MVP level (L1)**：`.micro-eval/` 本地 artifact index；保存 stdout/stderr/diff/输出文件；每个 artifact 有稳定 ID；`output_summary` 是 artifact **excerpt**，不是完整 artifact。
 - **Future levels**：Langfuse/LangSmith/OpenTelemetry、normalized spans、cost breakdown、artifact viewer、replay。
+- **演进方向（Event-Sourcing）**：Phase 2 起将 EvidenceBundle 从静态快照演进为 **append-only event log**。每个 agent 输出、评分、标注都是一个 event，支持增量写入与断点恢复。Session log 与上下文管理（harness）解耦——持久事件日志是可恢复的事实源，上下文工程是可替换的策略层。这使 Langfuse 接入成为自然的 event 转发而非事后拼装，也支持"回溯到某个时刻"的复盘需求。参考：[[REF:MA1]] Anthropic Managed Agents 的 Session 设计。
 - **Must not bypass**：`ArtifactRef` / `EvidenceItem`——raw stdout 不等于 evidence。
 - **Legacy gap**：当前 annotation 用 UI localStorage，应迁移为持久化 evidence（见 §10）。
 - **详见**：Part II §5.5（TraceProvider）、§7（数据存储）。
@@ -283,6 +284,12 @@ Schema 版本：
 - **MVP level (L0/L1)**：matrix view + evidence-linked summary；snapshot gate 失败时不给 winner；inconclusive 是合法结果。
 - **Future levels**：多配置 ranking、趋势、ROI/cost frontier、blind comparison、团队决策流。
 - **Must not bypass**：verdict taxonomy 与 caveats；snapshot mismatch 必须影响结论。
+- **Decision Surface 兑现义务**（CLI 与 Web UI 均须满足）：
+  1. **可比性裁决可见**：Snapshot Comparability Gate（§7）未通过时，决策面必须显式呈现 `not_comparable` 或 `inconclusive` 状态，禁止展示强结论（winner/loser）。
+  2. **证据链可导航**：用户从任何 verdict 出发，必须能沿 decision → task → trace → diff → cost 逐级下钻，不可断链。
+  3. **脱敏强制**：Secrets（§11.6 Redaction 规则）在 CLI 输出和 UI 渲染中一律替换为占位符，不得泄露到决策面。
+  4. **"样本不足"是合法结论**：当 repetitions 不足以区分随机波动与真实差异时，决策面必须渲染为 `inconclusive`，不得沉默跳过。
+  5. **失败 cell 透明**：部分 cell 执行失败（status = `failed` | `cancelled`）时，矩阵视图必须标记失败格子并注明原因；pass rate 分母必须注明是否包含失败 cell。
 - **详见**：Part II §6（CLI）、§8（Web UI）、§9（迭代循环）。
 
 ## 6. Evidence Model
@@ -627,7 +634,7 @@ skills:
 - Skill 必须挂载到 Agent 上——不能独立运行
 - Workflow 是带配置的可执行脚本（Agent 的子类型）
 
-### 3.2 Task（评测任务）
+### 3.3 Task（评测任务）
 
 一个可重复运行的评测单元。核心改变：**输入不再是一段文本，而是 prompt + workspace + expectations**。
 
@@ -693,9 +700,9 @@ scoring:
 | 文档撰写 | files | "覆盖所有章节" "无事实错误" | 无（LLM judge） |
 | Skill 测试 | git_repo | "Skill 被正确触发" "产出符合预期" | 自定义脚本 |
 
-### 3.3 WorkspaceSpec（执行环境与沙箱框架）
+### 3.4 WorkspaceSpec（执行环境与沙箱框架）
 
-#### 3.3.1 沙箱分类框架
+#### 3.4.1 沙箱分类框架
 
 基于 AWS Agentic AI Security Scoping Matrix `[S1]`、ARMO Progressive Enforcement Model `[S2]`、
 BeyondScale 四层边界模型 `[S3]`、OpenAI Codex Sandbox 设计 `[S4]`、Fly.io Isolated Runtimes `[S5]` 的综合分析，
@@ -780,7 +787,7 @@ BeyondScale 四层边界模型 `[S3]`、OpenAI Codex Sandbox 设计 `[S4]`、Fly
 | **Remote-managed** | 按需付费，弹性扩缩 | CI/大规模评测 |
 | **Hybrid** | 本地编排 + 远程执行 | 混合场景 |
 
-#### 3.3.2 micro-eval 的沙箱配置模型
+#### 3.4.2 micro-eval 的沙箱配置模型
 
 基于上述框架，WorkspaceSpec 的配置结构：
 
@@ -850,7 +857,7 @@ workspace:
   cleanup: auto | manual | on_success | on_failure_keep
 ```
 
-#### 3.3.3 信任等级到默认配置的映射
+#### 3.4.3 信任等级到默认配置的映射
 
 用户只需声明 `trust` 级别，系统自动推导合理默认值：
 
@@ -903,7 +910,7 @@ TRUST_DEFAULTS = {
 }
 ```
 
-#### 3.3.4 Provider 接口
+#### 3.4.4 Provider 接口
 
 所有隔离级别实现统一接口：
 
@@ -939,7 +946,7 @@ class WorkspaceProvider(Protocol):
 my_k8s = "my_package:K8sProvider"
 ```
 
-#### 3.3.5 内置 Provider 实现层级
+#### 3.4.5 内置 Provider 实现层级
 
 | Provider | 支持的隔离级别 | 覆盖信任等级 | 平台 |
 |----------|--------------|------------|------|
@@ -952,7 +959,7 @@ Level 3+ 隔离通过远程 Provider 实现，不使用本地 Docker。理由：
 - gVisor 仅 Linux，对本地开发者不友好
 - 如果需要 Level 3+ 隔离，直接用远程 Provider（E2B/Modal），更快更轻
 
-#### 3.3.6 参考来源
+#### 3.4.6 参考来源
 
 - [AWS Agentic AI Security Scoping Matrix](https://aws.amazon.com/ai/security/agentic-ai-scoping-matrix/)
 - [ARMO: AI Agent Sandboxing & Progressive Enforcement](https://www.armosec.io/blog/ai-agent-sandboxing-progressive-enforcement-guide/)
@@ -962,7 +969,7 @@ Level 3+ 隔离通过远程 Provider 实现，不使用本地 Docker。理由：
 - [Gemini Managed Agents: Linux Sandboxes](https://mer.vin/2026/05/gemini-managed-agents-explained-linux-sandboxes-for-ai-that-can-actually-run-code/)
 - [Code Sandboxes for LLMs and AI Agents](https://amirmalik.net/2025/03/07/code-sandboxes-for-llm-ai-agents)
 
-### 3.4 Run（评测执行）
+### 3.5 Run（评测执行）
 
 一个 Run 的本质是 **Tasks × Configurations × Repetitions → ResultMatrix**。
 
@@ -1035,7 +1042,7 @@ Task-2 rep1   [result]    [result]    [result]
 - 按 environment 聚合 → 对比环境对结果的影响
 - 按 task tag 聚合 → 对比不同任务类型的表现
 
-### 3.5 RunResult（单个 cell 的结果）
+### 3.6 RunResult（单个 cell 的结果）
 
 一个 RunResult 对应矩阵中的一个 cell：`(task_id, config_id, repetition)`。
 
@@ -1214,7 +1221,7 @@ scoring:
 
 参考 Skill Creator 的 comparator 模式：
 
-1. 两个 target 的产出匿名标记为 A / B
+1. 两个 configuration 的产出匿名标记为 A / B
 2. 独立 Judge agent 不知道哪个是哪个
 3. 基于 rubric 打分 + 选出 winner
 4. Post-hoc analyzer 揭盲后分析"为什么赢"
@@ -1785,11 +1792,116 @@ execution:
   mode: parallel          # parallel | sequential | round_robin
   max_concurrent: 4       # 最大并行数
   randomize_order: true   # 随机化执行顺序
-  retry_on_error: 1       # 错误重试次数
   global_timeout_s: 3600  # 全局超时
+  budget_usd: null        # 成本上限（见 §5.4.2）
+  retry:                  # 重试策略（见 §5.4.1）
+    max_attempts: 2
+    retryable_exit_codes: [1]
+    backoff_base_s: 5
+    backoff_multiplier: 2
+    backoff_max_s: 60
+    retry_releases_slot: true
 ```
 
-### 5.5 Trace 采集（TraceProvider 架构）
+### 5.4.1 错误处理与重试策略
+
+> micro-eval 的执行模型是"启动 agent subprocess → 等它返回 exit code"。**网络错误（429/500）发生在 agent subprocess 内部，micro-eval 不可见**——它只能观察到最终的 exit code 和 timeout。这是黑盒架构的固有约束，下面的策略基于此事实设计。
+
+**错误分类（Kernel 视角，按可观察信号）**：
+
+| 可观察信号 | 归类 | 默认行为 |
+|-----------|------|---------|
+| exit code = 0 | 成功 | 进入评分管线 |
+| exit code ≠ 0（非超时） | 进程错误 | 可重试（见下方策略） |
+| 超时（asyncio.TimeoutError） | 超时 | 不重试，标记 `timeout` |
+| 进程无法启动（FileNotFoundError 等） | 环境错误 | 不重试，标记 `error`，建议 `micro-eval doctor` |
+| Kernel 自身异常 | 内部错误 | 不重试，记录 traceback，标记 `internal_error` |
+
+**重试策略**：
+
+```yaml
+execution:
+  retry:
+    max_attempts: 2          # 总尝试次数（1 = 不重试，2 = 重试一次）
+    retryable_exit_codes: [1]  # 哪些 exit code 可以重试（空 = 所有非零都重试）
+    backoff_base_s: 5        # 首次重试前等待秒数
+    backoff_multiplier: 2    # 指数退避乘数（5s → 10s → 20s）
+    backoff_max_s: 60        # 退避上限
+    retry_releases_slot: true  # 重试等待期间是否释放 concurrency slot
+```
+
+**不重试的情况**（即使配置了 `max_attempts > 1`）：
+- `timeout`：超时通常意味着 agent 卡死或任务过于复杂，重试大概率再次超时
+- 环境错误（command not found / permission denied）：重试不会改变环境状态
+- `budget_usd` 已耗尽：不应为了重试消耗更多预算
+
+**Agent 内部 API 错误（429/500）的处理边界**：
+
+micro-eval **无法**也**不应该**尝试处理 agent 内部的 API 错误。原因：
+1. Agent 是黑盒——micro-eval 不解析 agent 的 stderr 来推断"是 429 还是 bug"
+2. 成熟的 agent（Claude Code、Cursor）自带 retry 逻辑，micro-eval 再重试是重复
+3. 如果 agent 因 429 退出（exit code ≠ 0），micro-eval 的 cell 级重试已经覆盖了"再跑一次"的语义
+
+**用户可见性**：失败 cell 的 `failure_mode` 字段记录可观察信号（`exit_code_1`、`timeout`、`env_error`），在 CLI 和 UI 中展示。用户根据这个信号自行判断是 API 限流还是 agent bug。
+
+**评分管线（LLM Judge）的错误处理**：
+
+`grade` 命令和 LLM judge 直接调用 Anthropic/OpenAI SDK，这些调用**可以**做更细粒度的错误处理，因为 micro-eval 是调用方，能看到 HTTP 状态码：
+
+```python
+class JudgeRetryPolicy:
+    retryable_codes = [429, 500, 502, 503]  # 瞬时错误
+    non_retryable_codes = [400, 401, 403]   # 永久错误
+    max_retries = 3
+    backoff = ExponentialBackoff(base=2, max=30, jitter=True)
+```
+
+judge 重试失败时，该 cell 的评分标记为 `grading_failed`，不影响 validation 阶段的结果，不阻塞其他 cell。
+
+### 5.4.2 成本预算（Budget）语义与执行机制
+
+> 文档中出现了三种不同含义的"budget"，必须区分清楚。
+
+**三种 Budget 的区分**：
+
+| 名称 | 含义 | 控制者 | 强制性 |
+|------|------|--------|--------|
+| `budget_usd` | 本次 run 允许的累计 API 成本上限 | micro-eval Kernel | **尽力强制**（见下方） |
+| `token_budget`（Configuration params） | 传给 agent 的 context window / max_tokens 参数 | agent 自身 | **advisory**——micro-eval 无法强制 agent 遵守 |
+| `context budget`（Environment snapshot） | agent 可消耗的 context window 大小，作为可比性维度 | 无人强制 | **记录用**——进入 snapshot 保证可比性 |
+
+**`budget_usd` 的计量来源**（按优先级 fallback）：
+
+| 优先级 | 来源 | 可用条件 | 精度 |
+|--------|------|---------|------|
+| 1 | Langfuse trace 中的 cost 数据 | Langfuse 已配置且 agent 上报 trace_id | 精确 |
+| 2 | Agent 自行上报（约定 stdout 最后一行 JSON） | agent 遵循上报协议 | 精确 |
+| 3 | 按 token 数 × 单价估算 | Langfuse 有 token 数但无 cost | 近似 |
+| 4 | 不可用 | 以上均无 | budget 护栏失效，仅靠 timeout 兜底 |
+
+如果所有来源都不可用，`--budget` 参数仍然接受但会在 run 开始时发出警告：
+```
+⚠ 成本数据不可用（未配置 Langfuse 且 agent 未上报 cost）。
+  Budget 护栏将仅依赖 timeout 兜底。
+```
+
+**`budget_usd` 超预算行为**：
+
+| 时机 | 行为 |
+|------|------|
+| 调度新 cell 前检查 | 累计 cost ≥ budget → 停止调度新 cell，已调度的继续执行 |
+| 正在执行的 cell | **不中断**——agent 进程已启动，中途 kill 会浪费已消耗的 token 且产出不完整结果 |
+| Run 最终状态 | 标记为 `budget_exceeded`（非 `failed`），已完成的 cell 结果保留 |
+| 决策面展示 | 矩阵标注"因预算中止，N/M cell 未执行"；verdict 自动降级为 `inconclusive`（样本不完整） |
+
+**`token_budget`（params）的本质**：
+
+`token_budget` / `max_tokens` 是传给 agent 的参数（如 `claude --max-tokens 100000`）。micro-eval **不能**强制 agent 遵守它——agent 可能忽略这个参数、用不同的名字、或根本不支持。micro-eval 的职责是：
+1. 把它传递到 agent invocation 中（通过 env var 或命令行参数）
+2. 把它记录到 environment snapshot（作为可比性维度）
+3. 不假装自己能强制执行它
+
+如果用户需要硬性限制 token 消耗，应使用 `timeout_s`（硬兜底）+ `budget_usd`（尽力成本上限）组合。
 
 Agent 执行过程的观测数据（tool calls、token 消耗、LLM 调用链）是 trajectory evaluation 的数据来源。
 不同团队有不同的 observability 基础设施，所以 trace 采集抽象为 **Provider 接口**。
@@ -1960,6 +2072,195 @@ Agent 执行 → TraceProvider.collect() → TraceData
 没有 trace 数据时（所有 Provider 返回 None），trajectory_grading 跳过，
 只保留 builtin Provider 提供的进程级指标（duration、exit code）。
 
+### 5.6 Composition Root（CLI 组装边界）
+
+> 当用户执行 `micro-eval run --config eval.yaml` 时，需要一个明确的组装点把所有模块实例化并注入正确的依赖。这个组装点称为 Composition Root。
+
+**设计原则**：
+- 所有依赖通过构造函数注入，不用全局单例或 import-time 副作用
+- Composition Root 是**唯一允许 new 具体类**的地方，业务层只依赖 Protocol
+- 测试可以替换任意 Provider（mock RunStore、fake Adapter 等）
+
+**组装流程**（`micro-eval run` 的 Typer handler 内）：
+
+```python
+def run_command(config: Path, ...):
+    # 1. 加载配置
+    project = load_config(config)
+    tasks = load_tasks(config.parent / project.tasks_dir)
+
+    # 2. 组装 Provider Registry
+    registry = ProviderRegistry()
+    registry.register_workspace(GitWorktreeProvider())
+    registry.register_traces(BuiltinTraceProvider())  # 兜底
+    if project.langfuse:
+        registry.register_traces(LangfuseProvider(project.langfuse))
+    registry.register_scorer(ValidationStage())
+    if project.grading:
+        registry.register_scorer(LLMGradingStage(project.grading))
+
+    # 3. 组装 Adapter Registry
+    adapters = AdapterRegistry()
+    adapters.register(CommandAdapter())  # MVP 唯一 adapter
+
+    # 4. 组装 RunStore
+    run_store = JsonRunStore(base_path=config.parent / project.output_dir)
+
+    # 5. 组装 Execution Kernel
+    kernel = ExecutionKernel(
+        adapters=adapters,
+        workspace=registry.resolve_workspace,
+        max_concurrency=project.max_concurrency,
+        global_timeout_s=project.global_timeout_s,
+    )
+
+    # 6. 组装评分管线
+    scorer_pipeline = ScorerPipeline(
+        stages=registry.resolve_score_stages(project.scoring),
+    )
+
+    # 7. 执行
+    run_plan = ConfigurationLayer.expand(project, tasks)
+    exec_results = asyncio.run(kernel.run(run_plan))
+    eval_results = scorer_pipeline.evaluate(exec_results)
+    run_store.save_run(build_run(run_plan, exec_results, eval_results))
+```
+
+**按命令分工**：
+
+| CLI 命令 | 需要组装的模块 |
+|----------|---------------|
+| `run` | 全部（Registry + Adapters + Kernel + Scorer + Store） |
+| `grade` | RunStore（读已有 run）+ Scorer（补评分）+ Store（写回） |
+| `compare` | RunStore × 2 + Decision Layer |
+| `report` | RunStore + Jinja2 模板引擎 |
+| `annotate` | RunStore（读）+ Store（写 annotation） |
+| `show` / `list` | RunStore（只读） |
+| `doctor` | Registry（检查各 Provider 可用性） |
+| `secrets` | SecretProvider（独立，不经过 Registry） |
+
+**测试替身策略**：
+
+```python
+# 单元测试中替换整个执行层
+kernel = ExecutionKernel(
+    adapters=FakeAdapterRegistry(returns={"exit_code": 0, "stdout": "ok"}),
+    workspace=InMemoryWorkspaceProvider(),
+    ...
+)
+```
+
+---
+
+### 5.7 eval.yaml 顶层 Schema
+
+> `micro-eval init` 生成此文件。它是整个评测项目的单一入口配置，把散落在 §3.1–§3.6 的领域对象组织成一个完整声明。
+
+```yaml
+# eval.yaml — micro-eval 项目配置（顶层结构）
+schema_version: "2.0"
+
+# === 项目元数据 ===
+project:
+  name: "my-agent-eval"
+  description: "对比 Claude Code v2 与 Cursor 在前端任务上的表现"
+
+# === Configuration 声明（矩阵的"列"）===
+# 方式一：逐个列举（适合 2-3 个配置）
+configurations:
+  - id: claude-v2-skill-v1
+    agent: {name: claude-code-v2, command: "claude -p ...", input_mode: stdin, output_mode: file}
+    skill: {path: ./skills/frontend-design/, version: "1.0"}
+    environment: {type: worktree, resource_limits: {timeout_s: 300}}
+    params: {max_turns: 10, temperature: 0}
+    repetitions: 3
+
+  - id: cursor-no-skill
+    agent: {name: cursor-agent, command: "cursor-agent ...", input_mode: stdin, output_mode: stdout}
+    environment: {type: worktree, resource_limits: {timeout_s: 300}}
+    params: {max_turns: 10, temperature: 0}
+    repetitions: 3
+
+# 方式二：声明式矩阵（适合多维度交叉，与方式一互斥）
+# matrix:
+#   agents: [...]
+#   skills: [...]
+#   environments: [...]
+#   params: [...]
+#   repetitions: 3
+
+# === Task 引用 ===
+tasks:
+  dir: ./tasks/              # task YAML 文件所在目录
+  include: ["*.yaml"]        # glob 模式，默认全部
+  exclude: []                # 排除模式
+
+# === 评分配置 ===
+scoring:
+  validation:                # Mode 1: 确定性验证（始终启用）
+    enabled: true
+  grading:                   # Mode 2-3: LLM 评分（可选）
+    enabled: false           # MVP 默认关闭
+    model: "claude-sonnet-4-6"
+    rubric_source: task      # task 内联 rubric 或全局 rubric 文件
+  annotation:                # Mode 5: 人工标注
+    enabled: true
+    persist_to: .micro-eval/annotations/
+
+# === 执行参数 ===
+execution:
+  max_concurrency: 8         # 最大并行 cell 数
+  global_timeout_s: 3600     # 全局超时
+  budget_usd: null           # API 成本上限（null = 不限制；见 §5.4.2 计量来源）
+  retry:
+    max_attempts: 2          # 总尝试次数（1 = 不重试）
+    retryable_exit_codes: [1]  # 哪些 exit code 可重试（空列表 = 所有非零）
+    backoff_base_s: 5        # 首次重试前等待
+    backoff_multiplier: 2    # 指数退避乘数
+    backoff_max_s: 60        # 退避上限
+    retry_releases_slot: true  # 等待期间释放并发 slot
+
+# === 观测（可选）===
+observability:
+  langfuse:
+    enabled: false
+    # public_key: "..."      # 通过 secrets 注入，不写明文
+    # host: "https://cloud.langfuse.com"
+
+# === Secrets 声明（只声明需要哪些 key，不含值）===
+secrets:
+  ANTHROPIC_API_KEY:
+    description: "Claude API key"
+    required: true
+    scope: [agent]
+  OPENAI_API_KEY:
+    description: "OpenAI key for baseline"
+    required: false
+    scope: [agent]
+
+# === 输出配置 ===
+output:
+  dir: .micro-eval/          # RunStore 的 base_path
+  format: json               # MVP 只支持 json
+```
+
+**字段必选 / 可选规则**：
+
+| 字段 | 必选 | 默认值 |
+|------|------|--------|
+| `schema_version` | 是 | — |
+| `project.name` | 是 | — |
+| `configurations` 或 `matrix` | 二选一 | — |
+| `tasks.dir` | 是 | `./tasks/` |
+| `scoring.validation.enabled` | 否 | `true` |
+| `scoring.grading.enabled` | 否 | `false` |
+| `execution.max_concurrency` | 否 | `8` |
+| `execution.global_timeout_s` | 否 | `3600` |
+| `execution.budget_usd` | 否 | `null` |
+| `output.dir` | 否 | `.micro-eval/` |
+
+**与 Composition Root 的对应**：`load_config(path)` 解析此文件，返回一个 `ProjectConfig` Pydantic 模型，Composition Root 从中读取各模块的初始化参数。
+
 ---
 
 ## 6. CLI 设计
@@ -1974,6 +2275,20 @@ micro-eval grade <run-id>                # 对已有 run 补充 LLM 评分
 micro-eval compare <run-id-1> <run-id-2> # 跨 run 对比
 micro-eval report <run-id>               # 生成 HTML 报告
 micro-eval report <run-id> --group-by agent   # 按维度聚合报告
+
+# 执行控制
+micro-eval run --dry-run                 # 展开矩阵但不执行，预览 cell 数量和预估成本
+micro-eval run --budget 5.00             # 累计 API 成本达到 $5 时停止执行
+micro-eval run --timeout 1800            # 全局超时（秒），覆盖 eval.yaml 中的值
+
+# 人工标注
+micro-eval annotate <run-id>             # 交互式标注（逐 cell 打分 + 备注）
+micro-eval annotate <run-id> --cell <cell-id> --score 4 --note "..."  # 非交互式
+
+# Secrets 管理
+micro-eval secrets set OPENAI_API_KEY    # 设置密钥（交互输入，不回显）
+micro-eval secrets list                  # 列出已配置的 key 名称（不显示值）
+micro-eval secrets remove OPENAI_API_KEY # 删除密钥
 
 # 辅助命令
 micro-eval doctor                        # 检查环境依赖
@@ -2061,7 +2376,7 @@ class ProviderRegistry:
     def resolve_score_stages(self, scoring) -> list[ScoreStage]: ...
 ```
 
-这样 §3.3（Workspace）、§5.5（Trace）、§4.1（ScoreStage）三处 Provider 模式一致，消除"只有 TraceProvider 有 supports()/fallback、其它没有"的不一致。
+这样 §3.4（Workspace）、§5.5（Trace）、§4.1（ScoreStage）三处 Provider 模式一致，消除"只有 TraceProvider 有 supports()/fallback、其它没有"的不一致。
 
 ---
 
@@ -2072,9 +2387,10 @@ class ProviderRegistry:
 | 页面 | 功能 |
 |------|------|
 | Run 列表 | 所有历史 run，按时间排序，显示 pass rate / cost / 状态 |
-| Run 详情 | task × target 结果矩阵，支持展开查看 artifacts |
-| 对比页 | 两个 target 的产出并排对比（diff view） |
-| Grading 页 | 查看 LLM judge 的逐条评分 + evidence |
+| Run 详情 | task × configuration 结果矩阵，支持展开查看 artifacts；失败 cell 标红并显示失败原因 |
+| 对比页 | 两个 configuration 的产出并排对比（diff view）；顶部显示 Snapshot Gate 裁决状态 |
+| 决策页 | 本次 run 的最终结论（improved / regressed / inconclusive / not_comparable）+ 推荐动作（promote / rollback / rerun）+ 证据链入口 |
+| Grading 页 | 查看 LLM judge 的逐条评分 + evidence，支持从评分下钻到 trace / diff |
 | 标注页 | 人工评分 + 备注（持久化到文件） |
 | 趋势页 | 跨 run 的 pass rate / cost 变化曲线 |
 
@@ -2083,6 +2399,97 @@ class ProviderRegistry:
 - **Artifact viewer**：根据类型渲染（diff → syntax highlight, 文件 → 代码块, 目录 → 树形）
 - **Inline annotation**：在对比页直接标注，不需要跳转
 - **Filter & sort**：按 tag、status、score 过滤任务
+- **证据链导航**：从决策页的任何结论，可逐级下钻到 task → trace → diff → cost
+- **可比性门槛提示**：Snapshot Gate 未通过时，对比页和决策页顶部显示警告横幅，禁止展示强结论
+- **失败 cell 处理**：矩阵中 status = failed/cancelled 的格子显示失败标记和原因摘要；pass rate 旁注明分母是否排除了失败 cell
+
+### 8.3 API Route Contract
+
+> Web UI 通过 Next.js API Routes 读取后端数据。以下定义前后端之间的契约，确保两端可并行开发。
+> MVP 阶段 API 由 Next.js 内置 Server Component / Route Handler 实现，直接读 `.micro-eval/` 文件；
+> 多租户阶段替换为独立后端服务，接口形状不变。
+
+**通用约定**：
+- 所有响应为 JSON，Content-Type: application/json
+- 错误响应统一形状：`{ error: string, code: string }`
+- 路径前缀：`/api/`（Next.js 约定）
+- 分页：`?cursor=<string>&limit=<number>`（默认 limit=50）
+
+**端点列表**：
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | `/api/runs` | 列出所有 run（摘要） |
+| GET | `/api/runs/[id]` | 获取单个 run 详情（含 ResultMatrix） |
+| GET | `/api/runs/[id]/cells/[cellId]` | 获取单个 cell 的完整结果 + artifacts |
+| GET | `/api/runs/[id]/decision` | 获取 DecisionReport（verdict + evidence links） |
+| GET | `/api/artifacts/[ref]` | 获取单个 artifact 内容（diff / stdout / file） |
+| GET | `/api/compare?run=<id>&configs=<a>,<b>` | 两个 Configuration 的对比数据 |
+| POST | `/api/runs/[id]/annotations` | 提交人工标注 |
+| GET | `/api/runs/[id]/annotations` | 读取已有标注 |
+
+**响应 Schema（Zod 定义）**：
+
+```typescript
+// GET /api/runs — 列表项
+const RunSummarySchema = z.object({
+  id: z.string(),
+  timestamp: z.string(),
+  status: z.enum(["running", "completed", "failed", "cancelled"]),
+  task_count: z.number(),
+  config_count: z.number(),
+  pass_rate: z.number().nullable(),
+  total_cost_usd: z.number().nullable(),
+  verdict: z.enum([
+    "improved", "regressed", "mixed",
+    "inconclusive", "not_comparable"
+  ]).nullable(),
+});
+
+// GET /api/runs/[id] — 完整 run
+const RunDetailSchema = z.object({
+  ...RunSummarySchema.shape,
+  configurations: z.array(ConfigurationSummarySchema),
+  tasks: z.array(z.string()),
+  matrix: z.array(CellSummarySchema),
+  snapshot_gate: SnapshotGateResultSchema,
+  environment: EnvironmentSnapshotSchema,
+});
+
+// GET /api/runs/[id]/cells/[cellId]
+const CellDetailSchema = z.object({
+  id: z.string(),
+  task_id: z.string(),
+  configuration_id: z.string(),
+  repetition: z.number(),
+  status: z.enum(["passed","failed","error","timeout","cancelled"]),
+  scores: z.record(z.string(), z.number()).nullable(),
+  latency_s: z.number(),
+  cost_usd: z.number().nullable(),
+  artifacts: z.array(ArtifactRefSchema),
+  evidence: z.array(EvidenceItemSchema),
+});
+
+// POST /api/runs/[id]/annotations — 请求体
+const AnnotationInputSchema = z.object({
+  cell_id: z.string(),
+  score: z.number().min(1).max(5),
+  note: z.string().optional(),
+  axes: z.record(z.string(), z.number()).optional(),
+});
+```
+
+**前后端数据流**：
+
+```
+Next.js Page (RSC)
+  └─ fetch('/api/runs')        → RunStore.list_runs()
+  └─ fetch('/api/runs/[id]')   → RunStore.load_run(id) + DecisionLayer.summarize()
+  └─ fetch('/api/artifacts/x') → ArtifactStore.read(ref)
+```
+
+MVP 阶段这些 API Route Handler 直接调用 Python 生成的 JSON 文件；
+多租户阶段改为调用独立后端服务（HTTP/gRPC），Zod schema 不变。
 
 ---
 
@@ -2091,17 +2498,23 @@ class ProviderRegistry:
 参考 Skill Creator 的核心循环，micro-eval 支持：
 
 ```
-定义 tasks → 配置 targets → run → grade → review → 改进 target → re-run
+定义 tasks → 配置 configurations → run → grade → review → 改进 configuration → re-run
 ```
 
 具体：
 1. 用户定义 tasks（expectations 驱动）
-2. 配置多个 targets（agent v1 vs v2，或 skill v1 vs v2）
+2. 配置多个 configurations（agent v1 vs v2，或 skill v1 vs v2）
 3. 执行 run
 4. 自动 validation + LLM grading
 5. 用户在 UI 中 review + annotate
 6. 基于结果改进 agent/skill
 7. 重新 run，对比改进效果
+
+**Re-run 可比性约束**：当用户改进后 re-run 时，必须满足以下条件才能做有效对比：
+- 除被测变量（如 skill 版本）外，其余 Configuration 维度（agent、environment、params）保持不变
+- Task 集合相同（或为上一轮的子集）
+- Workspace 起点一致（同一 commit / fixture digest）
+- 若以上任一条件不满足，Snapshot Comparability Gate 应标记为 `not_comparable`，决策面不给出强结论
 
 **Benchmark 模式**：多次运行同一配置，统计 mean ± stddev，消除随机性。
 
@@ -2109,7 +2522,7 @@ class ProviderRegistry:
 
 ## 10. 沙盒扩展路径
 
-WorkspaceSpec（3.3 节）已详细定义了四层隔离模型和 Provider 接口。
+WorkspaceSpec（3.4 节）已详细定义了四层隔离模型和 Provider 接口。
 本节补充**决策依据和演进策略**。
 
 ### 10.1 为什么不用 Docker 作为默认
@@ -2616,31 +3029,163 @@ class SecretRedactor:
 
 ---
 
-## 14. 技术栈（不变）
+## 14. 技术栈
 
-| 层 | 技术 |
-|----|------|
-| CLI + 引擎 | Python 3.11+ / uv / Typer / Pydantic |
-| 评分 | 自写 + DeepEval（custom metric） |
-| LLM Judge | Anthropic SDK（Claude Sonnet/Opus） |
-| 观测（可选） | Langfuse Python SDK |
-| Web UI | Next.js + TypeScript + Zod |
-| 测试 | pytest + vitest |
+### 14.1 Python 后端
+
+| 职责 | 技术 | 说明 |
+|------|------|------|
+| 运行时 | Python 3.11+ / uv | uv 管理虚拟环境和依赖 |
+| 构建 | hatchling | pyproject.toml 声明式构建 |
+| CLI | Typer + Rich | Typer 路由命令，Rich 格式化终端输出 |
+| 数据校验 | Pydantic v2 | 领域对象 schema 定义与校验 |
+| 配置解析 | PyYAML | eval.yaml / task YAML 读写 |
+| 并发执行 | asyncio + subprocess | Kernel 矩阵调度 + Agent 黑盒进程调用 |
+| 报告生成 | Jinja2 | HTML 报告模板渲染 |
+| Secrets | keyring（可选） | OS Keychain 集成；降级为环境变量 |
+
+### 14.2 评分与 LLM
+
+| 职责 | 技术 | 说明 |
+|------|------|------|
+| 确定性评分 | 自写（exit code / diff / schema） | 不依赖外部库 |
+| LLM 评分 | DeepEval（custom metric） | GEval / LLM-as-judge |
+| LLM 调用 | Anthropic SDK / OpenAI SDK | Judge 默认 Claude；BYOK 支持 OpenAI 等 |
+| 观测（可选） | Langfuse Python SDK | trace + cost；未配置时降级 |
+
+### 14.3 数据存储
+
+| 阶段 | 技术 | 说明 |
+|------|------|------|
+| MVP | JSON 文件（.micro-eval/） | RunStore 抽象隔离底层 |
+| 未来 | SQLite | 跨 run 查询、趋势分析时迁移，接口不变 |
+
+### 14.4 Workspace 隔离与沙箱
+
+| 阶段 | 技术 | 说明 |
+|------|------|------|
+| MVP | git worktree（git 内置） | 硬链接，创建/清理 < 100ms，零额外依赖 |
+| Phase 2（可选） | seatbelt（macOS）/ bubblewrap（Linux） | OS 级进程限制，阻止网络/文件越界；无需 pip |
+| Phase 3（可选） | E2B SDK / Modal SDK | Firecracker microVM 或容器，<1s 启动 |
+
+### 14.5 Web UI
+
+| 职责 | 技术 | 说明 |
+|------|------|------|
+| 框架 | Next.js 16 + React 19 + TypeScript | App Router，API Routes 读取 .micro-eval/ |
+| 数据校验 | Zod v4 | 前端 schema 校验，与 Pydantic 共享契约 |
+| 样式 | Tailwind CSS v4 | utility-first，无自定义 CSS 框架 |
+
+### 14.6 测试
+
+| 范围 | 技术 | 说明 |
+|------|------|------|
+| Python | pytest + pytest-asyncio | 单元 + 集成，asyncio_mode=auto |
+| UI | vitest | 组件 + API route 测试 |
+
+### 14.7 并发与资源管控
+
+执行引擎的并行是 I/O bound（等 agent 子进程返回），不是 CPU 密集，asyncio 无 GIL 瓶颈。
+
+| 关注点 | 方案 |
+|--------|------|
+| 并发上限 | `max_concurrency`（默认 8），Kernel 用 asyncio.Semaphore 控制 |
+| 内存预算 | 每个 agent 进程 200-500MB；8 并发 ≈ 峰值 4GB，超限排队 |
+| Worktree 磁盘 | 硬链接，每个 < 50MB 增量；run 结束自动清理 |
+| 全局超时 | `global_timeout_s`（默认 3600s），超时终止未完成 cell |
+| 成本护栏 | `--budget` 累计 API 开销达阈值时停止调度 |
+| 进程泄漏 | Kernel 持有所有子进程 PID，取消/超时时 SIGTERM → 5s → SIGKILL |
+
+### 14.8 明确不用
+
+| 技术 | 原因 |
+|------|------|
+| LangChain | Agent 是黑盒进程，不做 SDK 耦合 |
+| Docker（MVP） | git worktree 已满足隔离需求，Phase 3 才考虑容器 |
+| 数据库 ORM | JSON/SQLite 直接操作，领域模型已有 Pydantic |
+| multiprocessing / 线程池 | I/O bound 场景 asyncio 已足够，线程池增加复杂度无收益 |
 
 ---
 
-## 15. 不做（Unicorn 范围外）
+## 15. 范围边界
 
-> **Profile 视角见 Part I §8/§9。** 以下条目多为 `deferred` 能力——它们挂在对应模块的高 maturity level 上，
-> 不在 `mvp.local_pairwise.v1` 范围内。"不做"应理解为"当前 Profile 不启用"，而非"架构不支持"。
+本节区分三类"不做"：架构真正不覆盖的、架构已设计但当前 Profile 不启用的、以及架构预留了位置但尚需细化设计的。混淆这三类会导致两种错误——要么误以为架构不支持而重新发明，要么误以为已经设计好而跳过必要的细化工作。
 
-- 多团队协作 / RBAC / SSO
-- 托管式 Web dashboard
-- 自动化 CI 集成（用户自己接）
-- 复杂的推荐引擎
-- OpenHands 深度集成（远程沙盒形态下考虑）
-- 自动生成 task（用户手写或用 LLM 辅助生成）
-- Reward Hacking / Goodhart 防护（锚定任务、absence-based rubric、定期轮换 rubric）—— deferred 至 `sandboxed_team.v1` / RL 或对抗性评测场景；MVP 本地可信 agent 场景风险低。挂在 Evaluation Layer 高 maturity level（§5.7 Future levels），不新增顶层架构。背景与"决策记录曾误称已补充到 §12"的更正见 [[2026-06-01-rubric-engineering-decision]] §覆盖核查与修订。
+### 15.1 Unicorn 架构范围外（产品定位决定不做）
+
+以下能力**改变产品定位**，不是 maturity 升级能覆盖的。Unicorn 的模块边界和契约不为它们预留接口。
+
+| 条目 | 不做的原因 |
+|------|-----------|
+| 复杂推荐引擎 | 产品是决策工具（对比 + 溯源），不是发现引擎 |
+| 自动化 CI/CD 深度集成 | 用户自己把 `micro-eval run` 接进 CI 即可；平台不代理 CI 逻辑 |
+| Agent 训练 / 微调闭环 | 评测产出结论，不产出训练信号 |
+
+### 15.2 多租户 SaaS 演进路径
+
+> 当前 Unicorn 面向本地单用户/小团队。但若未来需要商业化（在线托管、多租户、RBAC），架构应能以**中等扰动**接入，而不是重写。本节记录多租户对各层的影响评估，以及当前开发必须遵守的"多租户友好约束"。
+
+**扰动评估**：
+
+| 架构层 | 扰动 | 说明 |
+|--------|------|------|
+| 领域模型 | 低 | Run/Task/Configuration 加 `owner_id` 可选字段，不破坏现有 schema |
+| RunStore | 低 | 已是 Protocol 抽象；加 tenant namespace 或 DB WHERE 子句是换实现，接口不变 |
+| Execution Kernel | 低 | 无状态 per-run，加租户级资源配额只是 Semaphore 从全局变 per-tenant 字典 |
+| Agent Adapter | 低 | 黑盒 subprocess，secrets 已按 Configuration 注入，改为按 tenant 注入是同一机制 |
+| Secrets | 中 | 需新增 SecretProvider 实现（Vault / DB），§11 Proxy 模式已预设接口 |
+| Web UI / API 层 | 中 | 加 auth middleware + tenant context；当前 API route 数量少（~5 个） |
+| Workspace 隔离 | 高 | git worktree 无法跨租户隔离；多租户必须上容器/VM（ProviderRegistry 已预留接口） |
+| CLI | 无 | CLI 保持本地单用户工具，多租户只影响在线服务形态 |
+
+**当前开发必须遵守的多租户友好约束**（即使 MVP 只有单用户，也不能违反）：
+
+1. **数据路径不硬编码绝对位置**。RunStore / ArtifactStore 的所有路径必须通过注入的 `base_path` 或 `namespace` 参数计算，不直接写死 `.micro-eval/runs/`。这样将来加 `tenant_id` 前缀只改构造参数，不改业务逻辑。
+2. **API 层不假设单用户**。即使 MVP 无认证，API Route 的数据访问必须通过 RunStore 接口，不直接 `fs.readFileSync` 拼路径。当前代码（`ui/src/lib/api.ts`）需要在重构时收敛到此模式。
+3. **Secrets 不存入 run artifacts**。这条已在 Part I 不变量 #8 中声明，此处强调：secrets 与 run 结果的隔离是多租户安全的前提，单用户阶段也不能松懈。
+4. **Execution Kernel 的资源配额参数化**。`max_concurrency`、`global_timeout_s`、`budget` 从配置注入，不 hardcode 全局常量。将来变为 per-tenant 配额只需改注入源。
+5. **领域对象预留 `owner_id` 字段位**。不需要现在加字段，但 schema 设计时不能用 run_id 作为全局唯一 key 的唯一维度——将来 namespace 化时 run_id 只在 tenant 内唯一。建议 run_id 格式包含足够熵（UUID 或 timestamp + random suffix）以避免跨 tenant 冲突。
+
+**多租户引入时的最小改动清单**（非当前任务，仅作路线参考）：
+
+```
+1. 加 auth 层（OAuth2 / API Key）→ 每个请求携带 tenant_id
+2. RunStore 实现换为 DB-backed（Postgres/SQLite per-tenant）
+3. SecretProvider 换为 Vault / 加密 DB
+4. WorkspaceProvider 升级为容器（Docker / E2B）
+5. API Route 加 tenant context middleware
+6. 前端加登录页 + tenant 路由
+```
+
+步骤 1-2 是核心（~2 周工作量），其余是配套。架构不需要重写。
+
+### 15.2 架构已覆盖，当前 Profile 不启用（按 maturity 自然升级）
+
+以下能力**已经在 Part I 模块契约和 maturity 阶梯中有明确位置**（见 §8），只是 `mvp.local_pairwise.v1` 选择了较低等级。升级路径清晰，不需要额外架构设计，只需实现更高 level 的 provider / adapter / stage。
+
+| 条目 | 归属模块 | 启用 Profile |
+|------|---------|-------------|
+| Langfuse / LangSmith trace 集成 | Artifact/Trace Layer（L2） | `trace_enhanced.v1` |
+| LLM Judge 必选 / Pairwise / Elo | Evaluation Layer（L2-L3） | `local_matrix.v1` 及以上 |
+| OpenHands / 远程 Agent adapter | Agent Adapter Layer（L3） | `remote_untrusted.v1` |
+| Docker / E2B / Modal 远程沙箱 | Environment Layer（L2-L3） | `sandboxed_team.v1` |
+| 断点续跑 / 大规模评测恢复 | Execution Kernel（L2） | `local_matrix.v1` |
+| Plugin entry-point 发现机制 | ProviderRegistry 扩展 | `sandboxed_team.v1` |
+| 多 Configuration 趋势分析 | Decision Layer（L2） | `trace_enhanced.v1` |
+| 校准式 Rubric / ensemble judge | Evaluation Layer（L3） | `research_full_unicorn` |
+| Reward Hacking / Goodhart 防护 | Evaluation Layer（L3） | `sandboxed_team.v1`（对抗评测场景） |
+
+### 15.3 架构预留位置，尚需细化设计
+
+以下能力**在模块边界中有挂载点**，但具体接口或实现策略还没细化到可直接编码的程度。需要在对应 Profile 实施前补充设计文档。
+
+| 条目 | 挂载点 | 需要细化的内容 |
+|------|--------|---------------|
+| 自动生成 Task | Asset Layer | 生成策略（从代码 diff 推导 task？从 bug report 生成？）、质量校验、与人工 task 的关系 |
+| Blind comparison（评审者不知道哪个是 baseline） | Evaluation Layer §4.3 | UI 交互流程、随机化机制、解盲时机 |
+| 成本-质量 frontier 分析（花 2x 预算只提升 5% 值不值？） | Decision Layer | 统计模型选型、可视化方案、阈值建议算法 |
+| 团队决策流（多人投票 promote/rollback） | Decision Layer | 投票规则、通知机制、与标注系统的关系——可能触碰 §15.1 的多租户边界 |
+| 跨 run 的 Configuration 版本谱系追踪 | Configuration Layer + Asset Layer | 版本 DAG 模型、如何关联 git history |
 
 ---
 
@@ -2670,16 +3215,16 @@ class SecretRedactor:
 
 | ID | 来源 | 影响的章节 | 贡献 |
 |----|------|-----------|------|
-| [S1] | [AWS Agentic AI Security Scoping Matrix](https://aws.amazon.com/ai/security/agentic-ai-scoping-matrix/) | §3.3.1 维度三 | 4 级 agency 模型（No Agency → Full Agency），6 维安全分类 |
-| [S2] | [ARMO: AI Agent Sandboxing & Progressive Enforcement](https://www.armosec.io/blog/ai-agent-sandboxing-progressive-enforcement-guide/) | §3.3.1 维度一/二 | 隔离 vs 行为沙箱区分、4 阶段渐进式执行模型、eBPF 行为基线 |
-| [S3] | [BeyondScale: AI Agent Sandboxing Enterprise Security Guide](https://beyondscale.tech/blog/ai-agent-sandboxing-enterprise-security-guide) | §3.3.1 维度一 | 四独立隔离边界（网络/文件/进程/密钥）、Firecracker vs gVisor vs V8 对比 |
-| [S4] | [OpenAI Codex Windows Sandbox Controls](https://winbuzzer.com/2026/05/14/building-a-safe-effective-sandbox-to-enable-codex-xcxwbn/) | §3.3.1 | 双用户模型、offline-by-default、command-tree tracking |
-| [S5] | [Fly.io: Isolated Runtimes for Testing AI Agent Behavior](https://fly.io/learn/agent-sandbox/) | §3.3.1 维度四 | Snapshot/Restore 生命周期模型、隔离 + 可观测 + 可复现三原则 |
-| [S6] | [Gemini Managed Agents: Linux Sandboxes](https://mer.vin/2026/05/gemini-managed-agents-explained-linux-sandboxes-for-ai-that-can-actually-run-code/) | §3.3 | 控制面 vs 数据面分离、网络白名单 + per-domain header injection |
-| [S7] | [Code Sandboxes for LLMs and AI Agents (Amir Malik, 2025)](https://amirmalik.net/2025/03/07/code-sandboxes-for-llm-ai-agents) | §3.3.1 维度二 | 容器 → 用户态内核 → VM 的隔离强度分级 |
+| [S1] | [AWS Agentic AI Security Scoping Matrix](https://aws.amazon.com/ai/security/agentic-ai-scoping-matrix/) | §3.4.1 维度三 | 4 级 agency 模型（No Agency → Full Agency），6 维安全分类 |
+| [S2] | [ARMO: AI Agent Sandboxing & Progressive Enforcement](https://www.armosec.io/blog/ai-agent-sandboxing-progressive-enforcement-guide/) | §3.4.1 维度一/二 | 隔离 vs 行为沙箱区分、4 阶段渐进式执行模型、eBPF 行为基线 |
+| [S3] | [BeyondScale: AI Agent Sandboxing Enterprise Security Guide](https://beyondscale.tech/blog/ai-agent-sandboxing-enterprise-security-guide) | §3.4.1 维度一 | 四独立隔离边界（网络/文件/进程/密钥）、Firecracker vs gVisor vs V8 对比 |
+| [S4] | [OpenAI Codex Windows Sandbox Controls](https://winbuzzer.com/2026/05/14/building-a-safe-effective-sandbox-to-enable-codex-xcxwbn/) | §3.4.1 | 双用户模型、offline-by-default、command-tree tracking |
+| [S5] | [Fly.io: Isolated Runtimes for Testing AI Agent Behavior](https://fly.io/learn/agent-sandbox/) | §3.4.1 维度四 | Snapshot/Restore 生命周期模型、隔离 + 可观测 + 可复现三原则 |
+| [S6] | [Gemini Managed Agents: Linux Sandboxes](https://mer.vin/2026/05/gemini-managed-agents-explained-linux-sandboxes-for-ai-that-can-actually-run-code/) | §3.4 | 控制面 vs 数据面分离、网络白名单 + per-domain header injection |
+| [S7] | [Code Sandboxes for LLMs and AI Agents (Amir Malik, 2025)](https://amirmalik.net/2025/03/07/code-sandboxes-for-llm-ai-agents) | §3.4.1 维度二 | 容器 → 用户态内核 → VM 的隔离强度分级 |
 | [S8] | [iso-code](https://isocode.dev/) | §10 | 生产级 git worktree 隔离，崩溃安全、端口租约 |
 | [S9] | [agent-seatbelt-sandbox (Claude Code)](https://github.com/michaelneale/agent-seatbelt-sandbox) | §10 | macOS seatbelt 进程沙箱方案 |
-| [S10] | [E2B](https://github.com/e2b-dev/e2b) | §3.3.5, §10 | Firecracker microVM，<1s 启动，env vars 注入模型 |
+| [S10] | [E2B](https://github.com/e2b-dev/e2b) | §3.4.5, §10 | Firecracker microVM，<1s 启动，env vars 注入模型 |
 | [S11] | [OpenHands V1 Architecture](https://arxiv.org/html/2511.03690v2) | §10 | 本地无容器 + 生产 Docker 的混合模式 |
 
 ### A.3 Trace / 可观测性
@@ -2751,5 +3296,11 @@ Inspect AI（UK AISI 开发，MIT 协议，[GitHub](https://github.com/UKGovernm
 | ID | 来源 | 影响的章节 | 贡献 |
 |----|------|-----------|------|
 | [M1] | Hyperparameter sweep（通用 ML 实践） | §3.1 | 笛卡尔积展开、repetitions 消除随机性 |
-| [M2] | A/B testing 统计方法论 | §3.4 | 多次重复运行、统计显著性检验 |
+| [M2] | A/B testing 统计方法论 | §3.5 | 多次重复运行、统计显著性检验 |
 | [M3] | [GitHub Actions Matrix Strategy](https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs) | §3.1 | 矩阵声明语法糖的灵感来源 |
+
+### A.8 Managed Agents 架构参考
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [MA1] | [Scaling Managed Agents: Decoupling the Brain from the Hands (Anthropic, 2026-04)](https://www.anthropic.com/engineering/managed-agents) | §5.3, §5.4, §5.6 | Brain/Hands 分离验证了 Execution Kernel 与 Agent Adapter 的解耦设计；Session 作为 append-only event log 的模式启发了 Artifact/Trace Layer 的 event-sourcing 演进方向；`execute(name, input) → string` 统一 tool 接口与黑箱 adapter 契约高度一致；安全边界（凭证不进 sandbox）对应 Invariant #8 |
