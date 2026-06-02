@@ -120,7 +120,10 @@ PRD 定义的对象及其关系(实现数据层时以此为准,字段细节见 `
 - secrets、workspace、subprocess 安全、网络边界 → 读 `docs/engineering/security-guidelines.md`
 - 不确定该读哪个工程规范 → 只读 `docs/engineering/README.md`
 
+**安全规范例外于上面的按需路由**：`docs/engineering/security-guidelines.md` 是 cross-cutting 规范，不受"命中场景才读"约束。任何开发里程碑 / vertical slice（涉及 subprocess 调用、env 注入、stdout/stderr 捕获、artifact 持久化、workspace 写入的，几乎覆盖所有执行层改动）在动手前都必须读它，完成后必须逐条过它末尾的「Code Review Checklist」，并在交付报告中说明 secrets redaction、workspace 边界、shell interpolation 三项的处理方式。安全要求与功能需求同级，不是加分项。
+
 硬规则：
+- 每个开发里程碑都必须满足 `docs/engineering/security-guidelines.md`。安全验收与功能验收同为合并门槛：未通过其 Code Review Checklist 的改动不得合并到 main，即使功能测试全绿。
 - 长期架构权威来源：`docs/superpowers/specs/2026-06-02-unicorn-design.md` Part I。
 - 当前 MVP 范围权威来源：`docs/superpowers/specs/2026-06-02-mvp-profile.md`。
 - 测试架构权威来源：`docs/superpowers/specs/2026-06-02-test-architecture.md`。
