@@ -1,6 +1,10 @@
 # CLAUDE.md
 
-**Critical Rule**: Always reply the user in Simplified Chinese. 
+**Critical Rule**: 
+
+- Always reply the user in Simplified Chinese. 
+- git commit messages should be in English
+- comments in any coding scripts should be in English 
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -13,6 +17,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. 在 `dev` 分支上开发（当前分支）
 2. 功能完成后 merge 到 `main`（main 的 .gitignore 会自动排除 CLAUDE.md/BRD/PRD）
 3. 不要直接在 main 上开发
+
+**历史重写后的推送：**
+- 如果改过 commit message、rebase 或 filter-branch 导致 commit hash 改变，推送已存在的远端分支时使用 `git push --force-with-lease origin <branch>`。
+- `--force-with-lease` 只会在远端分支仍停留在本地上次看到的位置时覆盖远端；如果别人已经推送了新提交，Git 会拒绝推送，避免误删他人的工作。
+- 避免使用 `git push --force`，除非用户明确要求。
 
 ## 当前状态
 
@@ -91,6 +100,26 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 - Next.js + TypeScript — 本地 Web UI
 - pytest — Python 测试
 - vitest — UI 测试
+
+## Engineering guidelines routing
+
+不要默认读取整个 `docs/engineering/` 目录。只有任务命中下列场景时，才读取对应文件：
+
+- 架构边界、模块归属、跨模块依赖 → 读 `docs/engineering/architecture-guardrails.md`
+- 实施设计、模块接口、迁移分期、store/adapter/evidence 落地 → 读 `docs/engineering/implementation-principles.md`
+- Python CLI / engine / schema / subprocess → 读 `docs/engineering/python-guidelines.md`
+- Next.js / TypeScript / zod / API route / UI data access → 读 `docs/engineering/frontend-guidelines.md`
+- 测试计划、contract tests、flaky 控制 → 读 `docs/engineering/testing-guidelines.md`
+- ResultMatrix、Decision、Artifact/Evidence 展示 → 读 `docs/engineering/ux-guidelines.md`
+- secrets、workspace、subprocess 安全、网络边界 → 读 `docs/engineering/security-guidelines.md`
+- 不确定该读哪个工程规范 → 只读 `docs/engineering/README.md`
+
+硬规则：
+- 长期架构权威来源：`docs/superpowers/specs/2026-06-02-unicorn-design.md` Part I。
+- 当前 MVP 范围权威来源：`docs/superpowers/specs/2026-06-02-mvp-profile.md`。
+- 测试架构权威来源：`docs/superpowers/specs/2026-06-02-test-architecture.md`。
+- 工程规范不能重新定义 schema 字段、模块契约或 MVP 范围。
+- 如果工程规范与上述权威来源冲突，先更新权威来源，再更新工程规范。
 
 ## 开发命令(待项目骨架建立后补充)
 

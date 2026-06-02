@@ -33,7 +33,7 @@ tags:
 本文档于 2026-06-02 从"按主题堆叠的完整设计"重构为 Modular Architecture。
 
 - **文档状态**：Draft，Modular Architecture refactor。
-- **适用范围**：Unicorn 完整架构。**不等同于** MVP 实施清单——MVP 见 §9 与未来的 `2026-06-02-mvp-profile.md`。
+- **适用范围**：Unicorn 完整架构。**不等同于** MVP 实施清单——MVP 见 §9 与 `2026-06-02-mvp-profile.md`。
 - **核心策略**：MVP 是 Unicorn 的一个 **Profile**，不是 Unicorn 的简化分叉。详见 [[2026-06-02-modular-unicorn-mvp-profile-strategy]]。
 - **怎么读**：
   - 想看产品判断 → §1 决策闭环、§8 Maturity Profiles、§9 MVP Projection。
@@ -236,10 +236,10 @@ Schema 版本：
 
 - **Responsibility**：保证同起点与可复现性；输出的核心不是路径，而是快照。
 - **Owns**：`WorkspaceSpec`、`WorkspaceHandle`、`SameStartSnapshot`、`SnapshotGateResult`、`SandboxPolicy`、`GuardrailPolicy`。
-- **Does not own**：评分对快照的解读（gate 的**判定**在此，**强制**发生在 Decision Layer）。
+- **Does not own**：评分对快照的解读（snapshot 的生成与 gate result 的产出在此；gate 对结论的**强制降级**发生在 Decision Layer）。
 - **Inputs**：FixtureRef、Configuration。
 - **Outputs**：`WorkspaceHandle`、`SameStartSnapshot`、`SnapshotGateResult`。
-- **MVP level (L1)**：git worktree / cwd；记录 repo commit、dirty state、config hash、Python version、setup digest；缺关键快照时 Decision 只能给 weak/inconclusive。
+- **MVP level (L1)**：git worktree / cwd；记录 repo commit、dirty state、config hash、Python version、setup digest；timestamp 作为观察元数据保留但不进入 comparability digest；缺关键快照时 Decision 只能给 weak/inconclusive。
 - **Future levels**：trust levels、Level 0–4 隔离、Docker、remote/E2B sandbox、deterministic replay；network_policy 字段（记录执行环境的网络策略进 SameStartSnapshot，作为可比性维度——agent A 能访问 provider X 而 agent B 不能时属于起点不一致）。
 - **Must not bypass**：`SameStartSnapshot`——没有快照的结果不能严肃比较。
 - **Legacy gap**：当前 `WorkspaceManager`（git worktree 原型）**未接入主 run 流程**；`EnvironmentSnapshot` 仅有 git/config/python/timestamp（见 §10）。
@@ -289,7 +289,7 @@ Schema 版本：
 - **DecisionStatus 取值**：`improved` | `regressed` | `mixed` | `inconclusive` | `not_comparable` | `needs_human_review`。
 - **MVP level (L0/L1)**：matrix view + evidence-linked summary；snapshot gate 失败时不给 winner；inconclusive 是合法结果。
 - **Future levels**：多配置 ranking、趋势、ROI/cost frontier、blind comparison、团队决策流。
-- **Must not bypass**：verdict taxonomy 与 caveats；snapshot mismatch 必须影响结论。
+- **Must not bypass**：DecisionStatus taxonomy 与 caveats；snapshot mismatch 必须影响结论。
 - **Decision Surface 兑现义务**（CLI 与 Web UI 均须满足）：
   1. **可比性裁决可见**：Snapshot Comparability Gate（§7）未通过时，决策面必须显式呈现 `not_comparable` 或 `inconclusive` 状态，禁止展示强结论（winner/loser）。
   2. **证据链可导航**：用户从任何 verdict 出发，必须能沿 decision → task → trace → diff → cost 逐级下钻，不可断链。
@@ -377,7 +377,7 @@ MVP 行为（`warn-by-default`）：
 - 若 git commit 缺失、workspace dirty state 未知、config hash 缺失，DecisionReport 必须显示"证据不足"。
 - 后续 Profile 再把关键项升级为 blocking。
 
-这是"完整设计不阻塞 MVP，但 MVP 不脱离完整设计"的关键机制：MVP 可以先 warn，但 gate、snapshot、verdict taxonomy 的契约从第一天就在。
+这是"完整设计不阻塞 MVP，但 MVP 不脱离完整设计"的关键机制：MVP 可以先 warn，但 gate、snapshot、DecisionStatus taxonomy 的契约从第一天就在。
 
 ## 8. Maturity Profiles
 
@@ -392,7 +392,7 @@ MVP 行为（`warn-by-default`）：
 | Environment | temp dir | git worktree + snapshot | local sandbox / resource limits | remote reproducible runner |
 | Artifact/Trace | stdout summary | local artifact index + refs | Langfuse / self-report traces | full observability graph |
 | Evaluation | manual pass/fail | validation + manual rubric | DeepEval / LLM judge | calibrated / ensemble / pairwise |
-| Decision | raw table | evidence-linked matrix summary | honest stats / cost-quality | trends / confidence / recommendations |
+| Decision | raw table | evidence-linked matrix summary + basic honest stats | richer stats / cost-quality | trends / confidence / recommendations |
 
 命名 Profile（每个 Profile 声明 enabled / required / deferred 与 decision strength）：
 
@@ -410,24 +410,24 @@ MVP 行为（`warn-by-default`）：
 
 ## 9. MVP Profile Projection
 
-MVP 是 Unicorn 契约在 `mvp.local_pairwise.v1` 下的投影，不是另一套模型。本节给出投影；完整 MVP 规格见未来的 `2026-06-02-mvp-profile.md`。
+MVP 是 Unicorn 契约在 `mvp.local_pairwise.v1` 下的投影，不是另一套模型。本节给出投影；完整 MVP 规格见 `2026-06-02-mvp-profile.md`。
 
 | Module | Full Unicorn direction | MVP profile choice | Must not bypass |
 |---|---|---|---|
 | Asset | versioned asset library | local YAML/Markdown tasks & rubrics | task_id / task_revision_id / rubric refs |
-| Configuration | N-dimensional matrix | baseline/candidate 为两个 Configuration | configuration_id / repetition identity |
+| Configuration | N-dimensional matrix | 默认 baseline/candidate 为两个 Configuration；schema 可接受 ≥2 个 Configuration，但 local_pairwise 的强结论只针对一个显式 comparison scope | configuration_id / repetition identity |
 | Execution | run orchestration | local asyncio subprocess | RunPlan / ExecutionResult shape |
 | Agent Adapter | pluggable adapters | local CLI command adapter | safe argv, declared I/O |
 | Environment | reproducible sandbox | git worktree / workspace snapshot | SameStartSnapshot |
 | Artifact/Trace | artifact graph | local artifact index | ArtifactRef / EvidenceItem |
 | Evaluation | validation + judge + annotation | manual + basic validation | EvaluationResult + evidence refs |
-| Decision | decision report | matrix + evidence-linked summary | verdict taxonomy + caveats |
+| Decision | decision report | matrix + evidence-linked summary | DecisionStatus taxonomy + caveats |
 
 MVP **必须包含**：Task Authoring、最小 Evaluation Contract、Command Adapter、Same-start evidence、最小 Evidence Chain、Decision Report、Guardrails（timeout / redaction / output cap / shell-risk 可见性）、Basic Honest Stats（pass rate / latency / cost-if-present / 低样本警告）。
 
 MVP **明确不含**：LLM judge 必选、pairwise/Elo、remote sandbox、RBAC、在线服务威胁模型、自动 task 生成、plugin entry points、完整趋势分析。
 
-verdict taxonomy（MVP 即引入）：`improved | regressed | mixed | inconclusive`（外加 gate 失败时的 `not_comparable`）。
+DecisionStatus taxonomy（MVP 即引入）：`improved | regressed | mixed | inconclusive | not_comparable | needs_human_review`。其中 `needs_human_review` 是缺少必需人工评分或决策边界时的中间状态，不是强比较结论。
 
 这直接回应核心担忧：MVP 不脱离完整设计，因为它只在每个模块上**选较低等级**，且不绕过任何契约。
 
@@ -2386,7 +2386,9 @@ class ProviderRegistry:
 
 ---
 
-## 8. Web UI
+## 8. Web UI（Full / Future View）
+
+> 本节描述 Unicorn 完整架构的 UI 方向，包含多个当前 MVP 不启用的页面。MVP 的可执行 Web UI 范围以 `2026-06-02-mvp-profile.md` §7 为准。
 
 ### 8.1 页面结构
 
@@ -2412,7 +2414,7 @@ class ProviderRegistry:
 ### 8.3 API Route Contract
 
 > Web UI 通过 Next.js API Routes 读取后端数据。以下定义前后端之间的契约，确保两端可并行开发。
-> MVP 阶段 API 由 Next.js 内置 Server Component / Route Handler 实现，直接读 `.micro-eval/` 文件；
+> MVP 阶段 API 由 Next.js 内置 Server Component / Route Handler 实现，通过 RunStore 读取 `.micro-eval/` JSON；
 > 多租户阶段替换为独立后端服务，接口形状不变。
 
 **通用约定**：
@@ -3048,7 +3050,7 @@ class SecretRedactor:
 | 配置解析 | PyYAML | eval.yaml / task YAML 读写 |
 | 并发执行 | asyncio + subprocess | Kernel 矩阵调度 + Agent 黑盒进程调用 |
 | 报告生成 | Jinja2 | HTML 报告模板渲染 |
-| Secrets | keyring（可选） | OS Keychain 集成；降级为环境变量 |
+| Secrets | 环境变量（MVP）；keyring（未来可选） | MVP 仅从环境变量注入 secrets；OS Keychain 集成属于后续 SecretProvider 实现 |
 
 ### 14.2 评分与 LLM
 
@@ -3165,7 +3167,7 @@ class SecretRedactor:
 
 步骤 1-2 是核心（~2 周工作量），其余是配套。架构不需要重写。
 
-### 15.2 架构已覆盖，当前 Profile 不启用（按 maturity 自然升级）
+### 15.3 架构已覆盖，当前 Profile 不启用（按 maturity 自然升级）
 
 以下能力**已经在 Part I 模块契约和 maturity 阶梯中有明确位置**（见 §8），只是 `mvp.local_pairwise.v1` 选择了较低等级。升级路径清晰，不需要额外架构设计，只需实现更高 level 的 provider / adapter / stage。
 
@@ -3181,7 +3183,7 @@ class SecretRedactor:
 | 校准式 Rubric / ensemble judge | Evaluation Layer（L3） | `research_full_unicorn` |
 | Reward Hacking / Goodhart 防护 | Evaluation Layer（L3） | `sandboxed_team.v1`（对抗评测场景） |
 
-### 15.3 架构预留位置，尚需细化设计
+### 15.4 架构预留位置，尚需细化设计
 
 以下能力**在模块边界中有挂载点**，但具体接口或实现策略还没细化到可直接编码的程度。需要在对应 Profile 实施前补充设计文档。
 
@@ -3190,7 +3192,7 @@ class SecretRedactor:
 | 自动生成 Task | Asset Layer | 生成策略（从代码 diff 推导 task？从 bug report 生成？）、质量校验、与人工 task 的关系 |
 | Blind comparison（评审者不知道哪个是 baseline） | Evaluation Layer §4.3 | UI 交互流程、随机化机制、解盲时机 |
 | 成本-质量 frontier 分析（花 2x 预算只提升 5% 值不值？） | Decision Layer | 统计模型选型、可视化方案、阈值建议算法 |
-| 团队决策流（多人投票 promote/rollback） | Decision Layer | 投票规则、通知机制、与标注系统的关系——可能触碰 §15.1 的多租户边界 |
+| 团队决策流（多人投票 promote/rollback） | Decision Layer | 投票规则、通知机制、与标注系统的关系——可能触碰 §15.2 的多租户边界 |
 | 跨 run 的 Configuration 版本谱系追踪 | Configuration Layer + Asset Layer | 版本 DAG 模型、如何关联 git history |
 
 ---

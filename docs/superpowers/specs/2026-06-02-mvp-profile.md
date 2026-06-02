@@ -26,12 +26,12 @@ tags:
 用户能在 10 分钟内完成：
 
 ```
-配置 Configurations → 定义 Tasks → 发起 Run → 在矩阵对比中得出结论
+定义 Tasks → 配置 Configurations → 发起 Run → 在矩阵对比中得出结论
 ```
 
-MVP 回答的核心问题：**在同一起点、同一任务集下，这次改动变好了还是变差了？**
+MVP 回答的核心问题：**在同一起点、同一任务集下，这次改动变好了、变差了，还是样本不足 / 不可比 / 需要人工判断？**
 
-结论必须可溯源（每个 verdict 都链接到 task → result → artifact → score）。
+结论必须可溯源（每个 DecisionStatus 都链接到 task → result → EvidenceItem → artifact / score）。
 
 ---
 
@@ -40,13 +40,13 @@ MVP 回答的核心问题：**在同一起点、同一任务集下，这次改�
 | Module | Level | MVP 实现 | Must not bypass |
 |--------|:-----:|----------|-----------------|
 | Asset Layer | L0→L1 | 本地 YAML tasks + inline rubric | `task_id` / `rubric` hash |
-| Configuration Layer | L1 | 显式 Configuration 模型，≥2 列矩阵 | `configuration_id` / repetition identity |
+| Configuration Layer | L1 | 显式 Configuration 模型，默认 2 列 pairwise，schema 支持 ≥2 列矩阵 | `configuration_id` / repetition identity |
 | Execution Kernel | L1 | asyncio subprocess, timeout, 并行 | RunPlan → ExecutionResult shape |
 | Agent Adapter Layer | L1 | 本地 CLI adapter, declared I/O | AgentInvocation 契约 / safe argv |
 | Environment/Reproducibility | L1 | git worktree + workspace snapshot | SameStartSnapshot |
 | Artifact/Trace Layer | L1 | 本地 `.micro-eval/` artifact index | ArtifactRef / EvidenceItem |
 | Evaluation Layer | L0+L1 | validation + 人工评分 | EvaluationResult + evidence refs |
-| Decision Layer | L0+L1 | 矩阵视图 + evidence-linked summary | verdict taxonomy + caveats |
+| Decision Layer | L0+L1 | 矩阵视图 + evidence-linked summary | DecisionStatus taxonomy + caveats |
 
 ---
 
@@ -54,12 +54,12 @@ MVP 回答的核心问题：**在同一起点、同一任务集下，这次改�
 
 ```text
 1. micro-eval init          → 生成 eval.yaml 骨架
-2. 编辑 eval.yaml           → 定义 tasks + configurations（≥2 个 agent）
+2. 编辑 eval.yaml           → 定义 tasks + configurations（默认 baseline/candidate 两列；可声明 ≥2 个被测 Configuration）
 3. micro-eval run           → 执行 Tasks × Configurations × Repetitions
 4. micro-eval report        → CLI 输出矩阵摘要
 5. micro-eval ui            → 启动 Next.js dev server (localhost:3000)
 6. 查看 ResultMatrix        → 逐 cell 查看 artifact、人工评分
-7. 得出结论                 → improved / regressed / mixed / inconclusive / not_comparable
+7. 得出结论                 → improved / regressed / mixed / inconclusive / not_comparable / needs_human_review
 ```
 
 **CLI 接口规格**：
@@ -160,13 +160,18 @@ tasks:
 ```python
 @dataclass
 class EvaluationContract:
+    comparison_subject: str | None     # e.g. "skill prompt v2 vs v1"
+    task_set_version: str              # task_ids + task_revision_ids 的 digest
+    success_criteria: list[str]        # human-readable criteria, copied into report
+    budget: dict | None                # max_cost / max_duration / max_cells, MVP 可为 None
     decision_threshold: float | None   # MVP 默认 None（无自动判定阈值）
     inconclusive_policy: Literal["warn", "block"]  # MVP 默认 "warn"
     min_repetitions: int               # MVP 默认 1
     required_evaluators: list[str]     # MVP 默认 ["validator"]
+    denominator_policy: Literal["include_failed", "exclude_failed"]  # 默认 "include_failed"
 ```
 
-MVP 行为：`EvaluationContract` 随 `eval.yaml` 声明，不声明时使用上述默认值。`decision_threshold=None` 表示不做自动 verdict（仅人工判断）。`inconclusive_policy="warn"` 表示样本不足时输出 `inconclusive` verdict + warning，不阻塞 report 生成。
+MVP 行为：`EvaluationContract` 随 `eval.yaml` 声明，不声明时使用上述默认值。`decision_threshold=None` 表示不做阈值驱动的自动 winner；`micro-eval report` 仍可输出矩阵、Basic Honest Stats、caveats，并在缺少足够人工评分或明确阈值时给出 `needs_human_review` / `inconclusive`，而不是伪造 `improved` / `regressed`。`inconclusive_policy="warn"` 表示样本不足时输出 `inconclusive` verdict + warning，不阻塞 report 生成。
 
 ---
 
@@ -258,7 +263,7 @@ class AdapterResult:
 - workspace 类型：`git_repo`（git worktree 隔离）| `blank`（临时空目录）| `files`（复制指定文件）
 - **Run 级**：记录 intended SameStartSnapshot（期望起点）
 - **Cell 级**：每个 RunCell 执行时记录 observed CellSnapshot（实际起点）
-- Snapshot 包含：repo commit、dirty state、config hash、Python version、setup commands digest、timestamp
+- Snapshot 包含：repo commit、dirty state、config hash、Configuration digests、Python version、setup commands digest、timestamp
 - git worktree 创建与清理（run 结束后 prune）
 - setup_commands 在 workspace 内执行
 - Task 中的 `workspace.ref`（branch/tag）在 run 启动时解析为 commit hash，snapshot 记录 hash 而非 ref 名
@@ -271,11 +276,11 @@ class SameStartSnapshot:
     git_commit: str | None        # resolved hash, NOT branch name
     git_dirty: bool
     config_hash: str              # eval.yaml content hash
-    config_content_hash: str      # agent+skill+env+params canonical JSON digest
+    configuration_digests: dict[str, str]  # config_id -> agent+skill+env+params canonical JSON digest
     python_version: str
     setup_commands_digest: str | None
-    timestamp: str                # ISO 8601
-    resource_limits: dict | None  # MVP: None
+    timestamp: str                # ISO 8601; observation metadata, excluded from comparability digest
+    sandbox_resource_limits: dict | None  # MVP: None; execution guardrails live in RunPlan/replay_canonical
     workspace_map: dict[str, str] | None  # task_id -> resolved git_commit (多 workspace 时)
 ```
 
@@ -301,7 +306,7 @@ class SnapshotGateResult:
     gate_version: str             # "1.0"
 ```
 
-**Comparability Gate（MVP 行为）**：Execution Kernel 在每个 cell 执行后生成 CellSnapshot 并与 Run 级 SameStartSnapshot 对比。如果关键字段不一致，生成 `SnapshotGateResult(status="warn")`，Decision Layer 在报告中标注 `not_comparable` caveat。MVP 不阻塞执行（status 不会是 "fail"），但 gate result 必须持久化到 cell result 中。
+**Comparability Gate（MVP 行为）**：Execution Kernel 在每个 cell 执行后生成 CellSnapshot 并与 Run 级 SameStartSnapshot 对比。如果关键字段不一致，生成 `SnapshotGateResult(status="warn")`，Decision Layer 在报告中加入 comparability caveat；当 caveat 覆盖关键起点字段时，DecisionStatus 必须降级为 `not_comparable` 或 `inconclusive`。MVP 不阻塞执行（status 不会是 "fail"），但 gate result 必须持久化到 cell result 中。
 
 ---
 
@@ -344,7 +349,7 @@ class CostMetric:
 
 `artifact_id` 格式规范：`"{cell_id}::{kind}::{sha256_hex[:12]}"`。cell_id 前缀保证相同内容在不同 cell 中生成不同 artifact_id，解决相同 stdout 内容的定位歧义。
 
-**Evidence 链路说明**：`EvaluationResult.evidence_refs` 存放的是 `artifact_id`（即 ArtifactRef 的 ID）。verdict 回溯链路为：`DecisionReport.verdict → evaluation_ids → EvaluationResult.evidence_refs → ArtifactRef.artifact_id → 文件路径`。manifest.json 作为 artifact_id → path 的查找表。
+**Evidence 链路说明**：`EvaluationResult.evidence_refs` 存放的是 `evidence_id`，不能直接存 `artifact_id`。verdict 回溯链路为：`DecisionReport.verdict → evaluation_ids → EvaluationResult.evidence_refs → EvidenceItem.evidence_id → EvidenceItem.source_ref → ArtifactRef.artifact_id → 文件路径`。manifest.json 作为 artifact_id → path 的查找表。
 
 **演进预留**：增量写入（cell 完成即写 artifact），为 Phase 2 event-sourcing 模式留空间。
 
@@ -390,7 +395,7 @@ class EvaluationResult:
     scores: dict[str, float]           # dimension -> score
     pass_fail: bool | None
     comment: str | None
-    evidence_refs: list[str]           # artifact_ids (format: "{cell_id}::{kind}::{hash}")
+    evidence_refs: list[str]           # evidence_ids; each EvidenceItem points to artifact_id when needed
     timestamp: str                     # compact: "20260602T150000Z" (无冒号)
 ```
 
@@ -447,7 +452,7 @@ class SecretRedactor:
 - 每个 cell 显示：pass/fail、scores、cost、latency、artifact link
 - Repetitions 聚合：显示 N 次结果 + pass rate
 - Evidence-linked summary：结论必须引用具体 cell 和 score
-- **Verdict taxonomy**（MVP 即引入）：`improved | regressed | mixed | inconclusive | not_comparable`
+- **DecisionStatus taxonomy**（MVP 即引入）：`improved | regressed | mixed | inconclusive | not_comparable | needs_human_review`
 - CLI `micro-eval report` 输出文本矩阵摘要
 - Web UI 展示交互式 ResultMatrix
 
@@ -465,14 +470,15 @@ run.json 中 verdict 相关字段组织为嵌套 `decision` 对象：
 ```python
 # 嵌入 run.json 的 decision 子结构（Phase 2 拆为独立 decision.json）
 decision: {
-    "verdict": "improved",          # verdict taxonomy
+    "verdict": "improved",          # DecisionStatus taxonomy
     "confidence": "low",            # "high" | "medium" | "low"
     "evaluation_refs": [...],       # evaluation_ids 列表
+    "evidence_refs": [...],         # evidence_ids 列表，用于支撑 verdict/caveats
     "caveats": ["low_sample"],      # SnapshotGateResult 等 caveat
     "aggregation": {                # GAP 5 stub: Phase 2 升级为独立 AggregationResult
-        "pass_rate": {"baseline": 0.6, "candidate": 0.8},
-        "mean_latency_ms": {"baseline": 1200, "candidate": 900},
-        "cost": {"baseline": null, "candidate": null}
+        "pass_rate": {"claude-code-v2": 0.6, "cursor-agent": 0.8},
+        "mean_latency_ms": {"claude-code-v2": 1200, "cursor-agent": 900},
+        "cost": {"claude-code-v2": null, "cursor-agent": null}
     },
     "timestamp": "20260602T150000Z"
 }
@@ -497,7 +503,7 @@ MVP 行为：`decision` 子结构在 `micro-eval report` 完成时写入 run.jso
 
 **时间戳格式约束**：所有 ID 中嵌入的 timestamp 使用 compact 格式 `YYYYMMDDTHHmmssZ`（无冒号），避免与 `::` 分隔符冲突。
 
-**`configuration_id` 稳定性说明**：MVP 允许用户直接声明 `id` 字段作为 `configuration_id`（简化上手体验）。但 snapshot 中必须**同时记录** `config_content_hash`（agent+skill+env+params 的 canonical JSON digest）。如果用户修改了 configuration 内容但未更新 id，系统在 Run 开始时发出 warning："configuration content changed but id unchanged — results may not be comparable with previous runs." 这是对 Unicorn §4 "display name 不能作为稳定 ID" 的务实投影。
+**`configuration_id` 稳定性说明**：MVP 允许用户直接声明 `id` 字段作为 `configuration_id`（简化上手体验）。但 run metadata / `replay_canonical` 中必须**同时记录** `config_content_hash`（agent+skill+env+params 的 canonical JSON digest）。如果用户修改了 configuration 内容但未更新 id，系统在 Run 开始时发出 warning："configuration content changed but id unchanged — results may not be comparable with previous runs." 这是对 Unicorn §4 "display name 不能作为稳定 ID" 的务实投影。
 
 ---
 
@@ -539,7 +545,7 @@ class ReplayCanonical:
     task_revision_digests: dict[str, str]  # task_id -> task_revision_id
     configuration_ids: list[str]      # 参与的 configuration_id 列表（有序）
     configuration_digests: dict[str, str]  # config_id -> config_content_hash
-    environment_snapshot: str         # SameStartSnapshot 的 canonical JSON digest
+    environment_snapshot_digest: str  # SameStartSnapshot 的 canonical JSON digest（排除 timestamp / workspace_path 等观察元数据）
     max_concurrency: int
     retry_policy: dict | None         # max_attempts / retryable_exit_codes / backoff
     global_timeout_s: int
@@ -549,7 +555,7 @@ class ReplayCanonical:
 - 不新建独立 `lock.json`——`run.json` 已是 run 的唯一事实源，
   `replay_canonical` 作为其子对象避免职责重叠。
 - 排除 `created_at`、工具自身 git commit 等非 replay-affecting 字段。
-- 两次 run 的 `replay_canonical` 相同 ⟹ Snapshot Gate 可直接给 `pass`。
+- 两次 run 的 `replay_canonical` 相同 ⟹ Snapshot Gate 可直接给 `pass`。`timestamp`、实际临时 `workspace_path` 等观察元数据不得进入 digest，否则同配置重跑永远无法相同。
 - Phase 2 如需独立 lock 文件（CI 场景），可从 `run.json["replay_canonical"]` 导出，无需迁移。
 
 ---
@@ -563,7 +569,7 @@ class ReplayCanonical:
 | Cell Detail | 单个 cell 的 artifact viewer + 评分面板 | `cells/{id}/*` |
 | Annotation Panel | 人工评分 + comment + rubric 维度 | 写回 `evaluation.json` |
 
-**API Routes**（Next.js API routes 读本地文件）：
+**API Routes**（Next.js API routes 通过 RunStore 读取本地 `.micro-eval/` JSON；Route Handler 不直接拼路径读文件）：
 - `GET /api/runs` → run 列表
 - `GET /api/runs/[id]` → run detail + matrix
 - `GET /api/runs/[id]/cells/[cellId]` → cell detail + artifacts
@@ -578,7 +584,7 @@ class ReplayCanonical:
 | 变更项 | legacy v0.1.0 | MVP target | 优先级 |
 |--------|---------------|------------|:------:|
 | Agent 调用 | `subprocess_shell` + 字符串 | `subprocess_exec` + argv 列表 | P0 |
-| 数据模型 | baseline/candidate 二元 | N configurations 矩阵 | P0 |
+| 数据模型 | baseline/candidate 二元 | Configuration 矩阵；MVP 默认 2-column pairwise | P0 |
 | Workspace | WorkspaceManager 未接入 | git worktree 接入主流程 | P0 |
 | Task 格式 | input_payload/expected_output | prompt/expectations/rubric | P0 |
 | Artifact | output_summary 字段 | ArtifactRef + 文件存储 | P0 |
@@ -678,7 +684,7 @@ MVP 完成后，各模块只在内部升级 maturity level，不改变契约：
 Phase 2:
   Artifact/Trace L1 → L2    (Langfuse trace, event-sourcing, ATIF file-based trace import)
   Evaluation L1 → L2        (DeepEval custom metric, critique run as evidence)
-  Decision L1 → L2          (honest stats, cost-quality tradeoff, viewer 下钻)
+  Decision L1 → L2          (richer stats, cost-quality tradeoff, viewer 下钻)
   Asset L1 → L2             (task package 目录格式, deterministic subset/sample_seed)
   Configuration L1 → L2     (n_tasks/sample_seed, matrix sweeps)
 
@@ -695,4 +701,3 @@ Phase 2 具体能力说明（参照 [[2026-06-02-pier-vs-unicorn-analysis]]）�
 - **Task package**：instruction.md + task.yaml + tests/ 目录格式，服务 coding-agent benchmark 场景。
 - **Viewer 下钻**：Run → Configuration/Task heatmap → Cell → Artifact → Trajectory → Validation。
 - **Deterministic subset**：`n_tasks` + `sample_seed` 支持 benchmark 子集可复现与 smoke run。
-
