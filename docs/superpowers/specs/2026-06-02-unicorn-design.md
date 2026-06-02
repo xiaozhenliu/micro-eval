@@ -189,7 +189,7 @@ Schema 版本：
 - **Inputs**：本地 YAML/Markdown 资产文件。
 - **Outputs**：`AssetSnapshot`（锁定 task/rubric/skill/validation 资产版本）。
 - **MVP level (L0/L1)**：本地 YAML task；兼容 legacy `input_payload`/`expected_output`（投影为 deterministic expectation）；3–5 个 task 模板；schema 校验。
-- **Future levels**：git-backed task library、skill/rubric registry、共享 collections、LLM 辅助 task 生成。
+- **Future levels**：git-backed task library、skill/rubric registry、共享 collections、LLM 辅助 task 生成；task package 目录格式（instruction.md + task.yaml + tests/ + environment/，服务 coding-agent benchmark 场景，参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.1）；deterministic subset 抽样（n_tasks + sample_seed）。
 - **Must not bypass**：`task_id`、`task_revision_id`、rubric refs。
 - **Failure modes**：模糊 task、无可验证产物、无 workspace、scope 过大 → Task Authoring 警告（Part II §4.1 [[2026-06-01-unicorn-vs-brd-research]]）。
 - **详见**：Part II §3.2（Task）、§4.4（Rubric）。
@@ -228,7 +228,7 @@ Schema 版本：
 - **Inputs**：Task input、workspace handle、secrets（仅注入，不落证据）。
 - **Outputs**：`AdapterResult`（normalized output refs、exit code、trace_id）。
 - **MVP level (L0/L1)**：本地 CLI command adapter；input `stdin|file`；output `stdout|file|directory`；timeout；exit code；安全 argv（不做 shell 字符串插值）；env allowlist；secret redaction 边界。
-- **Future levels**：workflow adapter、skill injection、self-report trace、OpenHands/remote/container adapter。
+- **Future levels**：workflow adapter、skill injection、self-report trace、OpenHands/remote/container adapter；network_allowlist 字段（声明 agent 所需的网络出口域名，进入 snapshot 作为可比性维度——参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.4）。
 - **Must not bypass**：`AgentInvocation` 契约——Execution Kernel 不得硬编码某 agent 的 command 细节。
 - **详见**：Part II §3.2（AgentSpec）、§5.2、§5.3。
 
@@ -240,7 +240,7 @@ Schema 版本：
 - **Inputs**：FixtureRef、Configuration。
 - **Outputs**：`WorkspaceHandle`、`SameStartSnapshot`、`SnapshotGateResult`。
 - **MVP level (L1)**：git worktree / cwd；记录 repo commit、dirty state、config hash、Python version、setup digest；缺关键快照时 Decision 只能给 weak/inconclusive。
-- **Future levels**：trust levels、Level 0–4 隔离、Docker、remote/E2B sandbox、deterministic replay。
+- **Future levels**：trust levels、Level 0–4 隔离、Docker、remote/E2B sandbox、deterministic replay；network_policy 字段（记录执行环境的网络策略进 SameStartSnapshot，作为可比性维度——agent A 能访问 provider X 而 agent B 不能时属于起点不一致）。
 - **Must not bypass**：`SameStartSnapshot`——没有快照的结果不能严肃比较。
 - **Legacy gap**：当前 `WorkspaceManager`（git worktree 原型）**未接入主 run 流程**；`EnvironmentSnapshot` 仅有 git/config/python/timestamp（见 §10）。
 - **详见**：Part II §3.4（沙箱框架）、§10（沙盒扩展）、§11（Secrets）。
@@ -253,7 +253,7 @@ Schema 版本：
 - **Inputs**：AdapterResult、ValidationResult、annotation。
 - **Outputs**：`EvidenceBundle`、`ArtifactRef`、`TraceRef`。
 - **MVP level (L1)**：`.micro-eval/` 本地 artifact index；保存 stdout/stderr/diff/输出文件；每个 artifact 有稳定 ID；`output_summary` 是 artifact **excerpt**，不是完整 artifact。
-- **Future levels**：Langfuse/LangSmith/OpenTelemetry、normalized spans、cost breakdown、artifact viewer、replay。
+- **Future levels**：Langfuse/LangSmith/OpenTelemetry、normalized spans、cost breakdown、artifact viewer、replay；file-based trace import（agent 将 trajectory 文件写到约定位置，micro-eval 作为 trace provider 收集——支持 ATIF、OpenTelemetry JSON 等格式，不绑定特定版本）。
 - **演进方向（Event-Sourcing）**：Phase 2 起将 EvidenceBundle 从静态快照演进为 **append-only event log**。每个 agent 输出、评分、标注都是一个 event，支持增量写入与断点恢复。Session log 与上下文管理（harness）解耦——持久事件日志是可恢复的事实源，上下文工程是可替换的策略层。这使 Langfuse 接入成为自然的 event 转发而非事后拼装，也支持"回溯到某个时刻"的复盘需求。参考：[[REF:MA1]] Anthropic Managed Agents 的 Session 设计。
 - **Must not bypass**：`ArtifactRef` / `EvidenceItem`——raw stdout 不等于 evidence。
 - **Legacy gap**：当前 annotation 用 UI localStorage，应迁移为持久化 evidence（见 §10）。
@@ -271,6 +271,12 @@ Schema 版本：
 - **Must not bypass**：`EvaluationResult` + evidence refs；LLM judge **不能**覆盖 deterministic 关键失败（除非人工显式 override 并记录 override evidence）。
 - **五模式评分**：Mode 1（deterministic）是核心；Mode 2–5 是成熟度增强，不阻塞 MVP（Part II §4.4）。
 - **pass@k/pass^k 升级触发**：MVP 默认 repetitions=1 时 pass@k ≡ pass rate；一旦 repetitions>1 成为常态，应将 pass@k/pass^k 从 Future 提升为对比页**默认指标**（计算成本极低，矩阵已存全部 rep 结果）。依据见 [[2026-06-01-unicorn-vs-deep-agent-analysis]] §借鉴建议的采纳核查。
+- **pass@k 适用条件**（权威定义，MVP Profile 引用本节不重述）：
+  1. 只对 binary pass/fail 或单一 0/1 reward 默认计算 pass@k。
+  2. 对多维 rubric score，不默认计算 pass@k，除非 EvaluationContract 明确指定二值化规则（如"correctness ≥ 4 视为 pass"）。
+  3. 缺失 result（status = failed/cancelled/error）按失败计入 denominator，或由 EvaluationContract 的 `denominator_policy` 字段明确指定（`include_failed` | `exclude_failed`）。默认 `include_failed`。
+  4. 当可用样本数（successful repetitions）< 3 时，pass@k 计算结果必须伴随 "low confidence" caveat。
+  参照：[[2026-06-02-pier-vs-unicorn-analysis]] §3.7（Pier 的 pass@k 边界条件）。
 - **详见**：Part II §4（评分系统）。
 
 ### 5.8 Decision Layer
@@ -461,7 +467,7 @@ verdict taxonomy（MVP 即引入）：`improved | regressed | mixed | inconclusi
 
 - **M0 文档对齐**（本次）：把 Unicorn 重构为模块化契约，建立 legacy 映射与 MVP projection，不改代码。
 - **M1 Schema bridge**：引入 canonical 术语；定义 legacy→canonical alias；binary run 解释为 degenerate matrix。
-- **M2 Evidence/Snapshot bridge**：run JSON 引入 manifest/result/artifact；记录 git commit/dirty/config hash；annotation 持久化；snapshot gate 先 warn。
+- **M2 Evidence/Snapshot bridge**：run JSON 引入 manifest/result/artifact；记录 git commit/dirty/config hash；annotation 持久化；snapshot gate 先 warn；run.json 增加 `replay_canonical` 子对象（记录 replay-affecting inputs，支撑 Snapshot Gate 可比性判断——参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.2 lock file 机制，不新建独立 lock.json）。
 - **M3 Adapter/Workspace hardening**：worktree 接入主流程；替换/限制 shell subprocess；output redaction + size cap；secrets 不进 artifacts。
 - **M4 Modular expansion**：多 configuration matrix；trace provider；LLM judge；richer stats；richer DecisionReport。
 
@@ -3304,3 +3310,13 @@ Inspect AI（UK AISI 开发，MIT 协议，[GitHub](https://github.com/UKGovernm
 | ID | 来源 | 影响的章节 | 贡献 |
 |----|------|-----------|------|
 | [MA1] | [Scaling Managed Agents: Decoupling the Brain from the Hands (Anthropic, 2026-04)](https://www.anthropic.com/engineering/managed-agents) | §5.3, §5.4, §5.6 | Brain/Hands 分离验证了 Execution Kernel 与 Agent Adapter 的解耦设计；Session 作为 append-only event log 的模式启发了 Artifact/Trace Layer 的 event-sourcing 演进方向；`execute(name, input) → string` 统一 tool 接口与黑箱 adapter 契约高度一致；安全边界（凭证不进 sandbox）对应 Invariant #8 |
+
+### A.9 Benchmark Runner 参考（Pier）
+
+| ID | 来源 | 影响的章节 | 贡献 |
+|----|------|-----------|------|
+| [P1] | [datacurve-ai/pier](https://github.com/datacurve-ai/pier)（Harbor-compatible coding-agent benchmark runner） | §5.1, §5.4, §5.5, §5.6, §5.7, §10 | Task package 目录格式（L2）；lock file 机制启发 replay_canonical；RunCell artifact directory 验证；network allowlist 作为可比性维度；ATIF trajectory 作为 file-based trace import 格式；pass@k binary-only applicability constraint |
+
+详细分析见 [[2026-06-02-pier-vs-unicorn-analysis]]。
+
+**借鉴判断**：Pier 与 micro-eval 定位不同（benchmark harness vs 决策工具），但其可复现、artifact 落盘、trace、critique 设计补齐了 Unicorn MVP 中最薄的工程落点。micro-eval 吸收 Pier 的工程契约，不改变产品定位。具体采纳见各模块 Future levels 描述。

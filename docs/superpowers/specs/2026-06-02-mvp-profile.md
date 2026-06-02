@@ -398,6 +398,11 @@ class EvaluationResult:
 
 **`rubric_hash` 规范**：对 task YAML 中 `rubric:` 子树做 canonical JSON 序列化后取 sha256 hex[:16]。
 
+**pass@k 与聚合指标**：MVP 默认 repetitions=1，此时 pass@k ≡ pass rate，无需额外计算。
+当 repetitions>1 成为常态后，pass@k/pass^k 应升级为对比页默认指标——
+其适用条件、binary-only 限制、denominator policy 见 Unicorn Design §5.7 权威定义，本文档不重述。
+MVP 的 `EvaluationResult` 结构已能支撑 pass@k 计算（每个 rep 独立记录 pass_fail）。
+
 **契约**：LLM judge 不在 MVP，但数据结构必须能容纳未来 `evaluator: "llm_judge"` + `judge_model: str`。
 
 ---
@@ -504,7 +509,7 @@ MVP 行为：`decision` 子结构在 `micro-eval report` 完成时写入 run.jso
 .micro-eval/
 ├── runs/
 │   └── {run_id}/
-│       ├── run.json              # RunPlan + metadata + intended SameStartSnapshot
+│       ├── run.json              # RunPlan + metadata + intended SameStartSnapshot + replay_canonical
 │       ├── manifest.json         # all artifact refs for this run
 │       └── cells/
 │           └── {cell_id}/
@@ -518,6 +523,34 @@ MVP 行为：`decision` 子结构在 `micro-eval report` 完成时写入 run.jso
 ```
 
 格式：JSON（Pydantic 序列化），schema_version 字段标记版本。
+
+**`replay_canonical` 子对象**（嵌入 run.json，支撑可复现性判断）：
+
+run.json 中包含一个 `replay_canonical` 子对象，记录影响 replay identity 的全部输入。
+Decision Layer 判断两次 run 是否可比较时，以此子对象为唯一依据。
+
+```python
+@dataclass
+class ReplayCanonical:
+    schema_version: str               # "1.0"
+    micro_eval_version: str           # 工具版本（git describe 或 pyproject version）
+    config_hash: str                  # eval.yaml content hash
+    task_ids: list[str]               # 参与的 task_id 列表（有序）
+    task_revision_digests: dict[str, str]  # task_id -> task_revision_id
+    configuration_ids: list[str]      # 参与的 configuration_id 列表（有序）
+    configuration_digests: dict[str, str]  # config_id -> config_content_hash
+    environment_snapshot: str         # SameStartSnapshot 的 canonical JSON digest
+    max_concurrency: int
+    retry_policy: dict | None         # max_attempts / retryable_exit_codes / backoff
+    global_timeout_s: int
+```
+
+设计依据（参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.2 lock file 机制）：
+- 不新建独立 `lock.json`——`run.json` 已是 run 的唯一事实源，
+  `replay_canonical` 作为其子对象避免职责重叠。
+- 排除 `created_at`、工具自身 git commit 等非 replay-affecting 字段。
+- 两次 run 的 `replay_canonical` 相同 ⟹ Snapshot Gate 可直接给 `pass`。
+- Phase 2 如需独立 lock 文件（CI 场景），可从 `run.json["replay_canonical"]` 导出，无需迁移。
 
 ---
 
@@ -577,6 +610,11 @@ MVP 行为：`decision` 子结构在 `micro-eval report` 完成时写入 run.jso
 - Task 自动生成
 - Plugin / extension system
 - 在线服务部署（仅本地运行）
+- Task package 目录格式（instruction.md + tests/ + environment/）——属 Asset Layer L2，见 Unicorn §5.1
+- Network allowlist 执行——属 Environment Layer L2+，MVP 无网络隔离基础设施
+- ATIF trajectory import——属 Artifact/Trace Layer L2，Phase 2 引入 file-based trace provider
+- Deterministic subset 抽样（n_tasks / sample_seed）——属 Configuration Layer L2，MVP 用 include/exclude glob 即可
+- Critique run（micro-eval critique）——属 Evaluation + Decision Layer L2，Phase 2 引入
 
 ---
 
@@ -638,13 +676,23 @@ MVP 完成后，各模块只在内部升级 maturity level，不改变契约：
 
 ```text
 Phase 2:
-  Artifact/Trace L1 → L2    (Langfuse trace, event-sourcing)
-  Evaluation L1 → L2        (DeepEval custom metric)
-  Decision L1 → L2          (honest stats, cost-quality tradeoff)
+  Artifact/Trace L1 → L2    (Langfuse trace, event-sourcing, ATIF file-based trace import)
+  Evaluation L1 → L2        (DeepEval custom metric, critique run as evidence)
+  Decision L1 → L2          (honest stats, cost-quality tradeoff, viewer 下钻)
+  Asset L1 → L2             (task package 目录格式, deterministic subset/sample_seed)
+  Configuration L1 → L2     (n_tasks/sample_seed, matrix sweeps)
 
 Phase 3:
-  Environment L1 → L2       (Docker sandbox, resource limits)
-  Agent Adapter L1 → L2     (OpenHands adapter, remote agent)
-  Asset L1 → L2             (git-backed task library)
+  Environment L1 → L2       (Docker sandbox, resource limits, network allowlist enforcement)
+  Agent Adapter L1 → L2     (OpenHands adapter, remote agent, network_allowlist 字段)
+  Asset L2 → L3             (git-backed task library, shared collections)
 ```
+
+Phase 2 具体能力说明（参照 [[2026-06-02-pier-vs-unicorn-analysis]]）：
+- **ATIF file provider**：agent 将 trajectory.json 写到约定位置，micro-eval 作为 trace import 收集。
+- **Critique run**：`micro-eval critique <run-id>` 产出解释性 evidence（失败原因分析、task 公平性评估），
+  不替代 deterministic validation，不覆盖 verdict。
+- **Task package**：instruction.md + task.yaml + tests/ 目录格式，服务 coding-agent benchmark 场景。
+- **Viewer 下钻**：Run → Configuration/Task heatmap → Cell → Artifact → Trajectory → Validation。
+- **Deterministic subset**：`n_tasks` + `sample_seed` 支持 benchmark 子集可复现与 smoke run。
 
