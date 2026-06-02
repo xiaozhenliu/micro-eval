@@ -6,6 +6,8 @@ build-backend = "hatchling.build"
 name = "micro-eval"
 version = "0.1.1"
 description = "Agent/Skill evaluation assistant for small AI teams"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.9.0",
