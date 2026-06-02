@@ -93,14 +93,14 @@ micro-eval/
 │   ├─ asyncio.gather (parallel) 或 sequential loop            │
 │   └─ _run_single(agent, task)                                │
 │       ├─ 准备输入 (stdin / file)                              │
-│       ├─ asyncio.create_subprocess_shell                     │
+│       ├─ asyncio.create_subprocess_exec                      │
 │       ├─ wait_for(timeout)                                   │
-│       └─ 收集输出 (stdout / file)                             │
+│       └─ 收集 evidence (stdout / stderr / file / directory)   │
 │                                                              │
 │ Scorer.score() → 0.0~1.0                                    │
 │ Scorer.judge_pass_fail() → TaskStatus                        │
 │                                                              │
-│ WorkspaceManager                                             │
+│ WorkspaceManager (helper; P0-b wires it into run flow)       │
 │   ├─ create() → git worktree add --detach                   │
 │   ├─ collect_diff() → git diff                              │
 │   └─ cleanup() → git worktree remove                        │
@@ -111,6 +111,7 @@ micro-eval/
 │ Data Layer                                                   │
 │ Pydantic models (schema.py) → JSON 序列化                     │
 │ 存储: .micro-eval/runs/<run-id>.json                         │
+│      .micro-eval/artifacts/<run-id>/<task>--<agent>/          │
 └──────────┬───────────────────────────────────────────────────┘
            │
            ▼
@@ -130,19 +131,19 @@ micro-eval/
 
 **原因**：DeepEval 的 test runner 假设同步、单 agent 场景，无法满足 baseline/candidate 并行对比需求。自写 ~200 行 asyncio 代码完全可控。
 
-**体现**：`engine/runner.py` 中 `AgentRunner` 直接调用 `asyncio.create_subprocess_shell`，DeepEval 仅在 `scorer.py` 中作为可选评分库。
+**体现**：`engine/runner.py` 中 `AgentRunner` 使用 `asyncio.create_subprocess_exec` 调用本地 agent，DeepEval 仅在 `scorer.py` 中作为可选评分库。
 
 ### 2. stdin/文件传参，禁止 shell 字符串插值
 
 **原因**：防止注入攻击，保证输入完整性（含特殊字符、多行文本）。
 
-**体现**：`_run_single()` 中 `input_payload` 通过 `proc.communicate(input=...)` 传入 stdin，或写入临时文件后通过 `{input_file}` 模板变量注入路径。
+**体现**：`_run_single()` 中 `input_payload` 通过 stdin pipe 传入，或写入 runner-owned input file 后通过 `{input_file}` 模板变量注入路径。agent command 会先用 `shlex.split()` 构造成 argv，再由 `create_subprocess_exec` 执行。
 
-### 3. git worktree 隔离
+### 3. git worktree 隔离准备
 
 **原因**：保证每次 run 的起点一致（同一 commit），baseline 和 candidate 不互相污染。
 
-**体现**：`workspace.py` 中 `WorkspaceManager.create()` 调用 `git worktree add --detach`。
+**体现**：`workspace.py` 中 `WorkspaceManager.create()` 调用 `git worktree add --detach`。当前 `micro-eval run` 主流程仍直接使用配置文件所在目录，P0-b 需要把 WorkspaceManager、SameStartSnapshot 和 CellSnapshot 接入主流程。
 
 ### 4. asyncio 并行执行
 
@@ -155,6 +156,12 @@ micro-eval/
 **原因**：Python 端和 TypeScript 端共享数据契约，JSON 文件是两端的桥梁。
 
 **体现**：`models/schema.py`（Pydantic）与 `ui/src/lib/schema.ts`（zod）字段一一对应。
+
+### 6. Invocation evidence 是 legacy 到 MVP Artifact Layer 的过渡层
+
+**原因**：MVP profile 要求结论能回溯到 artifact/evidence，但当前代码仍是 legacy flat run JSON。`0.1.1` 先把 stdout/stderr、exit code、output refs 保存下来，为后续 `manifest.json`、`ArtifactRef`、`EvidenceItem` 和 Cell Detail 页面打基础。
+
+**体现**：`RunResult` 包含 `stdout_summary`、`stdout_ref`、`stderr_summary`、`stderr_ref`、`exit_code`、`output_dir` 和 `output_artifacts`。完整说明见 `docs/invocation-evidence.md`。
 
 ## 测试
 
@@ -263,5 +270,3 @@ async def test_my_feature(tmp_path):
 - 数据交换使用 JSON（Pydantic `model_dump_json()`）
 - 文件路径使用 `pathlib.Path`
 - 日志/输出使用 `rich` 库
-
-

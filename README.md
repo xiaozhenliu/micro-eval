@@ -1,10 +1,12 @@
 # micro-eval
 
+Current version: `0.1.1`
+
 面向 1–20 人 AI 小团队的 Agent/Skill 评测助手。把"我觉得这个 agent 更强"变成"它在哪些任务上更强、为什么、延迟多少、值不值得继续投"。
 
 ## 什么是"被评测对象"
 
-micro-eval 评测的是**完整 agent 程序**，通过 shell command 调用。它不评测 LLM prompt 模板，而是评测可执行的 agent 系统。
+micro-eval 评测的是**完整 agent 程序**，通过命令行 argv 调用。它不评测 LLM prompt 模板，而是评测可执行的 agent 系统。
 
 支持的 agent 类型包括但不限于：
 - **Claude Code CLI** — `claude -p "..." --output-file ...`
@@ -20,8 +22,10 @@ micro-eval 评测的是**完整 agent 程序**，通过 shell command 调用。�
 - **A/B 对比执行** — 同一组任务同时跑 baseline 和 candidate，结果矩阵一目了然
 - **自写执行层** — ~200 行 asyncio 编排，完全可控，不依赖外部 test runner
 - **安全输入传递** — stdin/文件传参，禁止 shell 字符串插值
-- **Workspace 隔离** — git worktree 保证每次 run 起点一致
+- **Workspace 隔离准备** — 已有 git worktree helper；主流程 snapshot/gate 接入仍在 P0-b
 - **并行/串行可选** — asyncio 并行执行，也支持 `--no-parallel` 串行调试
+- **调用证据捕获** — 保存 stdout/stderr 摘要、exit code、输出目录和 artifact refs
+- **输出保护** — stdout/stderr 有保留上限，agent env 值会在文本 artifact 中脱敏
 - **自动评分** — MVP 精确匹配 + 包含匹配；可扩展 DeepEval 自定义指标
 - **HTML 报告** — 一条命令生成静态对比报告
 - **本地 Web UI** — Next.js 仪表盘，浏览历史 run、查看对比表格
@@ -77,7 +81,7 @@ micro-eval run --config eval.yaml
 
 ```bash
 # 生成 HTML 报告
-micro-eval report .micro-eval/runs/run-*.json
+micro-eval report .micro-eval/runs/<run-id>.json
 
 # 或启动 Web UI
 micro-eval ui
@@ -99,7 +103,7 @@ micro-eval run [OPTIONS]
 | `--parallel / --no-parallel` | `--parallel` | 是否并行执行 |
 | `-v, --verbose` | `false` | 详细输出 |
 
-输出：结果 JSON 保存到 `.micro-eval/runs/run-<timestamp>.json`，终端打印汇总表格。
+输出：结果 JSON 保存到 `.micro-eval/runs/run-<timestamp>.json`，终端打印汇总表格。每个 agent invocation 的 stdout/stderr 和输出文件会保存到 `.micro-eval/artifacts/<run-id>/...`，并通过 `stdout_ref`、`stderr_ref`、`output_dir`、`output_artifacts` 写回 run JSON。
 
 ### `micro-eval report`
 
@@ -169,9 +173,9 @@ parallel: true
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `name` | string | 必填 | agent 显示名称 |
-| `command` | string | 必填 | 执行命令，支持 `{input_file}` 和 `{output_dir}` 模板变量 |
+| `command` | string | 必填 | 执行命令，支持 `{input_file}`、`{output_dir}` 和 `{output_file}` 模板变量 |
 | `input_mode` | enum | `stdin` | `stdin`：通过标准输入传递；`file`：写入临时文件，路径通过 `{input_file}` 注入 |
-| `output_mode` | enum | `stdout` | `stdout`：从标准输出收集；`file`：从 `{output_dir}` 读取第一个文件 |
+| `output_mode` | enum | `stdout` | `stdout`：从标准输出收集；`file`：优先读取 `{output_file}`；`directory`：收集 `{output_dir}` 下的输出文件 |
 | `timeout_s` | float | `300.0` | 单任务超时秒数 |
 | `env` | map | `{}` | 传递给子进程的环境变量 |
 
@@ -225,6 +229,21 @@ cd ui && npm run dev
 
 UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认为 `ui/` 的上级目录）。
 
+## Invocation Evidence
+
+`0.1.1` 开始，run JSON 中的每条 `RunResult` 都包含 invocation evidence 字段：
+
+| 字段 | 说明 |
+|------|------|
+| `stdout_summary` / `stderr_summary` | stdout/stderr 的短摘要 |
+| `stdout_ref` / `stderr_ref` | stdout/stderr artifact 路径 |
+| `exit_code` | 子进程退出码 |
+| `output_dir` | 本次 invocation 的 artifact 目录 |
+| `output_artifacts` | agent 生成的输出文件 refs |
+| `failure_mode` | timeout 或非零退出等失败分类 |
+
+详细说明见 `docs/invocation-evidence.md`。
+
 ## 架构概览
 
 ```
@@ -236,13 +255,14 @@ UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认�
 │  eval.yaml + tasks/*.yaml│  精确匹配 / 自定义   │
 ├─────────────────────────────────────────────────┤
 │  Execution Engine (asyncio)                     │
-│  AgentRunner → subprocess → collect output      │
+│  AgentRunner → subprocess argv → collect output │
 ├─────────────────────────────────────────────────┤
-│  Workspace Manager (git worktree)               │
-│  隔离执行环境，保证可复现                         │
+│  Workspace Manager (git worktree helper)        │
+│  P0-b 接入 run 主流程与 snapshot gate            │
 ├─────────────────────────────────────────────────┤
 │  Data Layer (Pydantic models → JSON files)      │
 │  .micro-eval/runs/*.json                        │
+│  .micro-eval/artifacts/<run-id>/...             │
 └─────────────────────────────────────────────────┘
          ↕
 ┌─────────────────────────────────────────────────┐
@@ -261,6 +281,16 @@ UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认�
 - [x] 基础对比页（Web UI）
 - [x] 静态 HTML 报告
 - [x] CLI（run / report / ui）
+- [x] Invocation evidence capture（stdout/stderr refs、exit code、output artifacts）
+
+### Phase 1 下一步
+
+- [ ] Configuration / RunPlan / RunCell 模型
+- [ ] Agent Adapter 分层
+- [ ] manifest.json + ArtifactRef / EvidenceItem
+- [ ] SameStartSnapshot / CellSnapshot
+- [ ] git worktree 接入 `micro-eval run` 主流程
+- [ ] evaluation.json 持久化人工评分
 
 ### Phase 2 — 观测与复盘
 
@@ -278,7 +308,5 @@ UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认�
 ## 许可证
 
 待定
-
-
 
 
