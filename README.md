@@ -1,6 +1,6 @@
 # micro-eval
 
-Current version: `0.1.1`
+Current version: `0.1.2`
 
 面向 1–20 人 AI 小团队的 Agent/Skill 评测助手。把"我觉得这个 agent 更强"变成"它在哪些任务上更强、为什么、延迟多少、值不值得继续投"。
 
@@ -308,5 +308,4 @@ UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认�
 ## 许可证
 
 待定
-
 

@@ -2,6 +2,25 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.1.2 - 2026-06-02
+
+### Changed
+
+- Generate run IDs as `run-YYYYMMDDTHHMMSSZ-<random8>` for readable, collision-resistant legacy run files.
+- Add baseline/candidate role labels to invocation artifact paths so same-name baseline and candidate agents no longer overwrite each other's stdout, stderr, or output directory.
+- Keep the legacy flat `.micro-eval/runs/{run_id}.json` shape unchanged while hardening artifact references.
+
+### Fixed
+
+- Fix `AnnotationPanel` localStorage hydration so `cd ui && npm run lint` passes without changing the annotation save/export workflow.
+- Add regression coverage for same-name agent artifact paths, distinct run IDs, readable stdout/stderr refs, file and directory output artifact capture, secret redaction, and timeout handling.
+
+### Known Gaps
+
+- The run storage format is still the legacy flat `.micro-eval/runs/{run_id}.json` shape, not the full MVP `runs/{run_id}/run.json + manifest.json + cells/` layout.
+- Configuration matrix, RunPlan/RunCell, SameStartSnapshot/CellSnapshot, ArtifactRef/EvidenceItem, and persisted `evaluation.json` are still future P0/P1 work.
+- Annotation data remains localStorage-backed UI state, not persisted human scoring.
+
 ## 0.1.1 - 2026-06-02
 
 ### Added
@@ -22,8 +41,6 @@ All notable changes to `micro-eval` are documented here.
 
 - The run storage format is still the legacy flat `.micro-eval/runs/{run_id}.json` shape, not the full MVP `runs/{run_id}/run.json + manifest.json + cells/` layout.
 - Configuration matrix, RunPlan/RunCell, SameStartSnapshot/CellSnapshot, ArtifactRef/EvidenceItem, and persisted `evaluation.json` are still future P0/P1 work.
-- Artifact paths can still collide if baseline and candidate use the same `agent_name`; fix this before moving into P0-a/P0-b work.
-- UI lint still fails on the existing `AnnotationPanel` localStorage hydration effect.
 
 ## 0.1.0 - 2026-06-02
 
