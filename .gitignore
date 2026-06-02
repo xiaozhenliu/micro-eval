@@ -19,6 +19,7 @@ ui/.next/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # Plan files (local only)
 .plan/
