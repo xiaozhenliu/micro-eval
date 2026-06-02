@@ -1,5 +1,7 @@
 """Tests for the agent runner."""
 
+import re
+
 import pytest
 
 from micro_eval.engine.runner import AgentRunner
@@ -47,6 +49,7 @@ async def test_run_single_success(baseline, sample_task, tmp_path):
     assert result.stderr_ref is not None
     assert result.output_dir is not None
     assert (tmp_path / result.stdout_ref).read_text() == "Hello, world!"
+    assert (tmp_path / result.stderr_ref).read_text() == ""
     assert result.latency_s > 0
 
 
@@ -102,7 +105,9 @@ async def test_run_single_file_output_records_artifact(sample_task, tmp_path):
     assert result.status == TaskStatus.passed
     assert result.output_summary == "file result"
     assert result.output_artifacts
-    assert any(ref.endswith("output.txt") for ref in result.output_artifacts)
+    output_refs = [ref for ref in result.output_artifacts if ref.endswith("output.txt")]
+    assert output_refs
+    assert (tmp_path / output_refs[0]).read_text() == "file result"
 
 
 @pytest.mark.asyncio
@@ -116,7 +121,9 @@ async def test_run_single_directory_output_records_artifact(sample_task, tmp_pat
     result = await runner._run_single(agent, sample_task)
     assert result.status == TaskStatus.passed
     assert result.output_artifacts
-    assert any(ref.endswith("answer.txt") for ref in result.output_artifacts)
+    answer_refs = [ref for ref in result.output_artifacts if ref.endswith("answer.txt")]
+    assert answer_refs
+    assert (tmp_path / answer_refs[0]).read_text() == "directory result"
 
 
 @pytest.mark.asyncio
@@ -144,6 +151,51 @@ async def test_run_eval_parallel(baseline, candidate, sample_task, tmp_path):
     assert run.candidate_agent == "candidate"
     assert len(run.results) == 2
     assert run.execution_order == "parallel"
+
+
+@pytest.mark.asyncio
+async def test_run_eval_same_agent_name_uses_distinct_artifact_paths(
+    sample_task, tmp_path
+):
+    baseline_agent = AgentConfig(name="same-agent", command="cat")
+    candidate_agent = AgentConfig(name="same-agent", command="cat")
+    runner = AgentRunner(work_dir=tmp_path)
+
+    run = await runner.run_eval(
+        baseline_agent, candidate_agent, [sample_task], parallel=True
+    )
+
+    stdout_refs = [result.stdout_ref for result in run.results]
+    stderr_refs = [result.stderr_ref for result in run.results]
+    output_dirs = [result.output_dir for result in run.results]
+
+    assert len(run.results) == 2
+    assert len(set(stdout_refs)) == 2
+    assert len(set(stderr_refs)) == 2
+    assert len(set(output_dirs)) == 2
+    assert all(ref is not None for ref in stdout_refs)
+    assert all(ref is not None for ref in stderr_refs)
+    assert all(path is not None for path in output_dirs)
+    assert any("--baseline--" in str(path) for path in output_dirs)
+    assert any("--candidate--" in str(path) for path in output_dirs)
+    for ref in stdout_refs + stderr_refs:
+        assert ref is not None
+        assert (tmp_path / ref).exists()
+
+
+@pytest.mark.asyncio
+async def test_run_eval_generates_distinct_readable_run_ids(
+    baseline, candidate, sample_task, tmp_path
+):
+    runner = AgentRunner(work_dir=tmp_path)
+
+    first = await runner.run_eval(baseline, candidate, [sample_task])
+    second = await runner.run_eval(baseline, candidate, [sample_task])
+
+    pattern = r"^run-\d{8}T\d{6}Z-[0-9a-f]{8}$"
+    assert first.id != second.id
+    assert re.match(pattern, first.id)
+    assert re.match(pattern, second.id)
 
 
 @pytest.mark.asyncio

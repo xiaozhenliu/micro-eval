@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import secrets
 import shlex
 import time
 from datetime import datetime, timezone
@@ -46,7 +47,7 @@ class AgentRunner:
         parallel: bool = True,
     ) -> Run:
         """Run evaluation across all tasks for both agents."""
-        run_id = f"run-{time.time_ns()}"
+        run_id = self._new_run_id()
         ts = datetime.now(timezone.utc).isoformat()
 
         results: list[RunResult] = []
@@ -54,13 +55,25 @@ class AgentRunner:
         if parallel:
             coros = []
             for task in tasks:
-                coros.append(self._run_single(baseline, task, run_id=run_id))
-                coros.append(self._run_single(candidate, task, run_id=run_id))
+                coros.append(
+                    self._run_single(
+                        baseline, task, run_id=run_id, invocation_role="baseline"
+                    )
+                )
+                coros.append(
+                    self._run_single(
+                        candidate, task, run_id=run_id, invocation_role="candidate"
+                    )
+                )
             results = await asyncio.gather(*coros)
         else:
             for task in tasks:
-                r1 = await self._run_single(baseline, task, run_id=run_id)
-                r2 = await self._run_single(candidate, task, run_id=run_id)
+                r1 = await self._run_single(
+                    baseline, task, run_id=run_id, invocation_role="baseline"
+                )
+                r2 = await self._run_single(
+                    candidate, task, run_id=run_id, invocation_role="candidate"
+                )
                 results.extend([r1, r2])
 
         import platform
@@ -82,11 +95,17 @@ class AgentRunner:
         )
 
     async def _run_single(
-        self, agent: AgentConfig, task: Task, run_id: str = "manual"
+        self,
+        agent: AgentConfig,
+        task: Task,
+        run_id: str = "manual",
+        invocation_role: Optional[str] = None,
     ) -> RunResult:
         """Execute a single agent on a single task."""
         start = time.monotonic()
-        output_dir = self._cell_output_dir(run_id, task, agent)
+        output_dir = self._cell_output_dir(
+            run_id, task, agent, invocation_role=invocation_role
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / "output.txt"
         input_file: Optional[Path] = None
@@ -291,13 +310,22 @@ class AgentRunner:
         env["MICRO_EVAL_OUTPUT_FILE"] = str(output_file)
         return env
 
+    def _new_run_id(self) -> str:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return f"run-{timestamp}-{secrets.token_hex(4)}"
+
     def _cell_output_dir(
-        self, run_id: str, task: Task, agent: AgentConfig
+        self,
+        run_id: str,
+        task: Task,
+        agent: AgentConfig,
+        invocation_role: Optional[str] = None,
     ) -> Path:
-        cell_id = (
-            f"{self._safe_path_segment(task.id)}--"
-            f"{self._safe_path_segment(agent.name)}"
-        )
+        segments = [self._safe_path_segment(task.id)]
+        if invocation_role:
+            segments.append(self._safe_path_segment(invocation_role))
+        segments.append(self._safe_path_segment(agent.name))
+        cell_id = "--".join(segments)
         return self.work_dir / ".micro-eval" / "artifacts" / run_id / cell_id
 
     def _safe_path_segment(self, value: str) -> str:
