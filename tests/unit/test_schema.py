@@ -70,6 +70,10 @@ def test_run_result():
     )
     assert result.status == TaskStatus.passed
     assert result.score == 0.95
+    assert result.stdout_summary == ""
+    assert result.stderr_summary == ""
+    assert result.exit_code is None
+    assert result.output_artifacts == []
     assert result.failure_mode is None
 
 
@@ -121,6 +125,13 @@ def test_run_serialization():
                 status=TaskStatus.passed,
                 score=1.0,
                 output_summary="ok",
+                stdout_summary="ok",
+                stderr_summary="",
+                stdout_ref=".micro-eval/artifacts/run-456/t1--b/stdout.txt",
+                stderr_ref=".micro-eval/artifacts/run-456/t1--b/stderr.txt",
+                exit_code=0,
+                output_dir=".micro-eval/artifacts/run-456/t1--b",
+                output_artifacts=[],
                 latency_s=0.5,
             )
         ],
@@ -129,3 +140,5 @@ def test_run_serialization():
     assert data["schema_version"] == "1.0"
     assert len(data["results"]) == 1
     assert data["results"][0]["status"] == "pass"
+    assert data["results"][0]["stdout_ref"].endswith("stdout.txt")
+    assert data["results"][0]["exit_code"] == 0

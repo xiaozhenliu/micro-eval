@@ -6,14 +6,21 @@ export const RunResultSchema = z.object({
   status: z.enum(["pass", "fail", "error", "timeout"]),
   score: z.number().nullable(),
   output_summary: z.string(),
+  stdout_summary: z.string().default(""),
+  stderr_summary: z.string().default(""),
+  stdout_ref: z.string().nullable().default(null),
+  stderr_ref: z.string().nullable().default(null),
+  exit_code: z.number().int().nullable().default(null),
+  output_dir: z.string().nullable().default(null),
+  output_artifacts: z.array(z.string()).default([]),
   cost_usd: z.number().nullable(),
   latency_s: z.number(),
   failure_mode: z.string().nullable(),
 });
 
 export const EnvironmentSchema = z.object({
-  git_commit: z.string(),
-  config_hash: z.string(),
+  git_commit: z.string().nullable(),
+  config_hash: z.string().nullable(),
   python_version: z.string(),
   timestamp: z.string(),
 });
