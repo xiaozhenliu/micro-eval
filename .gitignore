@@ -23,7 +23,10 @@ ui/.next/
 # Plan files (local only)
 .plan/
 
-# Dev-only docs (tracked on dev branch)
+# Dev-only docs (tracked on dev branch, never on main)
 CLAUDE.md
+AGENTS.md
+ui/CLAUDE.md
+ui/AGENTS.md
 micro-eval-brd.md
 micro-eval-prd.md
