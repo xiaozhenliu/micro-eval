@@ -1,9 +1,22 @@
+---
+title: "决策记录：Rubric Engineering 与 micro-eval 评分系统的关系"
+date: 2026-06-01
+status: 已决策
+type: decision-record
+input: "2026-06-01-agentic-rubric-engineering.md"
+affects: "2026-06-02-unicorn-design.md §4 评分系统"
+tags:
+  - decision-record
+  - rubric-engineering
+  - scoring
+---
+
 # 决策记录：Rubric Engineering 与 micro-eval 评分系统的关系
 
 **日期**: 2026-06-01
 **状态**: 已决策
 **输入文档**: `2026-06-01-agentic-rubric-engineering.md`（研究报告）
-**影响文档**: `2026-06-01-unicorn-design.md` §4 评分系统
+**影响文档**: `2026-06-02-unicorn-design.md` §4 评分系统
 
 ---
 
@@ -155,7 +168,7 @@ DeepEval 不做的（micro-eval 需要自建）：
 
 ## 对设计文档的具体修改
 
-已在 `2026-06-01-unicorn-design.md` §4.1 中完成以下更新：
+已在 `2026-06-02-unicorn-design.md` §4.1 中完成以下更新：
 
 1. Layer 1 扩展为"确定性验证"，明确短路规则和不可覆盖原则
 2. 补充内置验证能力列表（不作为独立框架）
@@ -168,7 +181,28 @@ DeepEval 不做的（micro-eval 需要自建）：
 
 ## 参考
 
-- `docs/superpowers/specs/2026-06-01-agentic-rubric-engineering.md` — 完整研究报告
+- `docs/analysis/2026-06-01-agentic-rubric-engineering.md` — 完整研究报告
 - [DeepEval GEval](https://github.com/confident-ai/deepeval) — LLM 评判层实现
 - [Scale AI: Agentic Rubrics as Contextual Verifiers](https://arxiv.org/abs/2601.04171)
 - [QQJ: Quantifying Qualitative Judgment](https://arxiv.org/abs/2605.17382)
+
+---
+
+## 覆盖核查与修订（2026-06-02）
+
+> 本节核查本决策记录与 `2026-06-02-unicorn-design.md` 实际内容的一致性，并修正一处不准确陈述。
+
+**§4.1 的 6 项更新已全部落实**（逐条核对设计文档 §4.1）：确定性验证层、内置验证能力列表、Layer 2 复用 DeepEval GEval、30% 成本约束、聚合策略、短路逻辑均已 present。其中"短路逻辑"在 2026-06-02 进一步演进为显式 `ScoreStage.should_run` + Aggregator 策略（设计文档 §4.1），比本记录写作时更彻底地落实了"不建独立 VerifierEngine"的决策——与本记录"❌ VerifierEngine 不采纳"一致。
+
+**修正：安全威胁面（T1–T6）的落地描述不准确。** 本记录"决策总结"表称 *"T2（操纵评分管线）和 T6（Reward Hacking）补充到 §12"*，但实际情况是：
+
+1. 设计文档 §12 使用**独立的 OWASP 编号体系（T1–T12）**，与本报告的 T1–T6 不是同一套编号。§12 的 T2 是"BYOK 密钥泄露"、T6 是"多租户隔离失败"，与本报告含义不同。
+2. **"操纵评分管线"（本报告 T2）确实被采纳，但落在 §4.1**（"验证器以只读方式访问 workspace（防止 agent 操纵评分管线）"），不在 §12。
+3. **"Reward Hacking / Goodhart's Law"（本报告 T6）并未进入设计文档任何章节**——全文检索无 `Reward Hacking`/`Goodhart`/`absence-based 标准`/`锚定任务（anchor task）`。即报告提出的缓解（absence-based 标准 + 定期换 rubric + 锚定任务）**尚未纳入**。
+
+**未纳入 Reward Hacking 是否合理？** 合理，但应记为 deferred 而非"已补充"：
+- 目标 Profile `mvp.local_pairwise.v1` 面向本地、可信、自己的 agent/skill；Reward Hacking 主要威胁出现在 **RL 训练闭环**或**长期对抗/不可信 agent 反复迭代**场景，小团队对比一次改动时风险低。
+- 锚定任务、absence-based rubric 属于 [[2026-06-01-unicorn-vs-brd-research]] §4.8/§4.10 归类的"可信度增强/后置研究"，不阻塞最小决策闭环。
+- 但设计文档应在 §15"不做"或 §8 Maturity 高 level 中**显式登记 Reward Hacking 防护为 deferred 能力**，避免本记录"已补充到 §12"的误导。
+
+→ **更正后的结论**：上方"决策总结"该行应读为 ——「T2（操纵评分管线）已落在 §4.1；T6（Reward Hacking）评估为合理 deferred，待 `sandboxed_team.v1` / RL 场景再纳入」。

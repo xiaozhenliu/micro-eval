@@ -1,3 +1,15 @@
+---
+title: "Unicorn：micro-eval 完整形态设计"
+date: 2026-06-01
+status: draft
+type: design
+codename: Unicorn
+tags:
+  - design
+  - architecture
+  - micro-eval
+---
+
 # Unicorn：micro-eval 完整形态设计
 
 **代号**: Unicorn

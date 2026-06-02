@@ -1,34 +1,32 @@
-# CLAUDE.md
+# AGENTS.md
 
 **Critical Rule**: Always reply the user in Simplified Chinese. 
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## 分支策略
 
-- **main** — 干净的发布分支，只包含源码、文档、测试。不跟踪 CLAUDE.md、BRD、PRD。
-- **dev** — 日常开发分支，包含 main 的所有内容 + CLAUDE.md、micro-eval-brd.md、设计文档。
+- **main** — 干净的发布分支，只包含源码、文档、测试。不跟踪 AGENTS.md、BRD、PRD。
+- **dev** — 日常开发分支，包含 main 的所有内容 + AGENTS.md、micro-eval-brd.md、micro-eval-prd.md。
 
 **日常工作流：**
 1. 在 `dev` 分支上开发（当前分支）
-2. 功能完成后 merge 到 `main`（main 的 .gitignore 会自动排除 CLAUDE.md/BRD/PRD）
+2. 功能完成后 merge 到 `main`（main 的 .gitignore 会自动排除 AGENTS.md/BRD/PRD）
 3. 不要直接在 main 上开发
 
 ## 当前状态
 
 v0.1.0 MVP 已完成。Python CLI + Next.js 本地 Web UI 均可运行。25 个 pytest 测试通过。
 
-## 项目意图(来自 BRD + Unicorn Design)
+## 项目意图(来自 PRD)
 
-`micro-eval` 是面向 1–20 人 AI 小团队的 **Agent / Skill 评测决策工具**。核心命题：将"我觉得这个 agent 更强"转化为可量化、可溯源、可复现的结论。
+`micro-eval` 是面向 1–20 人 AI 小团队**的 **Agent / Skill 评测助手**。它不重新造平台,而是把三个现成底座拼成一套"能真正用起来"的评测工作台,把"我觉得这个 agent 更强"变成"它在哪些任务上更强、为什么、成本多少、值不值得继续投"。
 
-核心数据模型：`Run = Tasks × Configurations × Repetitions → ResultMatrix`
-
-成功标准：用户能在 10 分钟内完成 配置 Configurations → 定义 Tasks → 发起 Run → 在矩阵对比中得出结论。
+成功标准(MVP):用户能在 10 分钟内完成 建项目 → 导任务 → 配多个 agent/skill 版本 → 发起 run → 看对比/trace/成本 → 得出结论。
 
 ## 架构约束(实现时必须遵守)
 
-这些约束来自 Unicorn Design + BRD,是后续所有技术决策的边界,**违背它们就偏离了产品定位**:
+这些约束来自 PRD,是后续所有技术决策的边界,**违背它们就偏离了产品定位**:
 
 1. **执行层自写,评分/观测委托外部**。
    - **自写执行层** = agent subprocess 编排、并行执行、超时、隔离(git worktree)、结果收集。~100 行 Python,完全可控。
@@ -48,27 +46,27 @@ v0.1.0 MVP 已完成。Python CLI + Next.js 本地 Web UI 均可运行。25 个 
 
 ## 核心领域模型
 
-Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见 `docs/superpowers/specs/2026-06-02-unicorn-design.md` 第 3 节):
+PRD 定义的对象及其关系(实现数据层时以此为准,字段细节见 `micro-eval-prd.md` 第 5 节):
 
-- **Configuration** → 结果矩阵的"列"：Agent × Skill(可选) × Environment × Params × Repetitions。
-- **AgentSpec** → 被评测的完整程序(command + input_mode + output_mode + timeout)。
-- **SkillSpec** → 挂载到 Agent 的能力单元(path + version)。
-- **Task** → 评测单元(prompt + workspace + expectations + validation + scoring rubric)。
-- **WorkspaceSpec** → 执行环境(git_repo/blank/files + setup_commands + resource_limits)。
-- **Run** → Tasks × Configurations × Repetitions 的一次执行,产出 ResultMatrix。
-- **RunResult** → 一个 (Task, Configuration, Repetition) 的结果(scores + trace + cost + artifacts)。
+- **Project** → 一类评测目标,拥有多个 Task 与多次 Run。
+- **Task** → 可重复运行的测试单元(含 input_payload、expected_output、rubric、business_impact_tier)。
+- **Skill** → 可切换、可版本化的能力单元(name + version + parameters + dependencies)。
+- **AgentConfig** → 一个运行组合(model + routing + toolset + skills_profile + 采样参数)。
+- **Run** → 对某任务集的一次实际执行(异步,记录 status / cost / trace_bundle_ref)。
+- **RunResult** → 一个 `task × agent` 的结果(score / pass_fail / diff_ref / trace_ref / failure_mode)。
+- **EvaluationPreset** → 把常复用的 promptfoo_config / langfuse_project / openhands_profile 打包。
 
-关键基数关系:`Run` 在 `Tasks × Configurations × Repetitions` 的笛卡尔积上产生 ResultMatrix,对比页是这个矩阵的可视化。
+关键基数关系:`Run` 在 `任务集 × AgentConfig` 的笛卡尔积上产生多条 `RunResult`,对比页正是这个结果矩阵的可视化。
 
 ## 路线图(决定动手顺序)
 
-底座**串行接入**,不要并行做完(风险:执行链路过长):
+按 PRD,底座**串行接入**,不要并行做完(风险:执行链路过长):
 
-- **Phase 1 (MVP)**:Configuration/Task/Run + 自写执行层 + 分层评分(validation → LLM judge) + 矩阵对比页 + Next.js 本地 UI。
-- **Phase 2**:Langfuse trace 接入 + 复盘页 + 成本分析 + repetitions 统计聚合。
-- **Phase 3**:Docker sandbox + 更复杂 workspace 类型 + 趋势分析。
+- **Phase 1 (MVP)**:project/task/run + 自写执行层 + DeepEval 评分 + 基础对比页 + 静态 HTML 报告 + Next.js 本地 UI。
+- **Phase 2**:Langfuse trace 接入 + 复盘页 + 成本分析 + skill profile 对比。
+- **Phase 3**:OpenHands sandbox 接入 + 更复杂任务类型 + 趋势分析。
 
-完整规格见 `docs/superpowers/specs/2026-06-02-unicorn-design.md`(产品+技术设计)与 `micro-eval-brd.md`(商业背景)。
+完整需求见 `micro-eval-prd.md`(产品规格)与 `micro-eval-brd.md`(商业背景)。
 
 ## 已锁定的技术决策(来自工程评审 2026-05-31)
 
@@ -77,7 +75,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 | 评测引擎 | 自写执行层,DeepEval 仅作评分库 | Codex outside voice + 用户确认 |
 | Input 传递 | stdin/文件传参,禁止 shell 字符串插值 | Codex outside voice + 用户确认 |
 | Workspace 隔离 | git worktree(要求项目在 git repo 中） | 用户选择 |
-| 执行模式 | N×M 矩阵展开,Configurations 并行执行(asyncio) | Unicorn Design |
+| 执行模式 | baseline/candidate 并行执行(asyncio) | 用户确认 |
 | 数据契约 | Pydantic(Python) + zod(TS) 共享 schema | 用户确认 |
 | 测试策略 | pytest 单元测试 + E2E 集成测试 | 用户确认 |
 | Web UI | Next.js 本地 Web UI,API routes 读取 .micro-eval/ JSON | 设计文档 |
@@ -96,7 +94,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 
 ```bash
 # Python CLI
-uv run micro-eval run --config eval.yaml
+uv run micro-eval run --baseline X --candidate Y
 uv run pytest
 
 # Next.js UI

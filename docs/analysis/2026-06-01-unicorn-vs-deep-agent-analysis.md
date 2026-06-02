@@ -1,3 +1,16 @@
+---
+title: "AWS Deep Agent Eval vs micro-eval 对比分析"
+date: 2026-06-01
+status: 分析完成
+type: competitive-analysis
+subject: aws-deep-agent-eval
+scope: 架构、任务定义、执行、评分、观测、隔离、对比、安全、扩展、成熟度
+tags:
+  - competitive-analysis
+  - agent-eval
+  - architecture
+---
+
 # AWS Deep Agent Eval vs Unicorn (micro-eval) 对比分析
 
 **日期**: 2026-06-01
@@ -254,123 +267,7 @@ AWS 假设可信环境（你自己的 AWS 账号、你自己的 agent）。micro
 
 ---
 
-## 6. 建议调整
-
-基于本次对比分析，对 micro-eval 设计规格提出以下具体调整建议：
-
-### 6.1 Phase 1 立即执行
-
-**R1: 定义 pass@k / pass^k 聚合指标**
-
-在 ResultMatrix 的聚合层增加标准统计指标：
-
-```python
-# 建议添加到 micro_eval/models.py
-class AggregatedResult:
-    pass_at_k: float      # P(>=1 pass in k reps)
-    pass_pow_k: float     # P(all pass in k reps)
-    consistency: float    # 1 - std(scores)/mean(scores)
-    mean_cost_usd: float
-    mean_latency_s: float
-```
-
-**理由**: repetitions 维度已存在，但没有标准化的聚合方式，用户无法解读重复执行的结果。
-
-**R2: 强化 Layer 1 Validation 覆盖面**
-
-为常见 task 类型预置确定性验证器：
-
-| Task 类型 | 验证方式 | 替代 LLM judge |
-|-----------|----------|---------------|
-| coding | 运行测试套件 + type check | 是 |
-| sql | 执行查询对比结果集 | 是 |
-| api | schema 验证 + 状态码 | 是 |
-| refactor | AST diff + 测试通过 | 部分 |
-| document | 无（必须 LLM judge） | 否 |
-
-**理由**: 每个确定性检查替代一次 LLM judge 调用，节省 $0.01-0.05/task 且结果更可靠。50 task x 5 config = 250 次评分，成本差异显著。
-
-**R3: 简化 Phase 1 的 Provider 注册机制**
-
-将 entry points 注册推迟到 Phase 2。Phase 1 直接 import：
-
-```python
-# Phase 1: 直接 import，不用 entry points
-from micro_eval.workspace.git_worktree import GitWorktreeProvider
-from micro_eval.trace.builtin import BuiltinTraceProvider
-
-# Phase 2: 引入 entry points（当有第二个 provider 时）
-```
-
-**理由**: 1-20 人团队不需要 plugin 发现机制。过早抽象增加复杂度但不增加价值。
-
-### 6.2 Phase 2 规划调整
-
-**R4: 增加在线评估模式**
-
-在 Phase 2 Langfuse 接入时，同步规划"监控模式"：
-
-- 监听 trace provider 的新 trace 事件
-- 对满足条件的 trace 自动触发轻量评分（Layer 1 only）
-- 生成周报趋势（"本周 pass rate 从 85% 降到 72%，主要退化在 auth 相关 task"）
-
-**理由**: 持续质量监控是从"评测工具"到"质量平台"的关键跃迁。AWS 方案已验证这个模式的价值。
-
-**R5: 设计 Skill 的 Markdown 配置格式**
-
-参考 AWS deepagents 的 SKILL.md 格式，为 micro-eval 的 Skill 定义标准文件格式：
-
-```yaml
-# .micro-eval/skills/code-review-v2.skill.md
----
-name: code-review
-version: 2.1.0
-dependencies: [read_file, search]
-parameters:
-  focus: [security, performance]
-  max_issues: 10
----
-
-## System Prompt
-You are a code reviewer focused on {focus} issues...
-
-## Workflow
-1. Read the changed files
-2. Identify issues by category
-3. Prioritize by severity
-4. Output structured review in JSON format
-```
-
-**理由**: Markdown + frontmatter 格式让非工程师（PM、QA）也能编辑 Skill 定义，降低使用门槛。
-
-### 6.3 设计层面的风险缓解
-
-**R6: 控制 WorkspaceSpec 的设计范围**
-
-当前 5 级沙箱设计（Level 0-4）过于前瞻。建议：
-- Phase 1: 只实现 Level 0 (git worktree)，接口设计兼容未来扩展
-- Phase 2: 按需增加 Level 1 (seatbelt/bubblewrap)
-- Phase 3+: 根据实际安全事件决定是否需要 Level 2-4
-
-不要为 Firecracker VM 预设接口——等真正需要时再设计，届时需求会更清晰。
-
-**R7: 避免"设计完美但永远在 Phase 1"陷阱**
-
-AWS demo 的核心教训：500 行代码就能产生有用的评估结果。建议为每个 Phase 设定硬性时间盒：
-
-| Phase | 时间盒 | 交付标准 |
-|-------|--------|----------|
-| Phase 1 | 4 周 | 能跑 10 task x 2 config，产出对比报告 |
-| Phase 2 | 6 周 | Langfuse trace 可视化 + 成本分析 |
-| Phase 3 | 8 周 | Docker 隔离 + 复杂 task 类型 |
-
-超时未完成 = 砍功能，不延期。
-
----
-
-## 7. 结论
-
-### 总体评估
+## 6. 结论
 
 AWS Deep Agent Eval 和 micro-eval 不在同一个层面上竞争。AWS 是一个精心设计的教学 demo，证明了"pytest + LangSmith 就能做 agent 评测"；micro-eval 是一个生产级评测平台的完整设计，解决的是"多 agent 对比 + 可复现 + 可溯源"的系统性问题。
 
@@ -378,21 +275,26 @@ AWS Deep Agent Eval 和 micro-eval 不在同一个层面上竞争。AWS 是一�
 - AWS 验证了"最小可行评测"的形态——这是 micro-eval Phase 1 应该达到的体验标准
 - micro-eval 的设计深度解决了 AWS 方案在扩展时必然遇到的问题
 
-### 关键判断
+**关键判断**：
 
 1. **micro-eval 的架构方向正确**。矩阵模型、黑盒协议、分层评分、渐进式隔离——这些设计决策经得起与工业级方案的对比。
 
-2. **最大风险不是设计不足，而是实现过慢**。micro-eval 的设计广度远超 AWS，但 AWS 500 行代码已经能跑。建议严格遵循 Phase 1 -> 2 -> 3 串行路线，每个 Phase 交付可运行的增量价值。
+2. **最大风险不是设计不足，而是实现过慢**。micro-eval 的设计广度远超 AWS，但 AWS 500 行代码已经能跑。
 
 3. **从 AWS 借鉴的核心不是技术，而是态度**："先跑起来再说"。一个能跑的 MVP 比一份完美的设计文档更有价值。
 
-### 下一步行动
+---
 
-| 优先级 | 行动项 | 预期产出 |
-|--------|--------|----------|
-| P0 | 实现 pass@k/pass^k 聚合指标 | ResultMatrix 标准化输出 |
-| P0 | 扩展 Layer 1 Validation 覆盖面 | 减少 LLM judge 依赖 |
-| P1 | 定义 Skill markdown 格式规范 | .skill.md 文件标准 |
-| P1 | 简化 Provider 注册为直接 import | 减少 Phase 1 复杂度 |
-| P2 | 规划在线评估模式 | Phase 2 设计文档 |
-| P2 | 设定 Phase 时间盒 | 项目管理约束 |
+## 借鉴建议的采纳核查（2026-06-02）
+
+> 对照 `2026-06-02-unicorn-design.md`，逐条核查 §4 五条借鉴建议的落地情况；未采纳 / 降级项给出合理性判断。
+
+| 建议 | 原优先级 | 设计文档落地 | 判断 |
+|------|---------|------------|------|
+| 4.1 pytest 作为运行器骨架 | 中 | **未采纳**。Execution Kernel 用自写 asyncio subprocess（§5.1/§5.3），未走 pytest plugin / pytest-xdist | 合理：CLAUDE.md 已锁定"自写执行层"（工程评审决策）；矩阵模型 `Task×Config×Rep` + 黑盒 subprocess adapter 与 pytest 的 test-function 范式不同，强行套 pytest 反增耦合 |
+| 4.2 pass@k / pass^k | 高 | **降级**。pass@k/pass^k 被放在 Evaluation Layer 的 **Future/L2**（§5.7、§8），未进 MVP 默认展示 | 基本合理但偏保守：MVP `repetitions` 默认 =1，此时 pass@k ≡ pass rate，差异化价值需 rep>1 才显现；MVP 的 Basic Honest Stats（pass rate + consistency + 低样本警告）已覆盖最小需求。**建议**：rep>1 成为常态后应把 pass@k/pass^k 提升为对比页默认指标（计算成本 <10 行，矩阵已存全部 rep 结果）|
+| 4.3 在线评估 / 监控模式 | 低 | **未采纳**，设计文档无相关内容 | 合理且一致：与 [[2026-06-01-unicorn-vs-brd-research]] §3.6 反目标"不做通用 observability 平台"对齐，属 Phase 2+ |
+| 4.4 能用断言就不用 LLM | 高 | **完全采纳**：升为架构不变量 #6"Deterministic checks before LLM judgment"（§2），并贯穿 §4.1 | — |
+| 4.5 Skill 作为 Markdown（frontmatter+steps） | 中 | **部分采纳**：用了 SKILL.md（§7.1）、skill_version 来自 frontmatter（§4），但 AWS 示例的 rich frontmatter（model/tools/temperature）未在 schema 中固化 | 合理：MVP 把 skill 建模为 path+version 足够；rich frontmatter 是后续 Asset Layer 细节 |
+
+**小结**：5 条中 1 条完全采纳、1 条部分采纳、1 条合理降级、2 条合理未采纳。无"声称采纳实则缺失"的情况；唯一值得跟踪的是 4.2 pass@k 的降级——它在 rep>1 时应回到默认展示。
