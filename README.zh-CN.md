@@ -1,23 +1,3 @@
----
-title: micro-eval 中文 README
-doc_type: tutorial
-status: active
-created_at: 2026-06-03T15:56+08:00
-updated_at: 2026-06-03T16:16+08:00
-owner: micro-eval maintainers
-source_of_truth: false
-tags:
-  - readme
-  - onboarding
-  - mvp
-  - zh-CN
-related:
-  - README.md
-  - docs/README.md
-  - docs/DEVELOPMENT.md
-  - docs/engineering/security-guidelines.md
----
-
 # micro-eval
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -271,3 +251,25 @@ grep -R "sessionStorage" ui/src || true
 ## License
 
 Apache-2.0。见 [`LICENSE`](LICENSE) 和 [`NOTICE`](NOTICE)。
+
+## 文档元信息
+
+```yaml
+title: micro-eval 中文 README
+doc_type: tutorial
+status: active
+created_at: 2026-06-03T15:56+08:00
+updated_at: 2026-06-03T16:16+08:00
+owner: micro-eval maintainers
+source_of_truth: false
+tags:
+  - readme
+  - onboarding
+  - mvp
+  - zh-CN
+related:
+  - README.md
+  - docs/README.md
+  - docs/DEVELOPMENT.md
+  - docs/engineering/security-guidelines.md
+```
