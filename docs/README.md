@@ -3,7 +3,7 @@ title: Docs Directory Guide
 doc_type: reference
 status: active
 created_at: 2026-06-03T08:35+08:00
-updated_at: 2026-06-03T13:09+08:00
+updated_at: 2026-06-03T20:00+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -32,6 +32,7 @@ Use this README as the entry point for deciding where a document belongs.
 | `DEVELOPMENT.md` | Engineering entry guide for local setup, common commands, verification, module map, and release readiness. |
 | `documentation-standard.md` | Project-wide documentation standard and metadata format. |
 | `analysis/` | Research, comparisons, investigations, trade-off analysis, and non-authoritative exploration notes. |
+| `bug_reports/` | Review findings, defect inventories, and tracked remediation/tech-debt todo lists derived from code reviews. |
 | `dev/` | Development-time records such as logs, decisions, implementation notes, and future engineering journals. |
 | `dev/log/` | Chronological development logs. File names in this folder must include `dev-log`. |
 | `engineering/` | Engineering guardrails for architecture, implementation, Python, frontend, testing, UX, security, and release process. |
@@ -46,7 +47,8 @@ Use this README as the entry point for deciding where a document belongs.
 | --- | --- |
 | `_archive/invocation-evidence.md` | Archived historical notes related to legacy invocation evidence behavior. |
 | `releases/2026-06-02-mvp-release-evidence.md` | MVP release-readiness evidence and verification summary. |
-| `engineering/release-process.md` | Source of truth for versioning, release evidence, dependency inventory, dev commits, tags, and dev-to-main publishing. |
+| `.codex/skills/micro-eval-release/SKILL.md` | Project-level executable release skill for versioning, release evidence, dependency inventory, dev commits, tags, and dev-to-main publishing. |
+| `engineering/release-process.md` | Human-readable release reference that points back to the release skill. |
 
 ## Source-of-truth hierarchy
 

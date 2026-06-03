@@ -25,7 +25,7 @@ Added a scripted release path so `main` can receive releasable content from `dev
 
 ## Changes
 
-- Added `scripts/release-to-main.sh` and publish templates under `scripts/release/templates/`.
+- Added `scripts/release-to-main.sh`; publish templates now live under `.codex/skills/micro-eval-release/assets/templates/` and the repository script delegates to the release skill.
 - Refactored `AGENTS.md` into stable boot rules, action-oriented source routing, release rules, documentation rules, and the restored OMX injected section.
 - Split security guidance into a routing index plus three source-of-truth files: product/service safety, user run safety, and development implementation safety.
 

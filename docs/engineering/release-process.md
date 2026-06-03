@@ -3,9 +3,9 @@ title: micro-eval Release Process
 doc_type: reference
 status: active
 created_at: 2026-06-03T13:09+08:00
-updated_at: 2026-06-03T13:25+08:00
+updated_at: 2026-06-03T13:55+08:00
 owner: micro-eval maintainers
-source_of_truth: true
+source_of_truth: false
 tags:
   - engineering
   - release
@@ -17,17 +17,19 @@ related:
   - docs/DEVELOPMENT.md
   - docs/documentation-standard.md
   - docs/engineering/security-guidelines.md
+  - .codex/skills/micro-eval-release/SKILL.md
   - scripts/release-to-main.sh
 ---
 
 # micro-eval Release Process
 
-This document is the source of truth for preparing, validating, documenting, committing, and publishing a `micro-eval` release.
+This document is a human-readable release reference. The executable release workflow is the project-level skill `.codex/skills/micro-eval-release/SKILL.md` plus its bundled `scripts/` and `assets/templates/`. Repository `scripts/release/*` and `scripts/release-to-main.sh` are compatibility wrappers.
 
 ## Goals
 
 - Keep release work repeatable and auditable.
 - Keep `VERSION`, package metadata, runtime metadata, UI package metadata, and run evidence aligned.
+- Keep executable release automation inside `.codex/skills/micro-eval-release/`.
 - Record release evidence and dependency inventory before publishing.
 - Publish `main` only through the existing projection script from a clean `dev` checkout.
 - Avoid leaking secrets or runtime artifacts into release documentation or commits.
@@ -46,9 +48,10 @@ scripts/release-to-main.sh dev main
   - `docs/superpowers/`
   - `docs/_archive/`
   - `docs/references/`
+  - `docs/bug_reports/`
   - `micro-eval-brd.md`
   - `micro-eval-prd.md`
-- `main` `AGENTS.md` and `CLAUDE.md` must be generated from `scripts/release/templates/`.
+- `main` `AGENTS.md` and `CLAUDE.md` must be generated from `.codex/skills/micro-eval-release/assets/templates/`.
 
 ## Version source strategy
 
@@ -94,13 +97,13 @@ Before preparing a release, identify:
 1. Run a preflight version audit:
 
 ```bash
-python scripts/release/check-version-consistency.py --version "$(cat VERSION)"
+.codex/skills/micro-eval-release/scripts/check-version-consistency.py --version "$(cat VERSION)"
 ```
 
 2. Sync a new version when needed:
 
 ```bash
-python scripts/release/sync-version.py X.Y.Z
+.codex/skills/micro-eval-release/scripts/sync-version.py X.Y.Z
 ```
 
 3. Re-run the consistency check.
@@ -189,13 +192,8 @@ The release evidence should include:
 Run the release checks appropriate to the changed files. For release work, the default gate is:
 
 ```bash
-python scripts/release/check-version-consistency.py --version "$(cat VERSION)"
-uv run python -m compileall src/micro_eval tests
-uv run pytest -q
-(cd ui && npm run lint && npm run build)
-uv build
-git diff --check
-git diff --cached --check
+.codex/skills/micro-eval-release/scripts/check-version-consistency.py --version "$(cat VERSION)"
+.codex/skills/micro-eval-release/scripts/preflight-release.sh "$(cat VERSION)"
 ```
 
 Security-oriented greps must check that trusted paths do not introduce shell subprocess execution:
@@ -234,10 +232,10 @@ scripts/release-to-main.sh dev main
 After publishing, verify:
 
 ```bash
-test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*')"
+test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
 ```
 
-Also confirm the release commit exists on `main` and `AGENTS.md` / `CLAUDE.md` match the publish templates.
+Also confirm the release commit exists on `main` and `AGENTS.md` / `CLAUDE.md` match the skill asset templates.
 
 ## Local tag workflow
 

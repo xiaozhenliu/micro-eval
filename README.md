@@ -1,14 +1,81 @@
+---
+title: micro-eval README
+doc_type: tutorial
+status: active
+created_at: 2026-05-31T01:43+08:00
+updated_at: 2026-06-03T15:56+08:00
+owner: micro-eval maintainers
+source_of_truth: false
+tags:
+  - readme
+  - onboarding
+  - mvp
+related:
+  - README.zh-CN.md
+  - docs/README.md
+  - docs/DEVELOPMENT.md
+  - docs/engineering/security-guidelines.md
+---
+
 # micro-eval
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Version: 0.1.3](https://img.shields.io/badge/version-0.1.3-6f42c1)](VERSION)
+[![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
 Current version: `0.1.3`
 
-`micro-eval` 是面向 1–20 人 AI 小团队的本地 Agent / Skill 评测助手。它把“我感觉 candidate 更强”变成“同一任务、同一起点、同一证据链下，它在哪些 cell 上更强/更弱、为什么、延迟多少、是否值得继续投”。
+**A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
-MVP 聚焦本地可复现对比：自写执行层负责 subprocess 编排、并发、超时、workspace 隔离和结果收集；评分/观测底座通过适配层逐步接入，DeepEval 不作为 test runner，Langfuse/OpenHands 不在 MVP 强依赖路径内。
+`micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-## MVP Golden Path
+The current MVP focuses on local pairwise and matrix-style evaluation. It owns the execution layer for subprocess orchestration, bounded concurrency, timeouts, workspace isolation, run storage, artifacts, and reports. Scoring and observability integrations can be attached later; DeepEval is not the test runner, and Langfuse/OpenHands are not hard dependencies for the MVP path.
 
-在一个准备评测的本地项目目录中运行：
+## Why micro-eval?
+
+Small AI engineering teams often compare prompt, skill, agent, or tool changes with manual impressions. That breaks down when runs are flaky, starting states differ, artifacts disappear, or the UI makes a stronger claim than the evidence supports. `micro-eval` keeps the evaluation loop local and auditable:
+
+- Define tasks and configurations in YAML.
+- Expand `tasks × configurations × repetitions` into a canonical run matrix.
+- Run local agent CLIs through argv-only subprocess invocations.
+- Preserve stdout, stderr, generated artifacts, validation evidence, and human evaluation notes.
+- Downgrade decisions when snapshots, evidence, or sample size do not justify a strong claim.
+
+## Features
+
+- **Canonical configuration matrix**: `tasks × configurations × repetitions` expands into `RunPlan` / `RunCell` records.
+- **Self-owned execution layer**: asyncio bounded concurrency, per-cell timeout, and non-blocking cell failures.
+- **Safe subprocess contract**: canonical `agent.command` is an argv list; legacy string commands only pass through a migration bridge with warnings.
+- **Same-start evidence**: `SameStartSnapshot`, `CellSnapshot`, `SnapshotGateResult`, and `ReplayCanonical` are persisted with the run.
+- **Workspace isolation**: `blank`, `files`, and `git_repo` workspaces run each cell in an assigned workspace.
+- **Artifact / evidence chain**: `.micro-eval/runs/{run_id}/manifest.json` indexes `ArtifactRef` and `EvidenceItem` records.
+- **Deterministic validation**: supports `exit_code`, `contains`, `file_exists`, and argv-only `command` expectations.
+- **Human evaluation persistence**: the UI appends human `EvaluationResult` records through the local API; `localStorage` is not treated as trusted evaluation state.
+- **Guarded decisions**: snapshot mismatch, missing evidence, or insufficient repetitions produce caveats instead of fake winner claims.
+- **Local UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, and decision data through zod schemas.
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/) for local Python environment and command execution
+- Node.js/npm only when you want to run the source-checkout Web UI
+
+Install from a source checkout:
+
+```bash
+git clone https://github.com/xiaozhenliu/micro-eval.git
+cd micro-eval
+uv sync --all-extras
+cd ui && npm install && cd ..
+uv run micro-eval --help
+```
+
+From an evaluation project directory, create and run a starter evaluation. If you have not installed the CLI into your active environment, replace `micro-eval` with `uv run --project /path/to/micro-eval micro-eval`.
 
 ```bash
 micro-eval init --force
@@ -20,140 +87,81 @@ micro-eval report --format html --output report.html
 micro-eval ui --port 3000
 ```
 
-然后在 Web UI 中查看：Run List → Decision Summary → Result Matrix → Cell Evidence → Artifact Viewer → Human Evaluation → Decision/Caveats。
+In the Web UI, follow: Run List → Decision Summary → Result Matrix → Cell Evidence → Artifact Viewer → Human Evaluation → Decision/Caveats.
 
 ### Ready-to-run example
 
-如果你想先体验完整 MVP 流程、但还不想自己准备 `eval.yaml` 和 task，使用源码仓库中的示例：
+Use the repository example when you want a complete MVP flow without writing your own `eval.yaml`, task, or fixture workspace:
 
 ```bash
+# From the repository root
 uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
 uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
+
+# list/report read the current directory's .micro-eval/runs store
 cd examples/agent-codefix-showdown
 uv run --project ../.. micro-eval list
 uv run --project ../.. micro-eval report --format text
 uv run --project ../.. micro-eval report --format html --output report.html
 ```
 
-真实 agent 矩阵见 [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/)；它覆盖 Claude Code、Codex CLI、OpenClaw 和 Hermes，并说明当前 source-checkout/UI 限制。示例索引见 [`examples/`](examples/)。
+The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. The example index is in [`examples/`](examples/).
 
-## 核心特性
+## CLI Commands
 
-- **Canonical configuration matrix**：`tasks × configurations × repetitions` 展开为 `RunPlan` / `RunCell`。
-- **自写执行层**：asyncio bounded concurrency、单 cell timeout、失败不阻塞其它 cell。
-- **安全 argv subprocess**：canonical `agent.command` 必须是 argv list；legacy string command 只通过 migration bridge 转换并产生 warning。
-- **同起点证据**：`SameStartSnapshot`、`CellSnapshot`、`SnapshotGateResult` 和 `ReplayCanonical` 写入 run 产物。
-- **Workspace 隔离**：支持 `blank` / `files` / `git_repo`；`git_repo` task 通过 git worktree 执行，agent cwd 是分配 workspace。
-- **Artifact / Evidence 链**：`.micro-eval/runs/{run_id}/manifest.json` 索引 `ArtifactRef` 与 `EvidenceItem`。
-- **Deterministic validation**：支持 `exit_code`、`contains`、`file_exists`、`command` expectation；`command` 也是 argv-only。
-- **人工评分持久化**：UI 通过 POST API append human `EvaluationResult`，不把 `localStorage` 当可信评分来源。
-- **Guarded decision**：snapshot mismatch 会降级为 `not_comparable` / `inconclusive`，不会伪造强结论。
-- **本地 UI/API**：Next.js 本地 UI 通过 zod 解析 canonical run/cell/artifact/evaluation 数据。
+Config lookup order is `--config` → `$MICRO_EVAL_CONFIG` → `./eval.yaml`.
 
-## 安装
+| Command | Purpose |
+| --- | --- |
+| `micro-eval init [--force]` | Generate a canonical `eval.yaml`, `tasks/hello.yaml`, and starter task templates. |
+| `micro-eval validate [--format text\|json]` | Load config/tasks, build the RunPlan, and print actionable diagnostics without running agents. |
+| `micro-eval run [--config eval.yaml] [--max-concurrency N] [--dry-run] [--format text\|json]` | Execute the matrix run or print the RunPlan. |
+| `micro-eval list [--format text\|json]` | List `.micro-eval/runs/*/run.json` records. |
+| `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | Render the matrix, Basic Honest Stats, decision/caveats, and artifacts. |
+| `micro-eval ui [--port 3000]` | Start the local Next.js UI from a source checkout. |
 
-要求：Python `>=3.11`、Node.js/npm（仅运行 Web UI 时需要）。
+## Configuration and Tasks
 
-```bash
-uv pip install -e .
-# 开发/测试可选
-uv pip install -e ".[dev,scoring,observability]"
-```
+New projects should use canonical `configurations[]`; legacy `baseline` / `candidate` config files still load through an explicit migration bridge.
 
-UI：
-
-```bash
-cd ui
-npm install
-npm run dev
-```
-
-从源码运行时也可以使用：
-
-```bash
-uv run micro-eval --help
-```
-
-## CLI 命令
-
-| 命令 | 行为 |
-|---|---|
-| `micro-eval init [--force]` | 生成 canonical `eval.yaml`、`tasks/hello.yaml` 和 `tasks/templates/` starter templates。 |
-| `micro-eval validate [--format text\|json]` | 只加载 config/tasks 并构建 RunPlan，输出可操作诊断，不运行 agent。 |
-| `micro-eval run [--config eval.yaml] [--max-concurrency N] [--dry-run] [--format text\|json]` | 执行矩阵 run 或输出 RunPlan。 |
-| `micro-eval list [--format text\|json]` | 列出 `.micro-eval/runs/*/run.json`。 |
-| `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | 输出矩阵、Basic Honest Stats、decision/caveats/artifacts。 |
-| `micro-eval ui [--port 3000]` | 启动本地 Next.js UI。 |
-
-Config 查找顺序：`--config` > `$MICRO_EVAL_CONFIG` > `./eval.yaml`。
-
-## Canonical `eval.yaml`
+A minimal config declares configurations, tasks, guardrails, and evaluation policy:
 
 ```yaml
 project_name: demo-agent-eval
-description: Local deterministic starter project
-
 configurations:
   - id: baseline
-    name: echo-baseline
     role: baseline
     repetitions: 1
     agent:
-      name: echo-baseline
       command: ["cat"]
       input_mode: stdin
       output_mode: stdout
       timeout_s: 10
-      env: {}
-      required_secrets: []
   - id: candidate
-    name: echo-candidate
     role: candidate
     repetitions: 1
     agent:
-      name: echo-candidate
       command: ["cat"]
       input_mode: stdin
       output_mode: stdout
       timeout_s: 10
-      env: {}
-      required_secrets: []
-
 tasks:
   - tasks/hello.yaml
-output_dir: .micro-eval/runs
-
 guardrails:
   max_concurrency: 2
   timeout_s: 30
-  output_cap_bytes: 1048576
-  artifact_cap_bytes: 1048576
-  stop_on_cell_error: false
-
 evaluation:
   comparison_subject: "candidate vs baseline"
-  task_set_version: ""
-  success_criteria:
-    - Deterministic validator expectations pass.
-    - Human evaluator reviews caveats before deciding.
-  budget: null
-  decision_threshold: null
-  inconclusive_policy: warn
   min_repetitions: 1
   required_evaluators: [validator]
-  denominator_policy: include_failed
 ```
 
-Legacy `baseline` / `candidate` configs still load through an explicit migration bridge, but new projects should use `configurations[]`.
-
-## Task YAML
+A task describes input, expectations, workspace, and optional rubric metadata:
 
 ```yaml
 id: hello
 name: Hello echo
-description: Verify a local agent can echo stdin.
 input_payload: "Hello, micro-eval!"
-expected_output: "Hello, micro-eval!"
 expectations:
   - type: contains
     stream: output
@@ -161,24 +169,13 @@ expectations:
 workspace:
   type: blank
 rubric: Output should contain the input exactly.
-business_impact_tier: 3
-tags: [smoke, deterministic]
 ```
 
-Workspace types:
+See [`eval.yaml.example`](eval.yaml.example), [`examples/`](examples/), and [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the current source-checkout workflow.
 
-- `blank`：每个 cell 使用临时空目录。
-- `files`：复制声明的文件/目录到临时 workspace。
-- `git_repo`：从 `workspace.path` / `workspace.ref` 创建 isolated git worktree。
+## Run Artifacts
 
-Expectation types:
-
-- `exit_code`
-- `contains`
-- `file_exists`
-- `command`：必须是 argv list，cwd 限制在 cell output dir 内。
-
-## Result layout
+Runs are stored under the project output directory, defaulting to `.micro-eval/runs/`:
 
 ```text
 .micro-eval/runs/{run_id}/
@@ -188,59 +185,96 @@ Expectation types:
     ├── result.json
     ├── stdout.txt
     ├── stderr.txt
-    ├── output.txt          # when output exists
-    └── evaluation.json     # validator + appended human evaluations
+    ├── output.txt
+    └── evaluation.json
 ```
 
-`DecisionReport` 回溯链：`decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`。
+The decision trace is explicit: `decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`.
 
-## Secrets
+## Security and Local Data
 
-MVP secrets 只来自环境变量，且必须以 `MICRO_EVAL_SECRET_` 开头，并由 configuration 显式声明：
+`micro-eval` runs local agent commands on your machine. Review tasks, workspaces, and credentials before running real agents.
 
-```yaml
-agent:
-  required_secrets: [MICRO_EVAL_SECRET_TOKEN]
-```
+- Canonical agent and validation commands are argv lists; trusted paths do not use shell interpolation.
+- Agent cwd is the assigned cell workspace.
+- MVP does not provide network isolation; local CLIs may call external services according to their own configuration.
+- Secrets must use `MICRO_EVAL_SECRET_*` environment variables and be explicitly declared by a configuration.
+- Declared and detected `MICRO_EVAL_SECRET_*` values are redacted before stdout/stderr/text artifacts/evidence/human comments are persisted.
+- Raw artifact access is mediated by manifest `artifact_id` plus run-directory boundary checks.
 
-只有显式声明的 secrets 会注入 agent env；所有宿主环境中非空的 `MICRO_EVAL_SECRET_*` 值都会参与 stdout/stderr/text artifact/evidence/human-comment redaction，持久化前替换为 `[REDACTED:<NAME>]`。
+For the authoritative security routing, see [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md).
 
 ## Web UI
 
+Launch the UI from the repository source checkout:
+
 ```bash
-MICRO_EVAL_PROJECT_ROOT=/path/to/eval-project npm run dev
+MICRO_EVAL_PROJECT_ROOT=/path/to/eval-project uv run micro-eval ui --port 3000
 ```
 
-UI 路由：
+Routes:
 
-- `/`：Run List
-- `/run/[id]`：Decision Summary、Caveats、Result Matrix、Cell Evidence、Human Evaluation
-- `/run/[id]/artifact/[artifactId]`：按 manifest `artifact_id` 查看 artifact
-- `/api/runs/...`：read-only run/cell/artifact API + append-only human evaluation API
+| Route | Purpose |
+| --- | --- |
+| `/` | Run List |
+| `/run/[id]` | Decision Summary, caveats, Result Matrix, Cell Evidence, and Human Evaluation |
+| `/run/[id]/artifact/[artifactId]` | Artifact viewer by manifest `artifact_id` |
+| `/api/runs/...` | Read-only run/cell/artifact API plus append-only human evaluation API |
 
-Artifact API 只接受 manifest 中存在的 `artifact_id`，并通过 run-dir `realpath` 边界校验；binary/oversized/skipped artifacts 会返回 warning/placeholder，而不是原始内容。
+Binary, oversized, skipped, or boundary-invalid artifacts return warnings/placeholders rather than raw content.
 
-## Release evidence
+## Architecture
 
-当前 release 流程和 v0.1.3 证据记录在：
+```mermaid
+flowchart LR
+  TASKS["Tasks + rubrics"] --> PLAN["RunPlan"]
+  CONFIGS["Configurations"] --> PLAN
+  PLAN --> KERNEL["Execution Kernel"]
+  KERNEL --> WORKSPACES["Isolated workspaces"]
+  KERNEL --> STORE["RunStore + ArtifactStore"]
+  STORE --> DECISION["Guarded DecisionReport"]
+  STORE --> UI["Local Web UI / Reports"]
+```
 
-- `docs/engineering/release-process.md`
-- `docs/releases/2026-06-03-v0.1.3-release-evidence.md`
-- `docs/releases/2026-06-03-v0.1.3-dependency-inventory.md`
-- `docs/releases/2026-06-02-mvp-release-evidence.md`（MVP readiness 历史证据）
+Current source-of-truth boundaries:
 
-最终门禁包括 version consistency、compileall、pytest、UI lint/build、`uv build`、`git diff --check` / `git diff --cached --check`、security greps、release evidence、dependency inventory 和 dev→main projection 验证。
+- Long-term architecture: [`docs/superpowers/specs/2026-06-02-unicorn-design.md`](docs/superpowers/specs/2026-06-02-unicorn-design.md)
+- MVP scope: [`docs/superpowers/specs/2026-06-02-mvp-profile.md`](docs/superpowers/specs/2026-06-02-mvp-profile.md)
+- Test architecture: [`docs/superpowers/specs/2026-06-02-test-architecture.md`](docs/superpowers/specs/2026-06-02-test-architecture.md)
+- Engineering guardrails: [`docs/engineering/`](docs/engineering/)
 
-## 验证命令
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [`docs/README.md`](docs/README.md) | Documentation directory map and source-of-truth hierarchy. |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Local setup, commands, module map, smoke flow, and release readiness checklist. |
+| [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md) | Security routing for development, user runs, service/API/report boundaries. |
+| [`examples/README.md`](examples/README.md) | Source-checkout examples and onboarding use cases. |
+| [`docs/releases/2026-06-03-v0.1.3-release-evidence.md`](docs/releases/2026-06-03-v0.1.3-release-evidence.md) | v0.1.3 release verification evidence. |
+
+## Development
 
 ```bash
+uv sync --all-extras
 uv run python -m compileall src/micro_eval tests
 uv run pytest -q
-cd ui && npm run lint && npm run build
+(cd ui && npm run lint && npm run build)
 uv build
 git diff --check
+```
+
+Security regression greps used by the release gate:
+
+```bash
 grep -R "create_subprocess_shell" src tests ui || true
 grep -R "shell=True" src tests ui || true
 grep -R "localStorage" ui/src || true
 grep -R "sessionStorage" ui/src || true
 ```
+
+Pure documentation edits can usually be validated with `git diff --check`, but command, schema, or release-claim changes should run the relevant smoke command as well.
+
+## License
+
+Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
