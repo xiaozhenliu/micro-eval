@@ -2,6 +2,63 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.1.3 - 2026-06-03
+
+### Added
+
+- Promote the MVP to the canonical `tasks × configurations × repetitions` execution model with `RunPlan`, `RunCell`, canonical Pydantic contracts, and matching TypeScript/zod contracts.
+- Add `micro-eval init`, `validate`, `run`, `list`, `report`, and `ui` as the local Golden Path for creating a project, validating configuration, running a matrix, reviewing evidence, and opening the local UI.
+- Add canonical run storage at `.micro-eval/runs/{run_id}/` with `run.json`, `manifest.json`, per-cell `result.json`, text artifacts, and append-only `evaluation.json` records.
+- Add `SameStartSnapshot`, `CellSnapshot`, `SnapshotGateResult`, and `ReplayCanonical` so every decision can be traced back to comparable starting conditions.
+- Add managed workspaces for `blank`, `files`, and `git_repo` tasks; `git_repo` tasks execute in isolated git worktrees.
+- Add deterministic validators for `exit_code`, `contains`, `file_exists`, and argv-only `command` expectations.
+- Add persistent human evaluation through the Next.js API and UI; human scoring is appended to disk and recomputes the run decision instead of trusting browser storage.
+- Add guarded `DecisionReport` / Basic Honest Stats so degraded comparability produces `not_comparable` or `inconclusive` instead of overstating a winner.
+- Add a manifest-backed artifact viewer in the local UI and static text/json/html reports with caveats, stats, matrix rows, and artifact references.
+- Add starter task templates under `tasks/templates/` and a deterministic dogfood suite covering the MVP Golden Path.
+- Add `docs/release-evidence-2026-06-02-mvp.md` with the release-readiness evidence and final quality gate checklist.
+
+### Changed
+
+- Bump Python package and local UI package versions from `0.1.2` to `0.1.3`.
+- Update `README.md` and `docs/DEVELOPMENT.md` to describe the completed canonical MVP workflow instead of the legacy baseline/candidate-only flow.
+- New projects should use canonical `configurations[]`; legacy `baseline` / `candidate` configuration still loads through an explicit migration bridge with warnings.
+- Agent and validation commands are canonical argv lists. Shell-string execution is not part of the trusted execution path.
+- `output_dir` is constrained to a project-relative path and run artifacts are resolved through the project/run boundary.
+- Text artifacts, evidence summaries, and human-evaluation comments are redacted before persistence when they contain `MICRO_EVAL_SECRET_*` values.
+- HTML reports now render through Jinja with autoescaping enabled.
+- The Next.js UI now reads canonical run/cell/artifact/evaluation data from local API routes and exposes artifact content only by manifest `artifact_id`.
+
+### Fixed
+
+- Complete the 0.1.2 known gaps for canonical run layout, configuration matrix planning, same-start snapshots, evidence/artifact references, and persisted human evaluation.
+- Avoid run ID collisions with timestamp-plus-random run identifiers.
+- Fix `output_mode=file` false positives by requiring a real, regular output file and classifying missing output correctly.
+- Prevent reserved artifact paths (`stdout.txt`, `stderr.txt`, `output.txt`) from following agent-created symlinks or hardlinks.
+- Skip or mark symlinked, linked, oversized, and binary artifacts instead of exposing unsafe raw content.
+- Align Python and TypeScript decision recomputation semantics for persisted human evaluations.
+- Include workspace fingerprints, workspace maps, and guardrail digests in replay/same-start evidence so replay comparability covers the real run boundary.
+- Align `VERSION`, Python `__version__`, UI package lock metadata, and `ReplayCanonical.tool_version` on `0.1.3` so release artifacts and run evidence no longer report stale versions.
+
+### Verification
+
+- `uv run python -m compileall src/micro_eval tests`
+- `uv run pytest -q` — latest release gate: 67 passed
+- `cd ui && npm run lint && npm run build`
+- `uv build`
+- Wheel smoke test with a Python `>=3.11` virtual environment
+- `git diff --check`
+- Security greps for `create_subprocess_shell`, `shell=True`, `localStorage`, and `sessionStorage`
+- Independent code review: APPROVE
+- Independent architecture review: CLEAR
+- UltraQA adversarial MVP smoke: PASS
+
+### Known Gaps
+
+- Langfuse observability remains optional/future work; MVP runs degrade cleanly without it.
+- DeepEval is reserved for scoring-library integration; the MVP does not use the DeepEval test runner.
+- OpenHands sandbox integration, multi-team collaboration, RBAC/SSO, large-scale task libraries, and recommendation engines are intentionally out of MVP scope.
+
 ## 0.1.2 - 2026-06-02
 
 ### Changed

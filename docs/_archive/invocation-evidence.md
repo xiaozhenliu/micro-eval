@@ -1,3 +1,22 @@
+---
+title: Invocation Evidence Capture
+doc_type: archive
+status: archived
+created_at: 2026-06-02T18:00+08:00
+updated_at: 2026-06-03T08:44+08:00
+owner: micro-eval maintainers
+source_of_truth: false
+tags:
+  - invocation
+  - evidence
+  - artifacts
+  - legacy-schema
+related:
+  - docs/documentation-standard.md
+  - docs/DEVELOPMENT.md
+  - docs/releases/2026-06-02-mvp-release-evidence.md
+---
+
 # Invocation Evidence Capture
 
 本文说明 `0.1.1` 的 agent 调用证据捕获能力。它是从 legacy `v0.1` flat run schema 走向 `mvp.local_pairwise.v1` Artifact/Trace Layer 的过渡层，不是最终 P0 artifact 模型。

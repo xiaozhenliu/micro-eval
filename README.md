@@ -1,311 +1,246 @@
 # micro-eval
 
-Current version: `0.1.2`
+Current version: `0.1.3`
 
-面向 1–20 人 AI 小团队的 Agent/Skill 评测助手。把"我觉得这个 agent 更强"变成"它在哪些任务上更强、为什么、延迟多少、值不值得继续投"。
+`micro-eval` 是面向 1–20 人 AI 小团队的本地 Agent / Skill 评测助手。它把“我感觉 candidate 更强”变成“同一任务、同一起点、同一证据链下，它在哪些 cell 上更强/更弱、为什么、延迟多少、是否值得继续投”。
 
-## 什么是"被评测对象"
+MVP 聚焦本地可复现对比：自写执行层负责 subprocess 编排、并发、超时、workspace 隔离和结果收集；评分/观测底座通过适配层逐步接入，DeepEval 不作为 test runner，Langfuse/OpenHands 不在 MVP 强依赖路径内。
 
-micro-eval 评测的是**完整 agent 程序**，通过命令行 argv 调用。它不评测 LLM prompt 模板，而是评测可执行的 agent 系统。
+## MVP Golden Path
 
-支持的 agent 类型包括但不限于：
-- **Claude Code CLI** — `claude -p "..." --output-file ...`
-- **LangGraph workflow** — `python my_graph.py --task "..."`
-- **CrewAI / AutoGen / 任何自定义脚本** — 只要能通过命令行调用
+在一个准备评测的本地项目目录中运行：
 
-**重要：** LangGraph、CrewAI 等框架**不是** micro-eval 的依赖。它们是你自己的 agent 项目的依赖。micro-eval 只是用 subprocess 调用你的 agent 命令、收集输出、计算评分。就像 pytest 测试 Django 项目时不需要把 Django 装成 pytest 的依赖一样。
+```bash
+micro-eval init --force
+micro-eval validate
+micro-eval run --max-concurrency 2
+micro-eval list
+micro-eval report --format text
+micro-eval report --format html --output report.html
+micro-eval ui --port 3000
+```
 
-你的 agent 项目需要自己管理运行环境（Python 虚拟环境、依赖安装、API key 配置等）。micro-eval 通过 `eval.yaml` 中的 `env` 字段把必要的环境变量传递给 agent subprocess。
+然后在 Web UI 中查看：Run List → Decision Summary → Result Matrix → Cell Evidence → Artifact Viewer → Human Evaluation → Decision/Caveats。
+
+### Ready-to-run example
+
+如果你想先体验完整 MVP 流程、但还不想自己准备 `eval.yaml` 和 task，使用源码仓库中的示例：
+
+```bash
+uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
+uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
+cd examples/agent-codefix-showdown
+uv run --project ../.. micro-eval list
+uv run --project ../.. micro-eval report --format text
+uv run --project ../.. micro-eval report --format html --output report.html
+```
+
+真实 agent 矩阵见 [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/)；它覆盖 Claude Code、Codex CLI、OpenClaw 和 Hermes，并说明当前 source-checkout/UI 限制。示例索引见 [`examples/`](examples/)。
 
 ## 核心特性
 
-- **A/B 对比执行** — 同一组任务同时跑 baseline 和 candidate，结果矩阵一目了然
-- **自写执行层** — ~200 行 asyncio 编排，完全可控，不依赖外部 test runner
-- **安全输入传递** — stdin/文件传参，禁止 shell 字符串插值
-- **Workspace 隔离准备** — 已有 git worktree helper；主流程 snapshot/gate 接入仍在 P0-b
-- **并行/串行可选** — asyncio 并行执行，也支持 `--no-parallel` 串行调试
-- **调用证据捕获** — 保存 stdout/stderr 摘要、exit code、输出目录和 artifact refs
-- **输出保护** — stdout/stderr 有保留上限，agent env 值会在文本 artifact 中脱敏
-- **自动评分** — MVP 精确匹配 + 包含匹配；可扩展 DeepEval 自定义指标
-- **HTML 报告** — 一条命令生成静态对比报告
-- **本地 Web UI** — Next.js 仪表盘，浏览历史 run、查看对比表格
-- **零外部依赖运行** — Langfuse/DeepEval 均为可选，核心功能开箱即用
+- **Canonical configuration matrix**：`tasks × configurations × repetitions` 展开为 `RunPlan` / `RunCell`。
+- **自写执行层**：asyncio bounded concurrency、单 cell timeout、失败不阻塞其它 cell。
+- **安全 argv subprocess**：canonical `agent.command` 必须是 argv list；legacy string command 只通过 migration bridge 转换并产生 warning。
+- **同起点证据**：`SameStartSnapshot`、`CellSnapshot`、`SnapshotGateResult` 和 `ReplayCanonical` 写入 run 产物。
+- **Workspace 隔离**：支持 `blank` / `files` / `git_repo`；`git_repo` task 通过 git worktree 执行，agent cwd 是分配 workspace。
+- **Artifact / Evidence 链**：`.micro-eval/runs/{run_id}/manifest.json` 索引 `ArtifactRef` 与 `EvidenceItem`。
+- **Deterministic validation**：支持 `exit_code`、`contains`、`file_exists`、`command` expectation；`command` 也是 argv-only。
+- **人工评分持久化**：UI 通过 POST API append human `EvaluationResult`，不把 `localStorage` 当可信评分来源。
+- **Guarded decision**：snapshot mismatch 会降级为 `not_comparable` / `inconclusive`，不会伪造强结论。
+- **本地 UI/API**：Next.js 本地 UI 通过 zod 解析 canonical run/cell/artifact/evaluation 数据。
 
-## 快速开始
+## 安装
 
-### 1. 安装
+要求：Python `>=3.11`、Node.js/npm（仅运行 Web UI 时需要）。
 
 ```bash
-# 推荐使用 uv（Python 3.11+）
 uv pip install -e .
-
-# 或带可选依赖
-uv pip install -e ".[scoring,observability,dev]"
+# 开发/测试可选
+uv pip install -e ".[dev,scoring,observability]"
 ```
 
-### 2. 配置
-
-复制示例配置并编辑：
+UI：
 
 ```bash
-cp eval.yaml.example eval.yaml
+cd ui
+npm install
+npm run dev
 ```
 
-### 3. 创建任务
-
-在 `tasks/` 目录下创建 YAML 文件：
+从源码运行时也可以使用：
 
 ```bash
-mkdir tasks
+uv run micro-eval --help
 ```
-创建 `tasks/hello.yaml`：
+
+## CLI 命令
+
+| 命令 | 行为 |
+|---|---|
+| `micro-eval init [--force]` | 生成 canonical `eval.yaml`、`tasks/hello.yaml` 和 `tasks/templates/` starter templates。 |
+| `micro-eval validate [--format text\|json]` | 只加载 config/tasks 并构建 RunPlan，输出可操作诊断，不运行 agent。 |
+| `micro-eval run [--config eval.yaml] [--max-concurrency N] [--dry-run] [--format text\|json]` | 执行矩阵 run 或输出 RunPlan。 |
+| `micro-eval list [--format text\|json]` | 列出 `.micro-eval/runs/*/run.json`。 |
+| `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | 输出矩阵、Basic Honest Stats、decision/caveats/artifacts。 |
+| `micro-eval ui [--port 3000]` | 启动本地 Next.js UI。 |
+
+Config 查找顺序：`--config` > `$MICRO_EVAL_CONFIG` > `./eval.yaml`。
+
+## Canonical `eval.yaml`
 
 ```yaml
-id: hello-test
-name: 基础回显测试
-description: 验证 agent 能正确回显输入
-input_payload: "你好，世界"
-expected_output: "你好，世界"
-rubric: 输出必须与输入完全一致
-business_impact_tier: 3
-tags: [smoke, basic]
-```
+project_name: demo-agent-eval
+description: Local deterministic starter project
 
-### 4. 运行评测
+configurations:
+  - id: baseline
+    name: echo-baseline
+    role: baseline
+    repetitions: 1
+    agent:
+      name: echo-baseline
+      command: ["cat"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 10
+      env: {}
+      required_secrets: []
+  - id: candidate
+    name: echo-candidate
+    role: candidate
+    repetitions: 1
+    agent:
+      name: echo-candidate
+      command: ["cat"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 10
+      env: {}
+      required_secrets: []
 
-```bash
-micro-eval run --config eval.yaml
-```
-
-### 5. 查看结果
-
-```bash
-# 生成 HTML 报告
-micro-eval report .micro-eval/runs/<run-id>.json
-
-# 或启动 Web UI
-micro-eval ui
-```
-
-## CLI 命令参考
-
-### `micro-eval run`
-
-执行一次评测，对比 baseline 与 candidate。
-
-```bash
-micro-eval run [OPTIONS]
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `-c, --config` | `eval.yaml` | 配置文件路径 |
-| `--parallel / --no-parallel` | `--parallel` | 是否并行执行 |
-| `-v, --verbose` | `false` | 详细输出 |
-
-输出：结果 JSON 保存到 `.micro-eval/runs/run-<timestamp>.json`，终端打印汇总表格。每个 agent invocation 的 stdout/stderr 和输出文件会保存到 `.micro-eval/artifacts/<run-id>/...`，并通过 `stdout_ref`、`stderr_ref`、`output_dir`、`output_artifacts` 写回 run JSON。
-
-### `micro-eval report`
-
-从 run JSON 生成静态 HTML 对比报告。
-
-```bash
-micro-eval report <run-file> [OPTIONS]
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `-o, --output` | `<run-file>.html` | 输出 HTML 路径 |
-
-### `micro-eval ui`
-
-启动本地 Next.js Web UI。
-
-```bash
-micro-eval ui [OPTIONS]
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `--port` | `3000` | UI 服务端口 |
-
-## eval.yaml 配置参考
-
-```yaml
-# 项目名称
-project_name: my-agent-eval
-
-# 全局超时（秒），可被 agent 级别覆盖
-timeout_s: 120
-
-# Baseline agent 配置
-baseline:
-  name: gpt-4o-baseline          # 显示名称
-  command: "python agents/b.py"  # 执行命令
-  input_mode: stdin              # stdin | file
-  output_mode: stdout            # stdout | file | directory
-  timeout_s: 60                  # 单任务超时
-  env:                           # 环境变量
-    MODEL: gpt-4o
-
-# Candidate agent 配置（字段同 baseline）
-candidate:
-  name: claude-candidate
-  command: "python agents/c.py"
-  input_mode: stdin
-  output_mode: stdout
-  timeout_s: 60
-  env:
-    MODEL: claude-sonnet
-
-# 任务文件目录（相对于 eval.yaml）
-tasks_dir: tasks
-
-# 结果输出目录
+tasks:
+  - tasks/hello.yaml
 output_dir: .micro-eval/runs
 
-# 是否并行执行
-parallel: true
+guardrails:
+  max_concurrency: 2
+  timeout_s: 30
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 1048576
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "candidate vs baseline"
+  task_set_version: ""
+  success_criteria:
+    - Deterministic validator expectations pass.
+    - Human evaluator reviews caveats before deciding.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed
 ```
 
-### Agent 配置字段详解
+Legacy `baseline` / `candidate` configs still load through an explicit migration bridge, but new projects should use `configurations[]`.
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `name` | string | 必填 | agent 显示名称 |
-| `command` | string | 必填 | 执行命令，支持 `{input_file}`、`{output_dir}` 和 `{output_file}` 模板变量 |
-| `input_mode` | enum | `stdin` | `stdin`：通过标准输入传递；`file`：写入临时文件，路径通过 `{input_file}` 注入 |
-| `output_mode` | enum | `stdout` | `stdout`：从标准输出收集；`file`：优先读取 `{output_file}`；`directory`：收集 `{output_dir}` 下的输出文件 |
-| `timeout_s` | float | `300.0` | 单任务超时秒数 |
-| `env` | map | `{}` | 传递给子进程的环境变量 |
-
-## Task YAML 格式
-
-每个任务是 `tasks/` 目录下的一个 `.yaml` 文件：
+## Task YAML
 
 ```yaml
-id: summarize-001              # 唯一标识（默认取文件名）
-name: 文章摘要测试
-description: 测试 agent 对长文的摘要能力
-input_payload: |
-  请对以下文章生成 100 字摘要：
-  ...（文章内容）...
-expected_output: null          # 可选，设置后用于自动评分
-rubric: |                      # 人工评分标准
-  - 摘要长度 80-120 字
-  - 覆盖主要论点
-  - 无事实错误
-business_impact_tier: 2        # 1=关键 2=重要 3=一般
-tags: [summarization, chinese]
+id: hello
+name: Hello echo
+description: Verify a local agent can echo stdin.
+input_payload: "Hello, micro-eval!"
+expected_output: "Hello, micro-eval!"
+expectations:
+  - type: contains
+    stream: output
+    value: "Hello, micro-eval!"
+workspace:
+  type: blank
+rubric: Output should contain the input exactly.
+business_impact_tier: 3
+tags: [smoke, deterministic]
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `id` | string | 否 | 唯一标识，默认取文件名 |
-| `name` | string | 否 | 任务显示名称 |
-| `description` | string | 否 | 任务描述 |
-| `input_payload` | string | 是 | 传递给 agent 的输入内容 |
-| `expected_output` | string | 否 | 期望输出，用于自动评分 |
-| `rubric` | string | 否 | 人工评分标准 |
-| `business_impact_tier` | int | 否 | 业务影响等级 1-3 |
-| `tags` | list | 否 | 标签列表 |
+Workspace types:
+
+- `blank`：每个 cell 使用临时空目录。
+- `files`：复制声明的文件/目录到临时 workspace。
+- `git_repo`：从 `workspace.path` / `workspace.ref` 创建 isolated git worktree。
+
+Expectation types:
+
+- `exit_code`
+- `contains`
+- `file_exists`
+- `command`：必须是 argv list，cwd 限制在 cell output dir 内。
+
+## Result layout
+
+```text
+.micro-eval/runs/{run_id}/
+├── run.json
+├── manifest.json
+└── cells/{cell_id}/
+    ├── result.json
+    ├── stdout.txt
+    ├── stderr.txt
+    ├── output.txt          # when output exists
+    └── evaluation.json     # validator + appended human evaluations
+```
+
+`DecisionReport` 回溯链：`decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`。
+
+## Secrets
+
+MVP secrets 只来自环境变量，且必须以 `MICRO_EVAL_SECRET_` 开头，并由 configuration 显式声明：
+
+```yaml
+agent:
+  required_secrets: [MICRO_EVAL_SECRET_TOKEN]
+```
+
+只有显式声明的 secrets 会注入 agent env；所有宿主环境中非空的 `MICRO_EVAL_SECRET_*` 值都会参与 stdout/stderr/text artifact/evidence/human-comment redaction，持久化前替换为 `[REDACTED:<NAME>]`。
 
 ## Web UI
 
-本地 Web UI 基于 Next.js，直接读取 `.micro-eval/runs/` 目录下的 JSON 文件。
+```bash
+MICRO_EVAL_PROJECT_ROOT=/path/to/eval-project npm run dev
+```
+
+UI 路由：
+
+- `/`：Run List
+- `/run/[id]`：Decision Summary、Caveats、Result Matrix、Cell Evidence、Human Evaluation
+- `/run/[id]/artifact/[artifactId]`：按 manifest `artifact_id` 查看 artifact
+- `/api/runs/...`：read-only run/cell/artifact API + append-only human evaluation API
+
+Artifact API 只接受 manifest 中存在的 `artifact_id`，并通过 run-dir `realpath` 边界校验；binary/oversized/skipped artifacts 会返回 warning/placeholder，而不是原始内容。
+
+## Release evidence
+
+当前 release 流程和 v0.1.3 证据记录在：
+
+- `docs/engineering/release-process.md`
+- `docs/releases/2026-06-03-v0.1.3-release-evidence.md`
+- `docs/releases/2026-06-03-v0.1.3-dependency-inventory.md`
+- `docs/releases/2026-06-02-mvp-release-evidence.md`（MVP readiness 历史证据）
+
+最终门禁包括 version consistency、compileall、pytest、UI lint/build、`uv build`、`git diff --check` / `git diff --cached --check`、security greps、release evidence、dependency inventory 和 dev→main projection 验证。
+
+## 验证命令
 
 ```bash
-# 启动方式一：通过 CLI
-micro-eval ui --port 3000
-
-# 启动方式二：直接运行
-cd ui && npm run dev
+uv run python -m compileall src/micro_eval tests
+uv run pytest -q
+cd ui && npm run lint && npm run build
+uv build
+git diff --check
+grep -R "create_subprocess_shell" src tests ui || true
+grep -R "shell=True" src tests ui || true
+grep -R "localStorage" ui/src || true
+grep -R "sessionStorage" ui/src || true
 ```
-
-功能：
-- **Run 列表** — 按时间排序浏览所有评测记录
-- **对比表格** — 每个 task 的 baseline vs candidate 结果并排展示
-- **状态高亮** — pass/fail/error/timeout 颜色区分
-
-UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认为 `ui/` 的上级目录）。
-
-## Invocation Evidence
-
-`0.1.1` 开始，run JSON 中的每条 `RunResult` 都包含 invocation evidence 字段：
-
-| 字段 | 说明 |
-|------|------|
-| `stdout_summary` / `stderr_summary` | stdout/stderr 的短摘要 |
-| `stdout_ref` / `stderr_ref` | stdout/stderr artifact 路径 |
-| `exit_code` | 子进程退出码 |
-| `output_dir` | 本次 invocation 的 artifact 目录 |
-| `output_artifacts` | agent 生成的输出文件 refs |
-| `failure_mode` | timeout 或非零退出等失败分类 |
-
-详细说明见 `docs/invocation-evidence.md`。
-
-## 架构概览
-
-```
-┌─────────────────────────────────────────────────┐
-│  CLI (Typer)                                    │
-│  micro-eval run / report / ui                   │
-├─────────────────────────────────────────────────┤
-│  Config Loader          │  Scorer (DeepEval)    │
-│  eval.yaml + tasks/*.yaml│  精确匹配 / 自定义   │
-├─────────────────────────────────────────────────┤
-│  Execution Engine (asyncio)                     │
-│  AgentRunner → subprocess argv → collect output │
-├─────────────────────────────────────────────────┤
-│  Workspace Manager (git worktree helper)        │
-│  P0-b 接入 run 主流程与 snapshot gate            │
-├─────────────────────────────────────────────────┤
-│  Data Layer (Pydantic models → JSON files)      │
-│  .micro-eval/runs/*.json                        │
-│  .micro-eval/artifacts/<run-id>/...             │
-└─────────────────────────────────────────────────┘
-         ↕
-┌─────────────────────────────────────────────────┐
-│  Web UI (Next.js + React + Tailwind)            │
-│  读取 .micro-eval/runs/ 展示对比结果             │
-└─────────────────────────────────────────────────┘
-```
-
-## 路线图
-
-### Phase 1（MVP）— 当前
-
-- [x] 项目/任务/运行核心模型
-- [x] 自写执行层（asyncio 并行）
-- [x] 精确匹配评分
-- [x] 基础对比页（Web UI）
-- [x] 静态 HTML 报告
-- [x] CLI（run / report / ui）
-- [x] Invocation evidence capture（stdout/stderr refs、exit code、output artifacts）
-
-### Phase 1 下一步
-
-- [ ] Configuration / RunPlan / RunCell 模型
-- [ ] Agent Adapter 分层
-- [ ] manifest.json + ArtifactRef / EvidenceItem
-- [ ] SameStartSnapshot / CellSnapshot
-- [ ] git worktree 接入 `micro-eval run` 主流程
-- [ ] evaluation.json 持久化人工评分
-
-### Phase 2 — 观测与复盘
-
-- [ ] Langfuse trace 接入
-- [ ] 复盘页（trace 回放）
-- [ ] 成本分析（cost_usd 聚合）
-- [ ] Skill profile 对比
-
-### Phase 3 — 沙箱与高级任务
-
-- [ ] OpenHands sandbox 接入
-- [ ] 复杂任务类型（多步骤、工具调用）
-- [ ] 趋势分析（跨 run 对比）
-
-## 许可证
-
-待定
-

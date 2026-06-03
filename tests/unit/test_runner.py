@@ -143,6 +143,27 @@ async def test_run_single_redacts_agent_env_from_artifacts(sample_task, tmp_path
 
 
 @pytest.mark.asyncio
+async def test_run_single_redacts_short_micro_eval_secret_from_artifacts(sample_task, tmp_path, monkeypatch):
+    monkeypatch.setenv("MICRO_EVAL_SECRET_SHORT", "xy")
+    secret_task = Task(
+        id="task-short-secret",
+        name="Short secret",
+        input_payload="xy",
+        expected_output="xy",
+    )
+    agent = AgentConfig(name="secret-echo", command="cat")
+    runner = AgentRunner(work_dir=tmp_path)
+
+    result = await runner._run_single(agent, secret_task)
+
+    assert result.status == TaskStatus.passed
+    assert "xy" not in result.output_summary
+    assert "[REDACTED]" in result.output_summary
+    assert result.stdout_ref is not None
+    assert "xy" not in (tmp_path / result.stdout_ref).read_text()
+
+
+@pytest.mark.asyncio
 async def test_run_eval_parallel(baseline, candidate, sample_task, tmp_path):
     runner = AgentRunner(work_dir=tmp_path)
     run = await runner.run_eval(baseline, candidate, [sample_task], parallel=True)

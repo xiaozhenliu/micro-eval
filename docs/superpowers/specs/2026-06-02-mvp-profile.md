@@ -1,5 +1,5 @@
 ---
-title: "MVP Profile: mvp.local_pairwise.v1"
+ title: "MVP Profile: mvp.local_pairwise.v1"
 date: 2026-06-02
 status: active
 type: implementation-guide

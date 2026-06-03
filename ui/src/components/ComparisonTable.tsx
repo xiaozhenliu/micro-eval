@@ -1,6 +1,6 @@
-import type { RunResult } from "@/lib/schema";
+import type { CellResult } from "@/lib/schema";
 
-const statusColors: Record<RunResult["status"], string> = {
+const statusColors: Record<CellResult["status"], string> = {
   pass: "text-green-400",
   fail: "text-red-400",
   error: "text-amber-400",
@@ -9,19 +9,13 @@ const statusColors: Record<RunResult["status"], string> = {
 
 interface ComparisonTableProps {
   tasks: string[];
-  results: RunResult[];
-  baselineAgent: string;
-  candidateAgent: string;
+  configurations: string[];
+  results: CellResult[];
 }
 
-export function ComparisonTable({
-  tasks,
-  results,
-  baselineAgent,
-  candidateAgent,
-}: ComparisonTableProps) {
-  const getResult = (taskId: string, agent: string) =>
-    results.find((r) => r.task_id === taskId && r.agent_name === agent);
+export function ComparisonTable({ tasks, configurations, results }: ComparisonTableProps) {
+  const getResults = (taskId: string, configurationId: string) =>
+    results.filter((r) => r.task_id === taskId && r.configuration_id === configurationId);
 
   return (
     <div className="overflow-x-auto">
@@ -29,40 +23,39 @@ export function ComparisonTable({
         <thead>
           <tr className="border-b border-neutral-800 text-neutral-400 text-left">
             <th className="pb-3 pr-4 font-medium">Task</th>
-            <th className="pb-3 pr-4 font-medium">{baselineAgent}</th>
-            <th className="pb-3 pr-4 font-medium">{candidateAgent}</th>
+            {configurations.map((configuration) => (
+              <th key={configuration} className="pb-3 pr-4 font-medium">{configuration}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {tasks.map((taskId) => {
-            const baseline = getResult(taskId, baselineAgent);
-            const candidate = getResult(taskId, candidateAgent);
-            return (
-              <tr key={taskId} className="border-b border-neutral-800/50">
-                <td className="py-3 pr-4 font-mono text-xs">{taskId}</td>
-                <td className="py-3 pr-4">
-                  {baseline ? (
-                    <span className={statusColors[baseline.status]}>
-                      {baseline.status}
-                      {baseline.score != null && ` (${baseline.score.toFixed(1)})`}
-                    </span>
-                  ) : (
-                    <span className="text-neutral-500">--</span>
-                  )}
-                </td>
-                <td className="py-3 pr-4">
-                  {candidate ? (
-                    <span className={statusColors[candidate.status]}>
-                      {candidate.status}
-                      {candidate.score != null && ` (${candidate.score.toFixed(1)})`}
-                    </span>
-                  ) : (
-                    <span className="text-neutral-500">--</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
+          {tasks.map((taskId) => (
+            <tr key={taskId} className="border-b border-neutral-800/50">
+              <td className="py-3 pr-4 font-mono text-xs">{taskId}</td>
+              {configurations.map((configuration) => {
+                const cells = getResults(taskId, configuration);
+                const primary = cells[0];
+                return (
+                  <td key={configuration} className="py-3 pr-4 align-top">
+                    {primary ? (
+                      <div>
+                        <span className={statusColors[primary.status]}>
+                          {primary.status}
+                          {primary.score != null && ` (${primary.score.toFixed(1)})`}
+                        </span>
+                        <div className="mt-1 text-xs text-neutral-500">
+                          {cells.length} rep · {primary.latency_s.toFixed(2)}s
+                          {primary.snapshot_gate_result?.status !== "pass" && " · caveat"}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-neutral-500">--</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

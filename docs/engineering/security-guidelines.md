@@ -1,48 +1,36 @@
 ---
-title: "micro-eval 安全工程规范"
-date: 2026-06-02
-status: draft
-type: engineering-guidelines
+title: micro-eval 安全规范索引
+doc_type: reference
+status: active
+created_at: 2026-06-02T18:00+08:00
+updated_at: 2026-06-03T09:28+08:00
+owner: micro-eval maintainers
+source_of_truth: true
 tags:
   - engineering
   - security
   - micro-eval
+related:
+  - docs/engineering/security-service-guidelines.md
+  - docs/engineering/security-user-run-guidelines.md
+  - docs/engineering/security-development-guidelines.md
 ---
 
-# micro-eval 安全工程规范
+# micro-eval 安全规范索引
 
-安全边界从 MVP 第一版就要进入代码。
+安全不是单一维度。本项目把安全规范拆成三层，避免把用户运行 agent 的风险、产品服务边界、开发实现约束混在同一个文件里。
 
-## Secrets
+## 三层安全 source of truth
 
-- MVP secrets 来源仅为环境变量。
-- 只有 Configuration 声明需要的 secrets 才注入 agent env。
-- secrets value 只在内存中用于 redaction。
-- stdout / stderr / text artifacts 持久化前必须 redacted。
-- binary artifact 无法 redaction 时必须记录 warning。
-- EvidenceItem.summary 不得包含原始 secret 值。
+| 层级 | 读取文件 | 适用问题 |
+| --- | --- | --- |
+| 产品/服务安全 | `docs/engineering/security-service-guidelines.md` | `micro-eval` 作为 CLI、本地 UI/API、报告、发布包或未来服务时，产品自身应该暴露什么、不暴露什么。 |
+| 用户 run 安全 | `docs/engineering/security-user-run-guidelines.md` | 用户用 `micro-eval` 测试自己的 agent/skill 时，secrets、workspace、network、artifact、caveat 应如何处理和提示。 |
+| 开发实施安全 | `docs/engineering/security-development-guidelines.md` | 开发者或 agent 修改 runner、adapter、store、UI/API、report、decision、验证逻辑时必须遵守什么。 |
 
-## Filesystem and Workspace
+## 使用规则
 
-- agent 只在分配的 workspace 中执行。
-- worktree / temp dir 生命周期由 Environment Layer 管理。
-- cleanup 失败要记录，不要静默。
-- 不允许 adapter 任意写宿主项目根目录。
-
-## Network and External Services
-
-- MVP 不实现网络隔离。
-- 如果 agent 需要外部服务，这属于当前环境事实，必须进入 caveat 或 snapshot context。
-- Langfuse / DeepEval / LLM judge 是未来或可选能力，不得成为 MVP run 成功的必要条件。
-
-## Code Review Checklist
-
-涉及安全边界的改动至少检查：
-
-- 是否引入 shell interpolation？
-- 是否可能泄露 secrets？
-- 是否绕过 workspace 边界？
-- 是否把 raw artifact 直接暴露给 Decision / UI？
-- 是否让 snapshot mismatch 仍能产生强结论？
-- 是否缺少否定测试？
-
+- 开发实现前，至少读取 `security-development-guidelines.md`。
+- 如果改动影响用户发起 run、workspace、secrets、artifact、network caveat 或 evidence，必须同时读取 `security-user-run-guidelines.md`。
+- 如果改动影响 CLI、本地 UI/API、报告、发布包、raw artifact 访问或未来服务化边界，必须同时读取 `security-service-guidelines.md`。
+- 不要在本索引重新定义具体安全规则；具体规则只写入对应层级文件。

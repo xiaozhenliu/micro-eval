@@ -1,74 +1,68 @@
-# micro-eval 配置示例
-# 复制为 eval.yaml 并根据你的项目自定义。
+# Canonical micro-eval configuration example.
+# Copy this file to eval.yaml and edit local commands/tasks.
 #
-# 环境变量说明：
-#   agent 的 env 字段会**合并**到当前系统环境变量中（不是替换）。
-#   所以 PATH、HOME 等系统变量始终可用。
-#   建议：敏感信息（API key）通过系统环境变量或 .env 设置，
-#   eval.yaml 中用 ${VAR_NAME} 引用（当前版本直接传字符串，不做变量展开）。
+# Security model:
+# - agent.command is an argv list, not a shell string.
+# - task input is passed via stdin or an input file.
+# - output file/directory paths are provided through MICRO_EVAL_OUTPUT_FILE and
+#   MICRO_EVAL_OUTPUT_DIR plus the {output_file}/{output_dir} placeholders.
+# - secrets should be declared as MICRO_EVAL_SECRET_* names in required_secrets
+#   and provided by the process environment, not hardcoded here.
 
 project_name: my-agent-eval
-description: 对比 coding agent 在 bug-fix 任务上的表现
+description: Compare local agent configurations on deterministic tasks.
 
-baseline:
-  name: claude-code-v1
-  command: "claude -p --output-file {output_dir}/result.txt --max-turns 10"
-  input_mode: stdin          # stdin | file
-  output_mode: file          # stdout | file | directory
-  timeout_s: 300
-  env:
-    ANTHROPIC_API_KEY: sk-ant-xxx       # 替换为你的 key
-    ANTHROPIC_MODEL: claude-sonnet-4-20250514
+configurations:
+  - id: baseline
+    name: claude-code-v1
+    role: baseline
+    repetitions: 1
+    agent:
+      name: claude-code-v1
+      command: ["claude", "-p", "--output-file", "{output_file}", "--max-turns", "10"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 300
+      env:
+        ANTHROPIC_MODEL: claude-sonnet-4-20250514
+      required_secrets:
+        - MICRO_EVAL_SECRET_ANTHROPIC_API_KEY
 
-candidate:
-  name: claude-code-v2
-  command: "claude -p --output-file {output_dir}/result.txt --max-turns 20"
-  input_mode: stdin
-  output_mode: file
-  timeout_s: 300
-  env:
-    ANTHROPIC_API_KEY: sk-ant-xxx
-    ANTHROPIC_MODEL: claude-sonnet-4-20250514
+  - id: candidate
+    name: claude-code-v2
+    role: candidate
+    repetitions: 1
+    agent:
+      name: claude-code-v2
+      command: ["claude", "-p", "--output-file", "{output_file}", "--max-turns", "20"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 300
+      env:
+        ANTHROPIC_MODEL: claude-sonnet-4-20250514
+      required_secrets:
+        - MICRO_EVAL_SECRET_ANTHROPIC_API_KEY
 
-# --- 更多 agent 类型示例 ---
-
-# OpenAI 兼容 agent（含 base_url）:
-# baseline:
-#   name: gpt4o-agent
-#   command: "python agents/openai_agent.py --input-file {input_file}"
-#   input_mode: file
-#   output_mode: stdout
-#   timeout_s: 120
-#   env:
-#     OPENAI_API_KEY: sk-xxx
-#     OPENAI_BASE_URL: https://api.openai.com/v1
-#     OPENAI_MODEL: gpt-4o
-
-# 自定义代理/国内模型（DeepSeek、Qwen 等）:
-# candidate:
-#   name: deepseek-agent
-#   command: "python agents/deepseek_agent.py"
-#   input_mode: stdin
-#   output_mode: stdout
-#   timeout_s: 180
-#   env:
-#     OPENAI_API_KEY: sk-xxx
-#     OPENAI_BASE_URL: https://api.deepseek.com/v1
-#     MODEL_NAME: deepseek-chat
-
-# LangGraph workflow:
-# candidate:
-#   name: langgraph-router-v2
-#   command: "python agents/router_v2.py --input-file {input_file} --output-dir {output_dir}"
-#   input_mode: file
-#   output_mode: directory
-#   timeout_s: 600
-#   env:
-#     OPENAI_API_KEY: sk-xxx
-#     OPENAI_BASE_URL: https://api.openai.com/v1
-#     LANGCHAIN_TRACING_V2: "true"
-#     LANGCHAIN_API_KEY: ls__xxx
-
-tasks_dir: tasks
+tasks:
+  - tasks/hello.yaml
 output_dir: .micro-eval/runs
-parallel: true
+
+guardrails:
+  max_concurrency: 2
+  timeout_s: 300
+  output_cap_bytes: 10485760
+  artifact_cap_bytes: 10485760
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "candidate agent config vs baseline"
+  task_set_version: ""
+  success_criteria:
+    - Deterministic validator expectations pass.
+    - Human evaluator reviews caveats before making a decision.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed

@@ -1,144 +1,127 @@
 # AGENTS.md
 
-**Critical Rule**: 
+This file is the stable boot context for agents working in this repository. Keep it short: rules that must be present every time stay here; detailed or change-prone guidance must live in the referenced source-of-truth documents.
 
-- Always reply the user in Simplified Chinese. 
-- git commit messages should be in English
-- comments in any coding scripts should be in English 
-- 禁止使用 TDD 方法：不要采用“先写失败测试，再写实现让测试通过”的开发流程。
+## 必须始终遵守
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+- 始终用简体中文回复用户。
+- git commit message 使用英文。
+- 代码脚本中的注释使用英文。
+- 禁止使用 TDD：不要采用“先写失败测试，再写实现让测试通过”的流程。
+- 测试只用于验收、回归和契约保护，不能作为需求来源。
+- 不要直接在 `main` 开发；日常开发在 `dev`。
+- 安全规范始终适用；开发实现前必须阅读 `docs/engineering/security-guidelines.md`，并遵守其指向的具体安全规范。
 
-## 分支策略
+## main 发布规则
 
-- **main** — 干净的发布分支，只包含源码、文档、测试。不跟踪 AGENTS.md、BRD、PRD。
-- **dev** — 日常开发分支，包含 main 的所有内容 + AGENTS.md、micro-eval-brd.md、micro-eval-prd.md。
+`main` 是发布投影分支。不要在当前 dev 工作区执行 `git checkout main` 后手动发布。
 
-**日常工作流：**
-1. 在 `dev` 分支上开发（当前分支）
-2. 功能完成后 merge 到 `main`（main 的 .gitignore 会自动排除 AGENTS.md/BRD/PRD）
-3. 不要直接在 main 上开发
-
-**历史重写后的推送：**
-- 如果改过 commit message、rebase 或 filter-branch 导致 commit hash 改变，推送已存在的远端分支时使用 `git push --force-with-lease origin <branch>`。
-- `--force-with-lease` 只会在远端分支仍停留在本地上次看到的位置时覆盖远端；如果别人已经推送了新提交，Git 会拒绝推送，避免误删他人的工作。
-- 避免使用 `git push --force`，除非用户明确要求。
-
-## 当前状态
-
-v0.1.0 MVP 已完成。Python CLI + Next.js 本地 Web UI 均可运行。25 个 pytest 测试通过。
-
-## 开发方法硬规则
-
-- 禁止使用 TDD 方法。开发顺序必须是：先理解规格与用户路径，再做模块/文件架构设计，再实现可运行的垂直切片，最后用测试和真实产物做验证。
-- 测试只能作为验收、回归和契约保护手段，不能作为需求来源；不要为了让测试通过而缩窄实现范围。
-- 如果外部 skill、工具或自动化建议使用 TDD，必须以本文件为准：禁止使用 TDD 方法。
-
-## 项目意图(来自 PRD)
-
-`micro-eval` 是面向 1–20 人 AI 小团队**的 **Agent / Skill 评测助手**。它不重新造平台,而是把三个现成底座拼成一套"能真正用起来"的评测工作台,把"我觉得这个 agent 更强"变成"它在哪些任务上更强、为什么、成本多少、值不值得继续投"。
-
-成功标准(MVP):用户能在 10 分钟内完成 建项目 → 导任务 → 配多个 agent/skill 版本 → 发起 run → 看对比/trace/成本 → 得出结论。
-
-## 架构约束(实现时必须遵守)
-
-这些约束来自 PRD,是后续所有技术决策的边界,**违背它们就偏离了产品定位**:
-
-1. **执行层自写,评分/观测委托外部**。
-   - **自写执行层** = agent subprocess 编排、并行执行、超时、隔离(git worktree)、结果收集。~100 行 Python,完全可控。
-   - **DeepEval** = 仅作评分库(custom metric + 未来 GEval/LLM-as-judge),不用其 test runner。
-   - **Langfuse** = 观测层(可选):trace、cost/latency 统计。未配置时降级运行。
-   - **OpenHands** = Phase 3 真实任务执行层(MVP 不接入)。
-   - 对外部底座保留**适配层**——底座迭代快,变化吸收在适配层内。
-2. **四层分层**(代码组织应能映射到这四层):
-   - 资产层:管理 prompts / skills / tasks / rubrics / evaluation presets,可对接 PromptHub、Git repo、本地 Markdown、手工录入。
-   - 执行层:调用上述三个底座跑实验。
-   - 控制层(**产品核心**):建项目、组织任务集、配 agent/skill/model、设环境、发起 run、收集结果、出报告。
-   - 展示层:对比页 / trace 页 / run 列表 / 报告页 / 配置页。
-3. **同起点优先(P3)**:每次 run 必须有明确、可复现的起点(workspace 状态、repo commit、skill 版本、工具白名单、sandbox 配置、上下文预算)。环境不一致 = 结果不可信,这是产品要解决的头号痛点。
-4. **可解释优先(P4)**:任何结论都要能回溯到 task、trace、diff、cost。设计数据模型与 UI 时始终保留这条溯源链。
-5. **先人工后自动(P5)**:MVP 评分以人工为主,自动评分逐步增强。不要一上来就堆自动评分引擎。
-6. **MVP 不做**:多团队协作、RBAC/SSO、复杂审计、大规模任务库、高级推荐引擎。聚焦最常见的"对比 + 复盘"场景。
-
-## 核心领域模型
-
-PRD 定义的对象及其关系(实现数据层时以此为准,字段细节见 `micro-eval-prd.md` 第 5 节):
-
-- **Project** → 一类评测目标,拥有多个 Task 与多次 Run。
-- **Task** → 可重复运行的测试单元(含 input_payload、expected_output、rubric、business_impact_tier)。
-- **Skill** → 可切换、可版本化的能力单元(name + version + parameters + dependencies)。
-- **AgentConfig** → 一个运行组合(model + routing + toolset + skills_profile + 采样参数)。
-- **Run** → 对某任务集的一次实际执行(异步,记录 status / cost / trace_bundle_ref)。
-- **RunResult** → 一个 `task × agent` 的结果(score / pass_fail / diff_ref / trace_ref / failure_mode)。
-- **EvaluationPreset** → 把常复用的 promptfoo_config / langfuse_project / openhands_profile 打包。
-
-关键基数关系:`Run` 在 `任务集 × AgentConfig` 的笛卡尔积上产生多条 `RunResult`,对比页正是这个结果矩阵的可视化。
-
-## 路线图(决定动手顺序)
-
-按 PRD,底座**串行接入**,不要并行做完(风险:执行链路过长):
-
-- **Phase 1 (MVP)**:project/task/run + 自写执行层 + DeepEval 评分 + 基础对比页 + 静态 HTML 报告 + Next.js 本地 UI。
-- **Phase 2**:Langfuse trace 接入 + 复盘页 + 成本分析 + skill profile 对比。
-- **Phase 3**:OpenHands sandbox 接入 + 更复杂任务类型 + 趋势分析。
-
-完整需求见 `micro-eval-prd.md`(产品规格)与 `micro-eval-brd.md`(商业背景)。
-
-## 已锁定的技术决策(来自工程评审 2026-05-31)
-
-| 决策 | 结论 | 来源 |
-|------|------|------|
-| 评测引擎 | 自写执行层,DeepEval 仅作评分库 | Codex outside voice + 用户确认 |
-| Input 传递 | stdin/文件传参,禁止 shell 字符串插值 | Codex outside voice + 用户确认 |
-| Workspace 隔离 | git worktree(要求项目在 git repo 中） | 用户选择 |
-| 执行模式 | baseline/candidate 并行执行(asyncio) | 用户确认 |
-| 数据契约 | Pydantic(Python) + zod(TS) 共享 schema | 用户确认 |
-| 测试策略 | pytest 单元测试 + E2E 集成测试 | 用户确认 |
-| 开发方法 | 禁止使用 TDD 方法；采用 spec-driven + acceptance-first + implementation verification | 用户确认 |
-| Web UI | Next.js 本地 Web UI,API routes 读取 .micro-eval/ JSON | 设计文档 |
-
-## 技术栈
-
-- Python 3.11+ / uv — CLI + 评测引擎
-- Typer — CLI 框架
-- DeepEval — 评分库(custom metric, 未来 GEval)
-- Langfuse Python SDK — 可选,cost 数据
-- Next.js + TypeScript — 本地 Web UI
-- pytest — Python 测试
-- vitest — UI 测试
-
-## Engineering guidelines routing
-
-不要默认读取整个 `docs/engineering/` 目录。只有任务命中下列场景时，才读取对应文件：
-
-- 架构边界、模块归属、跨模块依赖 → 读 `docs/engineering/architecture-guardrails.md`
-- 实施设计、模块接口、迁移分期、store/adapter/evidence 落地 → 读 `docs/engineering/implementation-principles.md`
-- Python CLI / engine / schema / subprocess → 读 `docs/engineering/python-guidelines.md`
-- Next.js / TypeScript / zod / API route / UI data access → 读 `docs/engineering/frontend-guidelines.md`
-- 测试计划、contract tests、flaky 控制 → 读 `docs/engineering/testing-guidelines.md`
-- ResultMatrix、Decision、Artifact/Evidence 展示 → 读 `docs/engineering/ux-guidelines.md`
-- secrets、workspace、subprocess 安全、网络边界 → 读 `docs/engineering/security-guidelines.md`
-- 不确定该读哪个工程规范 → 只读 `docs/engineering/README.md`
-
-**安全规范例外于上面的按需路由**：`docs/engineering/security-guidelines.md` 是 cross-cutting 规范，不受"命中场景才读"约束。任何开发里程碑 / vertical slice（涉及 subprocess 调用、env 注入、stdout/stderr 捕获、artifact 持久化、workspace 写入的，几乎覆盖所有执行层改动）在动手前都必须读它，完成后必须逐条过它末尾的「Code Review Checklist」，并在交付报告中说明 secrets redaction、workspace 边界、shell interpolation 三项的处理方式。安全要求与功能需求同级，不是加分项。
-
-硬规则：
-- 每个开发里程碑都必须满足 `docs/engineering/security-guidelines.md`。安全验收与功能验收同为合并门槛：未通过其 Code Review Checklist 的改动不得合并到 main，即使功能测试全绿。
-- 长期架构权威来源：`docs/superpowers/specs/2026-06-02-unicorn-design.md` Part I。
-- 当前 MVP 范围权威来源：`docs/superpowers/specs/2026-06-02-mvp-profile.md`。
-- 测试架构权威来源：`docs/superpowers/specs/2026-06-02-test-architecture.md`。
-- 工程规范不能重新定义 schema 字段、模块契约或 MVP 范围。
-- 如果工程规范与上述权威来源冲突，先更新权威来源，再更新工程规范。
-
-## 开发命令(待项目骨架建立后补充)
+发布必须从 dev 工作区运行：
 
 ```bash
-# Python CLI
-uv run micro-eval run --baseline X --candidate Y
-uv run pytest
-
-# Next.js UI
-cd ui && npm run dev
-cd ui && npx vitest run
+scripts/release-to-main.sh dev main
 ```
 
+`main` 不得跟踪以下 dev-only 内容：
+
+- `docs/superpowers/`
+- `docs/_archive/`
+- `docs/references/`
+- `micro-eval-brd.md`
+- `micro-eval-prd.md`
+
+`main` 的 `AGENTS.md` / `CLAUDE.md` 只允许由发布模板生成；如需修改，先改模板：
+
+- `scripts/release/templates/agents-publish-template.md`
+- `scripts/release/templates/claude-publish-template.md`
+
+完整 release 流程以 `docs/engineering/release-process.md` 为准；本节只保留不可违反的 main 发布边界。
+
+发布后必须确认 main 没有跟踪 dev-only docs：
+
+```bash
+test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*')"
+```
+
+## 执行任务前的行动路由
+
+开始实现前，先判断任务类型，并读取对应依据；不要仅凭本文件推断产品、架构、schema、测试、命令或文档格式细节。
+
+- 不确定文档位置或用途 → 先读 `docs/README.md`。
+- 需要本地开发命令、验证方式、模块入口 → 读 `docs/DEVELOPMENT.md`。
+- 涉及文档新增、移动、metadata、时间戳、目录归属 → 读 `docs/documentation-standard.md`。
+- 涉及产品范围、MVP 边界、用户路径 → 读 `docs/superpowers/specs/2026-06-02-mvp-profile.md`。
+- 涉及长期架构边界、分层、模块职责 → 读 `docs/superpowers/specs/2026-06-02-unicorn-design.md`。
+- 涉及测试体系、测试类型、contract/e2e 策略 → 读 `docs/superpowers/specs/2026-06-02-test-architecture.md`。
+- 涉及发布验证或 release gate → 读/写 `docs/releases/`。
+- 涉及版本号、CHANGELOG、release evidence、依赖清单、发布提交、tag 或 dev→main 发布 → 使用 `.codex/skills/micro-eval-release/SKILL.md`，并读取 `docs/engineering/release-process.md`。
+- 涉及开发过程记录 → 写入 `docs/dev/log/`。
+
+工程任务只读取命中的工程规范，不要默认读取整个 `docs/engineering/`：
+
+- 架构边界、模块归属、跨模块依赖 → `docs/engineering/architecture-guardrails.md`
+- 实施设计、模块接口、迁移分期、store/adapter/evidence → `docs/engineering/implementation-principles.md`
+- Python CLI / engine / schema / subprocess → `docs/engineering/python-guidelines.md`
+- Next.js / TypeScript / zod / API route / UI data access → `docs/engineering/frontend-guidelines.md`
+- 测试计划、contract tests、flaky 控制 → `docs/engineering/testing-guidelines.md`
+- ResultMatrix、Decision、Artifact/Evidence 展示 → `docs/engineering/ux-guidelines.md`
+- 安全规范索引 / 不确定读哪份安全规范 → `docs/engineering/security-guidelines.md`
+- 产品/服务安全：CLI、本地 UI/API、报告、发布包、未来服务化 → `docs/engineering/security-service-guidelines.md`
+- 用户 run 安全：secrets、workspace、network caveat、artifact、evidence → `docs/engineering/security-user-run-guidelines.md`
+- 开发实施安全：subprocess、env、redaction、workspace、artifact、decision safety → `docs/engineering/security-development-guidelines.md`
+- 不确定该读哪个工程规范 → `docs/engineering/README.md`
+
+## 开发时必须遵守安全规则
+
+所有开发实现至少必须遵守 `docs/engineering/security-development-guidelines.md`。若改动影响用户 run 或产品服务边界，还必须读取并遵守对应安全规范。
+
+## 维护 AGENTS.md 时
+
+`AGENTS.md` 只放每次运行都需要的稳定行动规则。若需要改变产品、架构、schema、测试、命令或文档格式细节，先更新对应 source-of-truth 文档，再在本文件保留必要的行动路由。
+
+## 文档维护
+
+开发时遵守 `docs/documentation-standard.md`。尤其注意：
+
+- 新增或移动文档目录时更新 `docs/README.md`。
+- 开发过程记录写入 `docs/dev/log/`，文件名必须包含 `dev-log`。
+- release gate、发布验证、质量证据写入 `docs/releases/`。
+- 过时但需追溯的文档移动到 `docs/_archive/`。
+- `CHANGELOG.md` 只记录面向发布/用户的版本变化。
+
+## oh-my-codex / OMX 补充说明
+
+本项目可以使用 oh-my-codex（OMX）作为 Codex CLI 的工作流编排层。OMX 只提供任务澄清、规划、执行编排、团队模式、状态记录和验证辅助；不得覆盖本文件中更具体的项目规则。
+
+### OMX 工作流入口
+
+- `$deep-interview`：需求范围、边界或意图不清楚时使用，只负责澄清，不直接实现。
+- `$ralplan`：需求基本明确但需要计划、权衡或验证方案时使用。
+- `$team`：任务可拆成多个独立工作流，且并行执行能明显提升质量或速度时使用。
+- `$ralph`：已批准的计划需要单一负责人持续推进到完成和验证时使用。
+- 常规清晰小任务默认直接执行，不为了形式而进入多代理流程。
+
+### OMX 使用原则
+
+- 优先直接解决问题；只有在能提升质量、速度或正确性时才委派。
+- 进展更新保持简短、具体、有证据。
+- 完成前必须运行与改动风险匹配的验证，并报告验证结果。
+- 新用户消息优先于当前任务中的旧假设；非冲突的早前指令继续保留。
+- `.omx/` 可用于保存 OMX 的状态、计划、日志和项目记忆。
+
+### 与本项目规则的冲突处理
+
+- 本项目明确禁止 TDD；即使 OMX 模板中出现 `$tdd`、`test first` 或类似触发词，也不得启用 TDD 工作流。
+- 测试只能作为验收、回归和契约保护手段，不能作为需求来源。
+- 所有代码注释仍使用英文；与用户沟通仍使用简体中文；git commit message 仍使用英文。
+- 涉及 subprocess、env、stdout/stderr、artifact、workspace 写入的改动，仍必须遵守本项目 `docs/engineering/security-guidelines.md`。
+
+### OMX Runtime Marker
+
+保留以下 marker 供 OMX runtime/team overlay 使用；不要手动写业务规则到 marker 内部：
+
+<!-- OMX:RUNTIME:START -->
+<!-- OMX:RUNTIME:END -->
+
+<!-- OMX:TEAM:WORKER:START -->
+<!-- OMX:TEAM:WORKER:END -->

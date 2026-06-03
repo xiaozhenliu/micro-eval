@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import { RunSchema, type Run } from "./schema";
+import { RunSchema, type ArtifactRef, type CellResult, type Run } from "./schema";
 
 export function getProjectRoot(): string {
   return (
@@ -9,8 +9,12 @@ export function getProjectRoot(): string {
   );
 }
 
-function getRunsDir(): string {
+export function getRunsDir(): string {
   return path.join(getProjectRoot(), ".micro-eval", "runs");
+}
+
+function safeId(id: string): string | null {
+  return /^[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
 }
 
 export async function listRuns(): Promise<Run[]> {
@@ -20,30 +24,27 @@ export async function listRuns(): Promise<Run[]> {
     return [];
   }
 
-  const files = fs.readdirSync(runsDir).filter((f) => f.endsWith(".json"));
+  const entries = fs.readdirSync(runsDir, { withFileTypes: true });
   const runs: Run[] = [];
 
-  for (const file of files) {
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
     try {
-      const content = fs.readFileSync(path.join(runsDir, file), "utf-8");
-      const data = JSON.parse(content);
-      const parsed = RunSchema.parse(data);
-      runs.push(parsed);
+      const content = fs.readFileSync(path.join(runsDir, entry.name, "run.json"), "utf-8");
+      runs.push(RunSchema.parse(JSON.parse(content)));
     } catch (err) {
-      console.warn(`Skipping invalid run file: ${file}`, err);
+      console.warn(`Skipping invalid run directory: ${entry.name}`, err);
     }
   }
 
-  runs.sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
-
+  runs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   return runs;
 }
 
 export async function getRun(id: string): Promise<Run | null> {
-  const runsDir = getRunsDir();
-  const filePath = path.join(runsDir, `${id}.json`);
+  const safe = safeId(id);
+  if (!safe) return null;
+  const filePath = path.join(getRunsDir(), safe, "run.json");
 
   if (!fs.existsSync(filePath)) {
     return null;
@@ -51,10 +52,52 @@ export async function getRun(id: string): Promise<Run | null> {
 
   try {
     const content = fs.readFileSync(filePath, "utf-8");
-    const data = JSON.parse(content);
-    return RunSchema.parse(data);
+    return RunSchema.parse(JSON.parse(content));
   } catch (err) {
     console.warn(`Failed to load run ${id}`, err);
     return null;
   }
+}
+
+export function getRunDir(id: string): string | null {
+  const safe = safeId(id);
+  if (!safe) return null;
+  return path.join(getRunsDir(), safe);
+}
+
+export function saveRun(run: Run): void {
+  const runDir = getRunDir(run.id);
+  if (!runDir) throw new Error("invalid run id");
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(path.join(runDir, "run.json"), JSON.stringify(run, null, 2));
+}
+
+export async function getCell(runId: string, cellId: string): Promise<CellResult | null> {
+  const run = await getRun(runId);
+  if (!run) return null;
+  return run.results.find((result) => result.cell_id === cellId) ?? null;
+}
+
+export async function getArtifact(runId: string, artifactId: string): Promise<{ artifact: ArtifactRef; content: string } | null> {
+  const run = await getRun(runId);
+  const safe = safeId(runId);
+  if (!run || !safe) return null;
+  const artifact = run.artifacts.find((item) => item.artifact_id === artifactId);
+  if (!artifact) return null;
+
+  const runDir = path.join(getRunsDir(), safe);
+  const artifactPath = path.resolve(runDir, artifact.path);
+  if (!artifactPath.startsWith(path.resolve(runDir) + path.sep)) return null;
+  if (!fs.existsSync(artifactPath)) return null;
+  const realRunDir = fs.realpathSync(runDir);
+  const realArtifactPath = fs.realpathSync(artifactPath);
+  if (!realArtifactPath.startsWith(realRunDir + path.sep)) return null;
+  if (artifact.warning?.includes("skipped_oversized")) {
+    return { artifact, content: `[${artifact.warning}: ${artifact.path}]` };
+  }
+  if (artifact.media_type !== "text/plain") {
+    return { artifact, content: `[${artifact.warning ?? "non-text artifact not displayed"}: ${artifact.path}]` };
+  }
+
+  return { artifact, content: fs.readFileSync(realArtifactPath, "utf-8") };
 }

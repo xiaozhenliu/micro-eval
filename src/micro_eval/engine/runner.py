@@ -356,8 +356,13 @@ class AgentRunner:
 
     def _redact(self, text: str, agent: AgentConfig) -> str:
         redacted = text
-        for value in agent.env.values():
-            if value and len(value) >= 4:
+        values = list(agent.env.values()) + [
+            value
+            for name, value in os.environ.items()
+            if name.startswith("MICRO_EVAL_SECRET_")
+        ]
+        for value in values:
+            if value:
                 redacted = redacted.replace(value, "[REDACTED]")
         return redacted
 
