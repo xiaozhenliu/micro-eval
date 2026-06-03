@@ -3,7 +3,7 @@ title: micro-eval README
 doc_type: tutorial
 status: active
 created_at: 2026-05-31T01:43+08:00
-updated_at: 2026-06-03T15:56+08:00
+updated_at: 2026-06-03T16:16+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -236,13 +236,6 @@ flowchart LR
   STORE --> UI["Local Web UI / Reports"]
 ```
 
-Current source-of-truth boundaries:
-
-- Long-term architecture: [`docs/superpowers/specs/2026-06-02-unicorn-design.md`](docs/superpowers/specs/2026-06-02-unicorn-design.md)
-- MVP scope: [`docs/superpowers/specs/2026-06-02-mvp-profile.md`](docs/superpowers/specs/2026-06-02-mvp-profile.md)
-- Test architecture: [`docs/superpowers/specs/2026-06-02-test-architecture.md`](docs/superpowers/specs/2026-06-02-test-architecture.md)
-- Engineering guardrails: [`docs/engineering/`](docs/engineering/)
-
 ## Documentation
 
 | Document | Purpose |
@@ -251,7 +244,6 @@ Current source-of-truth boundaries:
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Local setup, commands, module map, smoke flow, and release readiness checklist. |
 | [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md) | Security routing for development, user runs, service/API/report boundaries. |
 | [`examples/README.md`](examples/README.md) | Source-checkout examples and onboarding use cases. |
-| [`docs/releases/2026-06-03-v0.1.3-release-evidence.md`](docs/releases/2026-06-03-v0.1.3-release-evidence.md) | v0.1.3 release verification evidence. |
 
 ## Development
 

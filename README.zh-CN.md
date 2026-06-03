@@ -3,7 +3,7 @@ title: micro-eval 中文 README
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T15:56+08:00
-updated_at: 2026-06-03T15:56+08:00
+updated_at: 2026-06-03T16:16+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -237,13 +237,6 @@ flowchart LR
   STORE --> UI["Local Web UI / Reports"]
 ```
 
-当前 source-of-truth 边界：
-
-- 长期架构：[`docs/superpowers/specs/2026-06-02-unicorn-design.md`](docs/superpowers/specs/2026-06-02-unicorn-design.md)
-- MVP 范围：[`docs/superpowers/specs/2026-06-02-mvp-profile.md`](docs/superpowers/specs/2026-06-02-mvp-profile.md)
-- 测试架构：[`docs/superpowers/specs/2026-06-02-test-architecture.md`](docs/superpowers/specs/2026-06-02-test-architecture.md)
-- 工程 guardrails：[`docs/engineering/`](docs/engineering/)
-
 ## 文档导航
 
 | 文档 | 用途 |
@@ -252,7 +245,6 @@ flowchart LR
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 本地环境、常用命令、模块地图、smoke flow 和 release readiness checklist。 |
 | [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md) | 开发实现、用户 run、服务/API/report 边界的安全路由。 |
 | [`examples/README.md`](examples/README.md) | Source-checkout examples 和 onboarding use cases。 |
-| [`docs/releases/2026-06-03-v0.1.3-release-evidence.md`](docs/releases/2026-06-03-v0.1.3-release-evidence.md) | v0.1.3 release 验证证据。 |
 
 ## 开发
 
