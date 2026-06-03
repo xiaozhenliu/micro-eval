@@ -1,22 +1,3 @@
----
-title: micro-eval README
-doc_type: tutorial
-status: active
-created_at: 2026-05-31T01:43+08:00
-updated_at: 2026-06-03T16:16+08:00
-owner: micro-eval maintainers
-source_of_truth: false
-tags:
-  - readme
-  - onboarding
-  - mvp
-related:
-  - README.zh-CN.md
-  - docs/README.md
-  - docs/DEVELOPMENT.md
-  - docs/engineering/security-guidelines.md
----
-
 # micro-eval
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -270,3 +251,24 @@ Pure documentation edits can usually be validated with `git diff --check`, but c
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+## Document metadata
+
+```yaml
+title: micro-eval README
+doc_type: tutorial
+status: active
+created_at: 2026-05-31T01:43+08:00
+updated_at: 2026-06-03T16:16+08:00
+owner: micro-eval maintainers
+source_of_truth: false
+tags:
+  - readme
+  - onboarding
+  - mvp
+related:
+  - README.zh-CN.md
+  - docs/README.md
+  - docs/DEVELOPMENT.md
+  - docs/engineering/security-guidelines.md
+```
