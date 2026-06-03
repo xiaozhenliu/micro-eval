@@ -30,12 +30,12 @@ scripts/release-to-main.sh dev main
 - `micro-eval-brd.md`
 - `micro-eval-prd.md`
 
-`main` 的 `AGENTS.md` / `CLAUDE.md` 只允许由发布模板生成；如需修改，先改模板：
+`main` 的 `AGENTS.md` / `CLAUDE.md` 只允许由发布模板生成；如需修改，先改项目级 release skill 内的模板：
 
-- `scripts/release/templates/agents-publish-template.md`
-- `scripts/release/templates/claude-publish-template.md`
+- `.codex/skills/micro-eval-release/assets/templates/agents-publish-template.md`
+- `.codex/skills/micro-eval-release/assets/templates/claude-publish-template.md`
 
-完整 release 流程以 `docs/engineering/release-process.md` 为准；本节只保留不可违反的 main 发布边界。
+完整可执行 release 流程以项目级 skill `.codex/skills/micro-eval-release/SKILL.md` 及其 bundled scripts/assets 为准；本节只保留不可违反的 main 发布边界。
 
 发布后必须确认 main 没有跟踪 dev-only docs：
 
@@ -54,7 +54,7 @@ test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/
 - 涉及长期架构边界、分层、模块职责 → 读 `docs/superpowers/specs/2026-06-02-unicorn-design.md`。
 - 涉及测试体系、测试类型、contract/e2e 策略 → 读 `docs/superpowers/specs/2026-06-02-test-architecture.md`。
 - 涉及发布验证或 release gate → 读/写 `docs/releases/`。
-- 涉及版本号、CHANGELOG、release evidence、依赖清单、发布提交、tag 或 dev→main 发布 → 使用 `.codex/skills/micro-eval-release/SKILL.md`，并读取 `docs/engineering/release-process.md`。
+- 涉及版本号、CHANGELOG、release evidence、依赖清单、发布提交、tag 或 dev→main 发布 → 使用项目级 skill `.codex/skills/micro-eval-release/SKILL.md`；该 skill 内的 bundled scripts/assets 是 release 可执行流程来源。
 - 涉及开发过程记录 → 写入 `docs/dev/log/`。
 
 工程任务只读取命中的工程规范，不要默认读取整个 `docs/engineering/`：

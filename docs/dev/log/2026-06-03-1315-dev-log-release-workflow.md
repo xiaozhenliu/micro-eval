@@ -3,7 +3,7 @@ title: Development Log - Release Workflow
 doc_type: dev_log
 status: active
 created_at: 2026-06-03T13:15+08:00
-updated_at: 2026-06-03T13:40+08:00
+updated_at: 2026-06-03T14:05+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -28,10 +28,11 @@ The project had multiple release version surfaces (`VERSION`, Python runtime ver
 
 ## Changes
 
-- Added `docs/engineering/release-process.md` as the release workflow source of truth.
-- Added `.codex/skills/micro-eval-release/SKILL.md` to make the release workflow reusable by future agents.
+- Added `.codex/skills/micro-eval-release/SKILL.md` as the project-level executable release skill.
+- Moved release automation scripts and publish templates into `.codex/skills/micro-eval-release/scripts/` and `.codex/skills/micro-eval-release/assets/templates/`.
+- Kept repository `scripts/release/*` and `scripts/release-to-main.sh` as compatibility wrappers.
 - Added an `AGENTS.md` routing entry for version, changelog, release evidence, dependency inventory, tag, and dev-to-main release work.
-- Added release scripts for version synchronization, version consistency checks, dependency inventory generation, and release preflight validation.
+- Added `docs/engineering/release-process.md` as a human-readable release reference that points back to the skill.
 - Switched Python package metadata to Hatch dynamic versioning from `VERSION`.
 - Generated v0.1.3 dependency inventory and release evidence.
 - Sanitized dependency inventory tool checks so release artifacts do not persist absolute local executable paths or home-directory paths.
@@ -39,6 +40,7 @@ The project had multiple release version surfaces (`VERSION`, Python runtime ver
 
 ## Decisions
 
+- The project-level release skill is the executable source for release flow; docs are references/indexes.
 - `VERSION` is the single human-edited release version source.
 - `pyproject.toml` reads the package version dynamically from `VERSION`.
 - Historical version references in changelog, dev logs, archive, and specs remain unchanged.
@@ -47,12 +49,13 @@ The project had multiple release version surfaces (`VERSION`, Python runtime ver
 
 ## Verification
 
-- `python scripts/release/check-version-consistency.py --version 0.1.3`
+- `.codex/skills/micro-eval-release/scripts/check-version-consistency.py --version 0.1.3`
 - `uv run pytest -q tests/unit/test_version_consistency.py tests/unit/test_run_plan.py tests/unit/test_contract_fixture.py`
 - `uv build`
-- `python scripts/release/generate-dependency-inventory.py --version 0.1.3 --date 2026-06-03`
+- `.codex/skills/micro-eval-release/scripts/generate-dependency-inventory.py --version 0.1.3 --date 2026-06-03`
+- `scripts/release/preflight-release.sh 0.1.3` — wrapper validation after skill script migration
 
 ## Risks and follow-ups
 
-- Future releases should run `scripts/release/preflight-release.sh` before committing; it checks both unstaged and staged whitespace errors.
+- Future releases should run `.codex/skills/micro-eval-release/scripts/preflight-release.sh` before committing; repository wrappers remain available for compatibility.
 - Browser storage grep remains a review signal, not a hard failure, unless product security rules change.

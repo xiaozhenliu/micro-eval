@@ -17,5 +17,5 @@ Critical rules:
   - `micro-eval-prd.md`
 - If source changes are needed, switch back to `dev` and make changes there.
 
-This file is generated from `scripts/release/templates/agents-publish-template.md` during release.
-Do not hand-edit the generated `AGENTS.md` on `main`; edit the template on `dev` instead.
+This file is generated from `.codex/skills/micro-eval-release/assets/templates/agents-publish-template.md` during release.
+Do not hand-edit the generated `AGENTS.md` on `main`; edit the skill asset template on `dev` instead.

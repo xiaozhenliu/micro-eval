@@ -222,8 +222,9 @@ Artifact API 只接受 manifest 中存在的 `artifact_id`，并通过 run-dir `
 
 ## Release evidence
 
-当前 release 流程和 v0.1.3 证据记录在：
+当前 release skill、流程参考和 v0.1.3 证据记录在：
 
+- `.codex/skills/micro-eval-release/SKILL.md`
 - `docs/engineering/release-process.md`
 - `docs/releases/2026-06-03-v0.1.3-release-evidence.md`
 - `docs/releases/2026-06-03-v0.1.3-dependency-inventory.md`
