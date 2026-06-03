@@ -16,7 +16,7 @@ All notable changes to `micro-eval` are documented here.
 - Add guarded `DecisionReport` / Basic Honest Stats so degraded comparability produces `not_comparable` or `inconclusive` instead of overstating a winner.
 - Add a manifest-backed artifact viewer in the local UI and static text/json/html reports with caveats, stats, matrix rows, and artifact references.
 - Add starter task templates under `tasks/templates/` and a deterministic dogfood suite covering the MVP Golden Path.
-- Add `docs/release-evidence-2026-06-02-mvp.md` with the release-readiness evidence and final quality gate checklist.
+- Add a final quality gate checklist for the 0.1.3 release.
 
 ### Changed
 
