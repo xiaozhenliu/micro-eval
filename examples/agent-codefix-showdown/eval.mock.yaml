@@ -1,0 +1,43 @@
+# Deterministic smoke version of the same use case.
+# This avoids model calls while proving the example config, task, workspace,
+# validation, list, and report paths work.
+project_name: agent-codefix-showdown-mock
+description: Offline smoke for the agent-codefix-showdown example.
+
+configurations:
+  - id: mock-local
+    name: Local mock fixer
+    role: baseline
+    repetitions: 1
+    agent:
+      name: Local mock fixer
+      command: ["python3", "workspace/scripts/mock-fix-agent.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 60
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/fix-ledger-rounding.yaml
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 60
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 1048576
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "mock fixer smoke for the codefix use case"
+  task_set_version: "agent-codefix-showdown.v1"
+  success_criteria:
+    - The deterministic mock fixes the workspace and the unittest suite passes.
+    - The wrapper records MICRO_EVAL_TASK_RESULT=PASS.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed

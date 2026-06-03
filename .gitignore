@@ -19,14 +19,17 @@ ui/.next/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # Plan files (local only)
 .plan/
 
-# Dev-only docs (tracked on dev branch, never on main)
-CLAUDE.md
-AGENTS.md
-ui/CLAUDE.md
-ui/AGENTS.md
+# Dev-only docs (tracked on dev branch)
 micro-eval-brd.md
 micro-eval-prd.md
+
+docs/superpowers/
+
+docs/_archive/
+
+docs/references/

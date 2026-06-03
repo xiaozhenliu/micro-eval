@@ -1,0 +1,82 @@
+# Complete MVP use case: compare four local coding agents on one code-fix task.
+# Run from this directory with: micro-eval validate && micro-eval run --max-concurrency 1
+project_name: agent-codefix-showdown
+description: Compare local agent CLIs on a small ledger rounding bugfix task.
+
+configurations:
+  - id: claude-code
+    name: Claude Code
+    role: baseline
+    repetitions: 1
+    agent:
+      name: Claude Code
+      command: ["python3", "workspace/scripts/run-agent.py", "claude-code", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 900
+      env: {}
+      required_secrets: []
+
+  - id: codex-cli
+    name: Codex CLI
+    role: candidate
+    repetitions: 1
+    agent:
+      name: Codex CLI
+      command: ["python3", "workspace/scripts/run-agent.py", "codex-cli", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 900
+      env: {}
+      required_secrets: []
+
+  - id: openclaw
+    name: OpenClaw
+    role: candidate
+    repetitions: 1
+    agent:
+      name: OpenClaw
+      command: ["python3", "workspace/scripts/run-agent.py", "openclaw", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 900
+      env: {}
+      required_secrets: []
+
+  - id: hermes
+    name: Hermes
+    role: candidate
+    repetitions: 1
+    agent:
+      name: Hermes
+      command: ["python3", "workspace/scripts/run-agent.py", "hermes", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 900
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/fix-ledger-rounding.yaml
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 900
+  output_cap_bytes: 4194304
+  artifact_cap_bytes: 4194304
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "local coding agent CLIs on a smoke-sized bugfix"
+  task_set_version: "agent-codefix-showdown.v1"
+  success_criteria:
+    - The agent fixes the copied ledger workspace so the local unittest suite passes.
+    - The wrapper records MICRO_EVAL_TASK_RESULT=PASS after running the fixed test suite.
+    - Humans review artifacts and caveats before treating any result as a benchmark signal.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed

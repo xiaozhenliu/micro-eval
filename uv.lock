@@ -792,7 +792,6 @@ wheels = [
 
 [[package]]
 name = "micro-eval"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
@@ -831,7 +830,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "typer", specifier = ">=0.9.0" },
 ]
-provides-extras = ["scoring", "observability", "dev"]
+provides-extras = ["dev", "observability", "scoring"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest-asyncio", specifier = ">=1.4.0" }]

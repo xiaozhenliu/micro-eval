@@ -66,3 +66,50 @@ def test_load_tasks_missing_dir():
 def test_load_tasks_empty_dir(tmp_path):
     tasks = load_tasks(tmp_path)
     assert tasks == []
+
+
+def test_load_canonical_matrix_config_success():
+    config = load_config(FIXTURES / "configs" / "eval_matrix.yaml")
+    assert config.project_name == "matrix-project"
+    assert len(config.configurations) == 2
+    assert config.configurations[0].agent.command == ["cat"]
+    assert config.configurations[1].repetitions == 2
+    assert config.config_hash
+
+
+def test_load_canonical_config_rejects_string_command(tmp_path):
+    bad_file = tmp_path / "eval.yaml"
+    bad_file.write_text(
+        "project_name: bad\n"
+        "configurations:\n"
+        "  - id: bad\n"
+        "    name: bad\n"
+        "    agent:\n"
+        "      name: bad\n"
+        "      command: 'cat'\n"
+    )
+    with pytest.raises(ConfigError, match="argv list"):
+        load_config(bad_file)
+
+
+def test_load_canonical_config_rejects_output_dir_escape(tmp_path):
+    bad_file = tmp_path / "eval.yaml"
+    bad_file.write_text(
+        "project_name: bad\n"
+        "output_dir: ../outside\n"
+        "configurations:\n"
+        "  - id: bad\n"
+        "    name: bad\n"
+        "    agent:\n"
+        "      name: bad\n"
+        "      command: ['cat']\n"
+    )
+    with pytest.raises(ConfigError, match="output_dir"):
+        load_config(bad_file)
+
+
+def test_load_legacy_config_bridge_has_warning():
+    config = load_config(FIXTURES / "configs" / "eval_legacy.yaml")
+    assert config.baseline.command == "cat"
+    assert config.candidate.command == "cat"
+    assert config.migration_warnings

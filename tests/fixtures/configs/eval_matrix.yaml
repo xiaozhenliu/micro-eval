@@ -1,0 +1,28 @@
+project_name: matrix-project
+configurations:
+  - id: baseline
+    name: echo-baseline
+    role: baseline
+    repetitions: 1
+    agent:
+      name: echo-baseline
+      command: ["cat"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 10
+  - id: candidate
+    name: echo-candidate
+    role: candidate
+    repetitions: 2
+    agent:
+      name: echo-candidate
+      command: ["cat"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 10
+tasks:
+  - ../tasks/task-001.yaml
+output_dir: .micro-eval/runs
+guardrails:
+  max_concurrency: 2
+  timeout_s: 30

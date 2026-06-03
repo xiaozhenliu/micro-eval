@@ -1,267 +1,125 @@
 # 开发指南
 
-## 前置要求
+本文是当前 0.1.3 MVP 实现的工程入口。正式工程规范仍以 `docs/engineering/` 为准；长期架构/范围权威来源仍是：
 
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv)（推荐）或 pip
-- Node.js 18+（Web UI 开发）
-- Git（workspace 隔离功能需要）
+- `docs/superpowers/specs/2026-06-02-unicorn-design.md`
+- `docs/superpowers/specs/2026-06-02-mvp-profile.md`
+- `docs/superpowers/specs/2026-06-02-test-architecture.md`
 
-## 开发环境搭建
+MVP release evidence 见 `docs/releases/2026-06-02-mvp-release-evidence.md`；完整 release 流程见 `docs/engineering/release-process.md`。
 
-### Python CLI + 引擎
+## 开发原则
 
-```bash
-# 克隆仓库
-git clone <repo-url> && cd micro-eval
+- 日常开发在 `dev` 分支；不要直接在 `main` 开发。
+- 禁止 TDD：先理解规格与用户路径，再设计模块边界，实现可运行垂直切片，最后补验收/回归/契约测试。
+- Python 代码注释使用英文；用户沟通使用简体中文。
+- subprocess 必须 argv-only，禁止 shell interpolation。
+- 涉及 env/stdout/stderr/artifact/workspace 的改动必须按 `docs/engineering/security-guidelines.md` 检查。
+- 不要绕过 canonical schema；Python Pydantic 与 TypeScript zod contract 必须保持一致。
 
-# 安装开发依赖
-uv pip install -e ".[dev,scoring,observability]"
+## 环境准备
 
-# 验证安装
-micro-eval --help
-
-# 运行测试
-uv run pytest
-```
-
-### Web UI
+Python 要求 `>=3.11`。
 
 ```bash
-cd ui
-npm install
-npm run dev    # http://localhost:3000
+uv sync --all-extras
+cd ui && npm install
 ```
 
-UI 默认读取上级目录的 `.micro-eval/runs/` 数据。可通过环境变量覆盖：
+常用本地命令：
 
 ```bash
-MICRO_EVAL_PROJECT_ROOT=/path/to/project npm run dev
+uv run micro-eval --help
+uv run micro-eval init --force
+uv run micro-eval validate
+uv run micro-eval run --dry-run --format json
 ```
 
-## 项目结构
+## 本地验证
 
-```
-micro-eval/
-├── src/micro_eval/
-│   ├── cli/                 # CLI 入口与命令
-│   │   ├── main.py          # Typer app 注册
-│   │   ├── run.py           # run 命令实现
-│   │   └── report.py        # report 命令 + Jinja2 模板
-│   ├── config/
-│   │   └── loader.py        # YAML 配置加载与校验
-│   ├── engine/
-│   │   ├── runner.py        # 核心执行引擎（asyncio）
-│   │   ├── scorer.py        # 评分逻辑
-│   │   └── workspace.py     # git worktree 隔离
-│   └── models/
-│       └── schema.py        # Pydantic 领域模型
-├── tests/
-│   ├── unit/                # 单元测试
-│   └── e2e/                 # 端到端测试
-├── ui/                      # Next.js Web UI
-│   └── src/
-│       ├── app/             # App Router 页面
-│       ├── components/      # React 组件
-│       └── lib/             # 数据层 + zod schema
-├── eval.yaml.example        # 配置示例
-└── pyproject.toml           # Python 项目配置
-```
-## 架构图
-
-```
-用户
- │
- ▼
-┌──────────────────────────────────────────────────────────────┐
-│ CLI Layer (Typer)                                            │
-│ main.py → run.py / report.py / ui                           │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Config Layer                                                 │
-│ loader.py: load_config() → ProjectConfig                     │
-│            load_tasks()  → list[Task]                        │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Execution Layer                                              │
-│                                                              │
-│ AgentRunner.run_eval()                                       │
-│   ├─ asyncio.gather (parallel) 或 sequential loop            │
-│   └─ _run_single(agent, task)                                │
-│       ├─ 准备输入 (stdin / file)                              │
-│       ├─ asyncio.create_subprocess_shell                     │
-│       ├─ wait_for(timeout)                                   │
-│       └─ 收集输出 (stdout / file)                             │
-│                                                              │
-│ Scorer.score() → 0.0~1.0                                    │
-│ Scorer.judge_pass_fail() → TaskStatus                        │
-│                                                              │
-│ WorkspaceManager                                             │
-│   ├─ create() → git worktree add --detach                   │
-│   ├─ collect_diff() → git diff                              │
-│   └─ cleanup() → git worktree remove                        │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Data Layer                                                   │
-│ Pydantic models (schema.py) → JSON 序列化                     │
-│ 存储: .micro-eval/runs/<run-id>.json                         │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Web UI (Next.js 16 + React 19 + Tailwind 4)                 │
-│ api.ts: 读取 .micro-eval/runs/ JSON 文件                      │
-│ schema.ts: zod 校验（与 Python Pydantic 对齐）                 │
-│ ComparisonTable / RunList / AnnotationPanel                  │
-└──────────────────────────────────────────────────────────────┘
-```
-
-## 关键设计决策
-
-以下决策来自工程评审，是代码实现的约束边界：
-
-### 1. 自写执行层，不用 DeepEval 做编排
-
-**原因**：DeepEval 的 test runner 假设同步、单 agent 场景，无法满足 baseline/candidate 并行对比需求。自写 ~200 行 asyncio 代码完全可控。
-
-**体现**：`engine/runner.py` 中 `AgentRunner` 直接调用 `asyncio.create_subprocess_shell`，DeepEval 仅在 `scorer.py` 中作为可选评分库。
-
-### 2. stdin/文件传参，禁止 shell 字符串插值
-
-**原因**：防止注入攻击，保证输入完整性（含特殊字符、多行文本）。
-
-**体现**：`_run_single()` 中 `input_payload` 通过 `proc.communicate(input=...)` 传入 stdin，或写入临时文件后通过 `{input_file}` 模板变量注入路径。
-
-### 3. git worktree 隔离
-
-**原因**：保证每次 run 的起点一致（同一 commit），baseline 和 candidate 不互相污染。
-
-**体现**：`workspace.py` 中 `WorkspaceManager.create()` 调用 `git worktree add --detach`。
-
-### 4. asyncio 并行执行
-
-**原因**：baseline 和 candidate 独立运行，并行可将总耗时减半。
-
-**体现**：`run_eval()` 中 `asyncio.gather(*coros)` 并行执行所有 task × agent 组合。
-
-### 5. Pydantic + zod 双端 schema
-
-**原因**：Python 端和 TypeScript 端共享数据契约，JSON 文件是两端的桥梁。
-
-**体现**：`models/schema.py`（Pydantic）与 `ui/src/lib/schema.ts`（zod）字段一一对应。
-
-## 测试
-
-### 运行测试
+功能或 release 相关改动至少运行：
 
 ```bash
-# 全部测试
-uv run pytest
-
-# 仅单元测试
-uv run pytest tests/unit/
-
-# 仅 E2E 测试
-uv run pytest tests/e2e/
-
-# 带覆盖率
-uv run pytest --cov=micro_eval
-
-# 单个文件
-uv run pytest tests/unit/test_runner.py -v
+uv run python -m compileall src/micro_eval tests
+uv run pytest -q
+cd ui && npm run lint && npm run build
+uv build
+git diff --check
+grep -R "create_subprocess_shell" src tests ui || true
+grep -R "shell=True" src tests ui || true
+grep -R "localStorage" ui/src || true
+grep -R "sessionStorage" ui/src || true
 ```
 
-### 测试结构
+纯文档改动可只运行 `git diff --check`，但如果文档更新了命令、schema 或 release claims，应抽样运行相关命令确认。
 
-```
-tests/
-├── conftest.py              # 共享 fixtures
-├── unit/
-│   ├── test_schema.py       # 模型序列化/反序列化
-│   ├── test_config_loader.py # 配置加载与校验
-│   └── test_runner.py       # 执行引擎（mock subprocess）
-└── e2e/
-    └── test_full_flow.py    # 完整 run 流程
-```
+## 主要模块
 
-### 编写新测试
+```text
+src/micro_eval/
+├── cli/                 # init / validate / run / list / report / ui
+├── config/              # loader bridge + RunPlan builder
+├── engine/              # AgentAdapter, ExecutionKernel, WorkspaceManager
+├── evaluation/          # deterministic validator + human evaluation helper
+├── decision/            # guarded DecisionReport / Basic Honest Stats
+├── models/              # canonical Pydantic contracts
+└── store/               # RunStore / ArtifactStore
 
-测试使用 `pytest` + `pytest-asyncio`。异步测试标记 `@pytest.mark.asyncio`：
-
-```python
-import pytest
-from micro_eval.engine.runner import AgentRunner
-from micro_eval.models.schema import AgentConfig, Task
-
-@pytest.mark.asyncio
-async def test_my_feature(tmp_path):
-    agent = AgentConfig(name="test", command="echo hello")
-    task = Task(
-        id="t1",
-        name="test task",
-        input_payload="input",
-    )
-    runner = AgentRunner(work_dir=tmp_path)
-    result = await runner._run_single(agent, task)
-    assert result.status.value == "pass"
+ui/src/
+├── app/                 # pages and API routes
+├── components/          # RunList, ResultMatrix, CellDetail, ArtifactViewer, EvaluationPanel
+└── lib/                 # zod schema, fs data access, evaluation append helpers, contract fixture
 ```
 
-`pyproject.toml` 已配置 `asyncio_mode = "auto"`，无需手动设置 event loop。
+## Canonical 数据流
 
-## 添加新功能指南
+1. `load_config()` 读取 canonical `configurations[]`；legacy `baseline` / `candidate` 只通过 migration bridge 转换。
+2. `build_run_plan()` 展开 `tasks × configurations × repetitions`，生成 `SameStartSnapshot` 与 `ReplayCanonical`。
+3. `ExecutionKernel` 为每个 cell 分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
+4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence。
+5. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json`，`ArtifactStore` 写入 `manifest.json`。
+6. `build_decision()` 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
+7. UI/API 通过 zod 读取 canonical JSON；human evaluation POST append 到 cell `evaluation.json` 并重算 `run.json.decision`。
 
-### 添加新 CLI 命令
+## CLI smoke
 
-1. 在 `src/micro_eval/cli/` 下创建新模块（如 `compare.py`）
-2. 定义命令函数，使用 Typer 装饰器
-3. 在 `main.py` 中注册：`app.command(name="compare")(compare_command)`
+```bash
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+uv run --project /path/to/micro-eval micro-eval init --force
+uv run --project /path/to/micro-eval micro-eval validate --format json
+uv run --project /path/to/micro-eval micro-eval run --dry-run --format json
+uv run --project /path/to/micro-eval micro-eval run --max-concurrency 2 --format json
+uv run --project /path/to/micro-eval micro-eval list --format json
+uv run --project /path/to/micro-eval micro-eval report --format text
+uv run --project /path/to/micro-eval micro-eval report --format html --output report.html
+```
 
-### 添加新评分策略
+## Contract fixture discipline
 
-1. 在 `engine/scorer.py` 的 `Scorer` 类中添加方法
-2. MVP 阶段使用简单逻辑；后续可引入 DeepEval 的 `CustomMetric`
-3. 在 `cli/run.py` 的评分循环中调用新方法
+- Python canonical models are the source for persisted run artifacts.
+- UI zod schemas must parse real run artifacts, not hand-written approximations.
+- Keep `ui/src/lib/fixtures/canonical-run-p0.json` and `tests/unit/test_contract_fixture.py` aligned when schema changes.
+- When changing `RunRecord`, `CellResult`, `ArtifactRef`, `EvidenceItem`, `EvaluationResult`, or `DecisionReport`, update both Python and TS contract coverage in the same vertical slice.
 
-### 添加新领域模型
+## Security review checklist
 
-1. 在 `models/schema.py` 中定义 Pydantic model
-2. 同步更新 `ui/src/lib/schema.ts` 中的 zod schema
-3. 确保字段名、类型、可选性完全对齐
+- **shell interpolation**：canonical agent commands and validation commands are argv lists; no `shell=True` or `create_subprocess_shell` in trusted execution paths.
+- **secrets redaction**：only declared `MICRO_EVAL_SECRET_*` values are injected, and all non-empty host `MICRO_EVAL_SECRET_*` values participate in redaction before text artifact/evidence/UI persistence.
+- **workspace boundary**：agent cwd is the assigned blank/files/git worktree workspace; setup env is allowlisted and does not inherit secrets.
+- **output_dir boundary**：`output_dir` must be project-relative and must not contain `..`.
+- **artifact safety**：reserved stdout/stderr/output paths are written atomically; symlink, hardlink, non-regular, oversized, and binary artifacts are skipped or represented with warnings/placeholders.
+- **raw artifact access**：Decision/UI consume refs and summaries; raw text content is available only through explicit manifest `artifact_id` lookup plus run-dir `realpath` boundary validation.
+- **snapshot mismatch**：Decision must stay guarded and never claim strong improvement/regression when comparability is degraded.
 
-### 扩展 Web UI
+## Release readiness checklist
 
-1. 页面放在 `ui/src/app/` 下（App Router）
-2. 组件放在 `ui/src/components/`
-3. 数据读取通过 `ui/src/lib/api.ts`（Server Component 直接读文件系统）
+Before claiming a release-ready MVP:
 
-## 代码风格与约定
-
-### Python
-
-- 类型注解：所有函数签名必须有类型标注
-- 使用 `from __future__ import annotations` 延迟求值
-- 模型定义使用 Pydantic v2 `BaseModel`
-- 异步代码使用 `asyncio`，不用 threading
-- 错误处理：自定义异常类（`ConfigError`, `RunnerError`, `WorkspaceError`）
-
-### TypeScript
-
-- 严格模式（`strict: true`）
-- 数据校验使用 zod，不用 `any`
-- 组件使用函数式 + TypeScript interface 定义 props
-- 样式使用 Tailwind CSS utility classes
-
-### 通用
-
-- 配置文件使用 YAML
-- 数据交换使用 JSON（Pydantic `model_dump_json()`）
-- 文件路径使用 `pathlib.Path`
-- 日志/输出使用 `rich` 库
-
-
+1. Run the verification commands above.
+2. Run a deterministic CLI smoke in a temporary project.
+3. Build the package with `uv build`.
+4. Install the wheel in a Python `>=3.11` virtual environment and run a CLI smoke.
+5. Run or review UltraQA adversarial scenarios for normal path, malformed argv, misleading exit code, timeout, secret leakage, artifact traversal, and binary artifact handling.
+6. Get independent code-review and architecture review evidence.
+7. Record final evidence in `docs/releases/` and follow `docs/engineering/release-process.md` for version, dependency inventory, commit, tag, and dev→main projection gates.

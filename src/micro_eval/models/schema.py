@@ -59,6 +59,13 @@ class RunResult(BaseModel):
     status: TaskStatus
     score: Optional[float] = None
     output_summary: str = ""
+    stdout_summary: str = ""
+    stderr_summary: str = ""
+    stdout_ref: Optional[str] = None
+    stderr_ref: Optional[str] = None
+    exit_code: Optional[int] = None
+    output_dir: Optional[str] = None
+    output_artifacts: list[str] = Field(default_factory=list)
     cost_usd: Optional[float] = None
     latency_s: float = 0.0
     failure_mode: Optional[str] = None

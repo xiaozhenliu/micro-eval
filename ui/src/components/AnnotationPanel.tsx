@@ -1,112 +1,98 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-
-interface Annotation {
-  task_id: string;
-  score: number;
-  notes: string;
-}
+import { useState, useTransition } from "react";
+import type { CellResult } from "@/lib/schema";
 
 interface AnnotationPanelProps {
   runId: string;
-  tasks: string[];
+  cells: CellResult[];
 }
 
-function getStorageKey(runId: string) {
-  return `micro-eval-annotations-${runId}`;
-}
-
-export function AnnotationPanel({ runId, tasks }: AnnotationPanelProps) {
-  const [annotations, setAnnotations] = useState<Record<string, Annotation>>({});
-
-  useEffect(() => {
-    const stored = localStorage.getItem(getStorageKey(runId));
-    if (stored) {
-      try {
-        setAnnotations(JSON.parse(stored));
-      } catch {
-        // ignore corrupt data
-      }
-    }
-  }, [runId]);
-
-  const updateAnnotation = useCallback(
-    (taskId: string, field: "score" | "notes", value: string | number) => {
-      setAnnotations((prev) => {
-        const existing = prev[taskId] || { task_id: taskId, score: 5, notes: "" };
-        return { ...prev, [taskId]: { ...existing, [field]: value } };
-      });
-    },
-    []
+export function AnnotationPanel({ runId, cells }: AnnotationPanelProps) {
+  if (cells.length === 0) return null;
+  return (
+    <section className="mt-8 border border-neutral-800 rounded-lg p-6">
+      <h3 className="text-base font-semibold mb-4">Human Evaluation</h3>
+      <div className="space-y-4">
+        {cells.map((cell) => (
+          <EvaluationForm key={cell.cell_id} runId={runId} cell={cell} />
+        ))}
+      </div>
+    </section>
   );
+}
 
-  const save = useCallback(() => {
-    localStorage.setItem(getStorageKey(runId), JSON.stringify(annotations));
-  }, [runId, annotations]);
+function EvaluationForm({ runId, cell }: { runId: string; cell: CellResult }) {
+  const [passFail, setPassFail] = useState<"pass" | "fail">(cell.pass_fail ?? "pass");
+  const [score, setScore] = useState(cell.score ?? 1);
+  const [comment, setComment] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
-  const exportJson = useCallback(() => {
-    const blob = new Blob([JSON.stringify(Object.values(annotations), null, 2)], {
-      type: "application/json",
+  function submit() {
+    startTransition(async () => {
+      setStatus(null);
+      const response = await fetch(`/api/runs/${runId}/cells/${encodeURIComponent(cell.cell_id)}/evaluate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pass_fail: passFail, score, scores: {}, comment, evaluator: "human" }),
+      });
+      if (!response.ok) {
+        setStatus("Failed to save evaluation");
+        return;
+      }
+      setStatus("Saved. Refresh to see recomputed decision.");
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `annotations-${runId}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [annotations, runId]);
+  }
 
   return (
-    <div className="mt-8 border border-neutral-800 rounded-lg p-6">
-      <h3 className="text-base font-semibold mb-4">Annotations</h3>
-      <div className="space-y-4">
-        {tasks.map((taskId) => {
-          const ann = annotations[taskId] || { task_id: taskId, score: 5, notes: "" };
-          return (
-            <div key={taskId} className="border-b border-neutral-800/50 pb-4">
-              <label className="block font-mono text-xs text-neutral-400 mb-2">
-                {taskId}
-              </label>
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-xs text-neutral-500 w-16">
-                  Score: {ann.score}
-                </span>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  value={ann.score}
-                  onChange={(e) => updateAnnotation(taskId, "score", Number(e.target.value))}
-                  className="flex-1"
-                  aria-label={`Score for ${taskId}`}
-                />
-              </div>
-              <textarea
-                value={ann.notes}
-                onChange={(e) => updateAnnotation(taskId, "notes", e.target.value)}
-                placeholder="Notes..."
-                rows={2}
-                className="w-full bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:border-blue-500"
-                aria-label={`Notes for ${taskId}`}
-              />
-            </div>
-          );
-        })}
+    <div className="border-b border-neutral-800/50 pb-4">
+      <div className="font-mono text-xs text-neutral-400 mb-3">
+        {cell.task_id} / {cell.configuration_id} / rep {cell.repetition}
       </div>
-      <div className="flex gap-3 mt-4">
-        <button
-          onClick={save}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition-colors"
+      <div className="grid gap-3 md:grid-cols-[120px_1fr]">
+        <label className="text-sm text-neutral-400" htmlFor={`${cell.cell_id}-pass-fail`}>Pass/fail</label>
+        <select
+          id={`${cell.cell_id}-pass-fail`}
+          value={passFail}
+          onChange={(event) => setPassFail(event.target.value as "pass" | "fail")}
+          className="bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm"
         >
-          Save
-        </button>
+          <option value="pass">pass</option>
+          <option value="fail">fail</option>
+        </select>
+
+        <label className="text-sm text-neutral-400" htmlFor={`${cell.cell_id}-score`}>Score</label>
+        <input
+          id={`${cell.cell_id}-score`}
+          type="number"
+          min={0}
+          max={1}
+          step={0.1}
+          value={score}
+          onChange={(event) => setScore(Number(event.target.value))}
+          className="bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm"
+        />
+
+        <label className="text-sm text-neutral-400" htmlFor={`${cell.cell_id}-comment`}>Comment</label>
+        <textarea
+          id={`${cell.cell_id}-comment`}
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          rows={2}
+          className="bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm resize-none"
+          placeholder="Why should this cell pass/fail?"
+        />
+      </div>
+      <div className="mt-3 flex items-center gap-3">
         <button
-          onClick={exportJson}
-          className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded text-sm font-medium transition-colors"
+          onClick={submit}
+          disabled={isPending}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded text-sm font-medium transition-colors"
         >
-          Export JSON
+          {isPending ? "Saving..." : "Append evaluation"}
         </button>
+        {status && <span className="text-xs text-neutral-400">{status}</span>}
       </div>
     </div>
   );
