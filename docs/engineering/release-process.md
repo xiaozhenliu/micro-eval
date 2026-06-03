@@ -48,6 +48,7 @@ scripts/release-to-main.sh dev main
   - `docs/superpowers/`
   - `docs/_archive/`
   - `docs/references/`
+  - `docs/bug_reports/`
   - `micro-eval-brd.md`
   - `micro-eval-prd.md`
 - `main` `AGENTS.md` and `CLAUDE.md` must be generated from `.codex/skills/micro-eval-release/assets/templates/`.
@@ -231,7 +232,7 @@ scripts/release-to-main.sh dev main
 After publishing, verify:
 
 ```bash
-test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*')"
+test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
 ```
 
 Also confirm the release commit exists on `main` and `AGENTS.md` / `CLAUDE.md` match the skill asset templates.

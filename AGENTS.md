@@ -27,6 +27,7 @@ scripts/release-to-main.sh dev main
 - `docs/superpowers/`
 - `docs/_archive/`
 - `docs/references/`
+- `docs/bug_reports/`
 - `micro-eval-brd.md`
 - `micro-eval-prd.md`
 
@@ -40,7 +41,7 @@ scripts/release-to-main.sh dev main
 发布后必须确认 main 没有跟踪 dev-only docs：
 
 ```bash
-test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*')"
+test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
 ```
 
 ## 执行任务前的行动路由

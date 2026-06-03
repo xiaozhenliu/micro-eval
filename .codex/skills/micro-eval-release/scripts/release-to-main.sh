@@ -17,6 +17,7 @@ EXCLUDED_DIRS=(
   "docs/superpowers"
   "docs/_archive"
   "docs/references"
+  "docs/bug_reports"
 )
 
 EXCLUDED_FILES=(
@@ -28,6 +29,7 @@ MAIN_GITIGNORE_PATTERNS=(
   "docs/superpowers/"
   "docs/_archive/"
   "docs/references/"
+  "docs/bug_reports/"
   "micro-eval-brd.md"
   "micro-eval-prd.md"
 )
@@ -144,9 +146,9 @@ fi
   done
   git add .gitignore
 
-  if [[ -n "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*')" ]]; then
+  if [[ -n "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')" ]]; then
     echo "Error: dev-only docs are still tracked in the release tree" >&2
-    git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' >&2
+    git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*' >&2
     exit 1
   fi
 

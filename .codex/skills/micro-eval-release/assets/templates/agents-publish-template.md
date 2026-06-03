@@ -13,6 +13,7 @@ Critical rules:
   - `docs/superpowers/`
   - `docs/_archive/`
   - `docs/references/`
+  - `docs/bug_reports/`
   - `micro-eval-brd.md`
   - `micro-eval-prd.md`
 - If source changes are needed, switch back to `dev` and make changes there.

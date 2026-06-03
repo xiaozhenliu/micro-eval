@@ -90,7 +90,7 @@ For release publishing:
 
 ```bash
 scripts/release-to-main.sh dev main
-if git ls-tree -r --name-only main | grep -E '^(docs/superpowers/|docs/_archive/|docs/references/|micro-eval-brd\.md|micro-eval-prd\.md$)'; then
+if git ls-tree -r --name-only main | grep -E '^(docs/superpowers/|docs/_archive/|docs/references/|docs/bug_reports/|micro-eval-brd\.md|micro-eval-prd\.md$)'; then
   echo 'main contains dev-only release exclusions' >&2
   exit 1
 fi
