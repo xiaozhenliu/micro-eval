@@ -7,7 +7,7 @@
 [![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.2.0`
+Current version: `0.2.1`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
