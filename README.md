@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.1.3](https://img.shields.io/badge/version-0.1.3-6f42c1)](VERSION)
+[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.1.3`
+Current version: `0.2.1`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-The current MVP focuses on local pairwise and matrix-style evaluation. It owns the execution layer for subprocess orchestration, bounded concurrency, timeouts, workspace isolation, run storage, artifacts, and reports. Scoring and observability integrations can be attached later; DeepEval is not the test runner, and Langfuse/OpenHands are not hard dependencies for the MVP path.
+Version 0.2.0 extends the local MVP into Phase 2: reproducible matrix execution now produces pass@k / pass^k aggregation, explicit `decision.json`, optional trace capture, cost-source reporting, a review UI, and a default-off LLM judge adapter. Langfuse and DeepEval remain optional extras; local subprocess execution, artifacts, and deterministic validation still work without external services.
 
 ## Why micro-eval?
 
@@ -32,11 +32,13 @@ Small AI engineering teams often compare prompt, skill, agent, or tool changes w
 - **Safe subprocess contract**: canonical `agent.command` is an argv list; legacy string commands only pass through a migration bridge with warnings.
 - **Same-start evidence**: `SameStartSnapshot`, `CellSnapshot`, `SnapshotGateResult`, and `ReplayCanonical` are persisted with the run.
 - **Workspace isolation**: `blank`, `files`, and `git_repo` workspaces run each cell in an assigned workspace.
-- **Artifact / evidence chain**: `.micro-eval/runs/{run_id}/manifest.json` indexes `ArtifactRef` and `EvidenceItem` records.
+- **Artifact / evidence / trace chain**: `manifest.json` indexes `ArtifactRef`, `EvidenceItem`, and optional `TraceRef` records.
 - **Deterministic validation**: supports `exit_code`, `contains`, `file_exists`, and argv-only `command` expectations.
+- **Pass@k / pass^k aggregation**: repeated cells produce per-configuration pass rates, latency summaries, low-sample caveats, and `CostMetric` source metadata.
 - **Human evaluation persistence**: the UI appends human `EvaluationResult` records through the local API; `localStorage` is not treated as trusted evaluation state.
+- **Default-off LLM judge**: an optional DeepEval adapter can append supplemental judge evaluations without overriding deterministic pass/fail results.
 - **Guarded decisions**: snapshot mismatch, missing evidence, or insufficient repetitions produce caveats instead of fake winner claims.
-- **Local UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, and decision data through zod schemas.
+- **Local review UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, trace, cost, and decision data through zod schemas.
 
 ## Quick Start
 
@@ -68,22 +70,22 @@ micro-eval report --format html --output report.html
 micro-eval ui --port 3000
 ```
 
-In the Web UI, follow: Run List → Decision Summary → Result Matrix → Cell Evidence → Artifact Viewer → Human Evaluation → Decision/Caveats.
+In the Web UI, follow: Run List → Decision Summary → Result Matrix → Cell Evidence → Review Page → Artifact / Trace Viewer → Human Evaluation → Decision/Caveats.
 
 ### Ready-to-run example
 
 Use the repository example when you want a complete MVP flow without writing your own `eval.yaml`, task, or fixture workspace:
 
 ```bash
-# From the repository root
-uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
-uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
+python examples/run-example.py
+```
 
-# list/report read the current directory's .micro-eval/runs store
-cd examples/agent-codefix-showdown
-uv run --project ../.. micro-eval list
-uv run --project ../.. micro-eval report --format text
-uv run --project ../.. micro-eval report --format html --output report.html
+The script is a cross-platform Python entrypoint: it uses `uv run --project` when `uv` is available, falls back to an installed `micro-eval`, runs from the example directory so `.micro-eval/runs` is easy to find, and writes `examples/agent-codefix-showdown/report.html`.
+
+For the real-agent matrix, run:
+
+```bash
+python examples/run-example.py --real
 ```
 
 The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. The example index is in [`examples/`](examples/).
@@ -135,6 +137,15 @@ evaluation:
   comparison_subject: "candidate vs baseline"
   min_repetitions: 1
   required_evaluators: [validator]
+trace:
+  enabled: false
+  provider: process   # or langfuse when the optional extra and credentials are configured
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  pass_threshold: 0.5
+  required_secrets: []
 ```
 
 A task describes input, expectations, workspace, and optional rubric metadata:
@@ -161,6 +172,7 @@ Runs are stored under the project output directory, defaulting to `.micro-eval/r
 ```text
 .micro-eval/runs/{run_id}/
 ├── run.json
+├── decision.json
 ├── manifest.json
 └── cells/{cell_id}/
     ├── result.json
@@ -170,7 +182,7 @@ Runs are stored under the project output directory, defaulting to `.micro-eval/r
     └── evaluation.json
 ```
 
-The decision trace is explicit: `decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`.
+The decision trace is explicit: `decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`, with optional `TraceRef` links for process or Langfuse trace metadata.
 
 ## Security and Local Data
 
@@ -178,10 +190,11 @@ The decision trace is explicit: `decision.evaluation_refs → EvaluationResult.e
 
 - Canonical agent and validation commands are argv lists; trusted paths do not use shell interpolation.
 - Agent cwd is the assigned cell workspace.
-- MVP does not provide network isolation; local CLIs may call external services according to their own configuration.
+- The local runner does not provide network isolation; local CLIs may call external services according to their own configuration.
 - Secrets must use `MICRO_EVAL_SECRET_*` environment variables and be explicitly declared by a configuration.
 - Declared and detected `MICRO_EVAL_SECRET_*` values are redacted before stdout/stderr/text artifacts/evidence/human comments are persisted.
 - Raw artifact access is mediated by manifest `artifact_id` plus run-directory boundary checks.
+- Trace and judge integrations are default-off optional extras. Credentials stay in environment variables, not `eval.yaml`, run JSON, artifacts, or release docs.
 
 For the authoritative security routing, see [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md).
 
@@ -199,7 +212,9 @@ Routes:
 | --- | --- |
 | `/` | Run List |
 | `/run/[id]` | Decision Summary, caveats, Result Matrix, Cell Evidence, and Human Evaluation |
+| `/run/[id]/review` | Phase 2 review surface with cost, trace, matrix heatmap, and per-cell evidence |
 | `/run/[id]/artifact/[artifactId]` | Artifact viewer by manifest `artifact_id` |
+| `/api/runs/[id]/cells/[cellId]/trace` | Manifest-bound trace lookup for one cell |
 | `/api/runs/...` | Read-only run/cell/artifact API plus append-only human evaluation API |
 
 Binary, oversized, skipped, or boundary-invalid artifacts return warnings/placeholders rather than raw content.
@@ -212,8 +227,12 @@ flowchart LR
   CONFIGS["Configurations"] --> PLAN
   PLAN --> KERNEL["Execution Kernel"]
   KERNEL --> WORKSPACES["Isolated workspaces"]
+  KERNEL --> TRACE["Optional TraceProvider"]
+  KERNEL --> JUDGE["Optional LLM judge"]
   KERNEL --> STORE["RunStore + ArtifactStore"]
-  STORE --> DECISION["Guarded DecisionReport"]
+  TRACE --> STORE
+  JUDGE --> STORE
+  STORE --> DECISION["Guarded DecisionReport + decision.json"]
   STORE --> UI["Local Web UI / Reports"]
 ```
 
@@ -259,13 +278,14 @@ title: micro-eval README
 doc_type: tutorial
 status: active
 created_at: 2026-05-31T01:43+08:00
-updated_at: 2026-06-03T16:16+08:00
+updated_at: 2026-06-12T12:35+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
   - readme
   - onboarding
   - mvp
+  - phase2
 related:
   - README.zh-CN.md
   - docs/README.md

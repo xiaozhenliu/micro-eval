@@ -66,3 +66,17 @@ evaluation:
   min_repetitions: 1
   required_evaluators: [validator]
   denominator_policy: include_failed
+
+# Optional trace capture. Keep disabled unless you have configured the provider.
+trace:
+  enabled: false
+  provider: process  # process | langfuse
+
+# Optional supplemental LLM judge. Does not override deterministic validation.
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

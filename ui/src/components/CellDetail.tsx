@@ -1,17 +1,19 @@
 import type { Run } from "@/lib/schema";
 import Link from "next/link";
+import { TraceViewer } from "@/components/TraceViewer";
 
 export function CellDetail({ run }: { run: Run }) {
   if (run.results.length === 0) return null;
   const artifactsById = new Map(run.artifacts.map((artifact) => [artifact.artifact_id, artifact]));
   const evidenceById = new Map(run.evidence.map((evidence) => [evidence.evidence_id, evidence]));
+  const tracesByRef = new Map(run.traces.map((trace) => [`${trace.provider}:${trace.trace_id}`, trace]));
 
   return (
     <section className="mt-8">
       <h3 className="text-base font-semibold mb-4">Cell Evidence</h3>
       <div className="space-y-4">
         {run.results.map((result) => (
-          <details key={result.cell_id} className="border border-neutral-800 rounded-lg p-4 bg-neutral-950">
+          <details id={result.cell_id} key={result.cell_id} className="border border-neutral-800 rounded-lg p-4 bg-neutral-950">
             <summary className="cursor-pointer font-mono text-xs">
               {result.task_id} / {result.configuration_id} / rep {result.repetition} — {result.status}
             </summary>
@@ -42,6 +44,9 @@ export function CellDetail({ run }: { run: Run }) {
                   );
                 })}
               </ul>
+            </div>
+            <div className="mt-4">
+              <TraceViewer traces={result.trace_refs.map((traceRef) => tracesByRef.get(traceRef)).filter((trace) => trace != null)} />
             </div>
             <div className="mt-4">
               <p className="text-neutral-400 mb-2">Artifacts</p>

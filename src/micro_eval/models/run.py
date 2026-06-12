@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from micro_eval.models.artifact import ArtifactRef, EvidenceItem
-from micro_eval.models.configuration import ConfigurationSpec, Guardrails
+from micro_eval.models.artifact import ArtifactRef, EvidenceItem, TraceRef
+from micro_eval.models.configuration import ConfigurationSpec, Guardrails, JudgeConfig, TraceConfig
 from micro_eval.models.decision import DecisionReport
 from micro_eval.models.environment import CellSnapshot, ReplayCanonical, SameStartSnapshot, SnapshotGateResult
 from micro_eval.models.evaluation import EvaluationResult
@@ -54,11 +55,14 @@ class RunPlan(BaseModel):
     created_at: str
     output_dir: str
     guardrails: Guardrails
+    trace: TraceConfig = Field(default_factory=TraceConfig)
+    judge: JudgeConfig = Field(default_factory=JudgeConfig)
     cells: list[RunCell]
     config_hash: str
     migration_warnings: list[str] = Field(default_factory=list)
     same_start_snapshot: SameStartSnapshot | None = None
     replay_canonical: ReplayCanonical | None = None
+    denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"
 
 
 class AdapterResult(BaseModel):
@@ -102,6 +106,7 @@ class CellResult(BaseModel):
     artifact_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     evaluation_refs: list[str] = Field(default_factory=list)
+    trace_refs: list[str] = Field(default_factory=list)
     cell_snapshot: CellSnapshot | None = None
     snapshot_gate_result: SnapshotGateResult | None = None
 
@@ -126,5 +131,8 @@ class RunRecord(BaseModel):
     replay_canonical: ReplayCanonical | None = None
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
+    traces: list[TraceRef] = Field(default_factory=list)
     evaluations: list[EvaluationResult] = Field(default_factory=list)
     decision: DecisionReport | None = None
+    # Copied from project config at plan time; default keeps old run.json files compatible.
+    denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"

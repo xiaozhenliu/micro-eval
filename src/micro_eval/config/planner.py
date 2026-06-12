@@ -113,11 +113,14 @@ def build_run_plan(
         created_at=created_at,
         output_dir=config.output_dir,
         guardrails=guardrails,
+        trace=config.trace,
+        judge=config.judge,
         cells=cells,
         config_hash=config.config_hash,
         migration_warnings=config.migration_warnings,
         same_start_snapshot=snapshot,
         replay_canonical=replay,
+        denominator_policy=config.evaluation.denominator_policy,
     )
 
 

@@ -19,8 +19,10 @@ dependencies = [
 
 [project.optional-dependencies]
 scoring = ["deepeval>=0.20"]
+judge = ["deepeval>=0.20"]
 observability = ["langfuse>=2.0"]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+trace = ["langfuse>=2.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=1.4.0"]
 
 [project.scripts]
 micro-eval = "micro_eval.cli.main:app"
@@ -35,8 +37,3 @@ pattern = "^(?P<version>.+)$"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-
-[dependency-groups]
-dev = [
-    "pytest-asyncio>=1.4.0",
-]

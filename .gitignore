@@ -12,6 +12,7 @@ ui/.next/
 
 # micro-eval runtime
 .micro-eval/
+examples/**/report.html
 
 # OS
 .DS_Store
@@ -27,6 +28,14 @@ ui/.next/
 # Dev-only docs (tracked on dev branch)
 micro-eval-brd.md
 micro-eval-prd.md
+
+# Local analysis/tool caches
+.understand-anything/
+.coverage
+
+.codex/
+
+docs/dev/
 
 docs/superpowers/
 

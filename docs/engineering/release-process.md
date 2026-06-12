@@ -45,6 +45,9 @@ scripts/release-to-main.sh dev main
 ```
 
 - `main` must not track:
+  - `.codex/`
+  - `.understand-anything/`
+  - `docs/dev/`
   - `docs/superpowers/`
   - `docs/_archive/`
   - `docs/references/`
@@ -232,7 +235,7 @@ scripts/release-to-main.sh dev main
 After publishing, verify:
 
 ```bash
-test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
+test -z "$(git ls-files '.codex/*' '.understand-anything/*' 'docs/dev/*' 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
 ```
 
 Also confirm the release commit exists on `main` and `AGENTS.md` / `CLAUDE.md` match the skill asset templates.

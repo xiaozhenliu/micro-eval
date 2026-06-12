@@ -20,7 +20,10 @@ export default async function RunPage({ params }: PageProps) {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Run: {run.id}</h2>
+      <div className="mb-2 flex items-center justify-between gap-4">
+        <h2 className="text-xl font-semibold">Run: {run.id}</h2>
+        <a className="text-sm text-blue-400 hover:underline" href={`/run/${run.id}/review`}>Open review</a>
+      </div>
       <p className="text-sm text-neutral-400 mb-6">
         {new Date(run.created_at).toLocaleString()} · {run.status} · {run.project_name}
       </p>
@@ -28,7 +31,7 @@ export default async function RunPage({ params }: PageProps) {
       <DecisionSummary run={run} />
       <CaveatBanner run={run} />
 
-      <ComparisonTable tasks={run.tasks} configurations={run.configurations} results={run.results} />
+      <ComparisonTable tasks={run.tasks} configurations={run.configurations} results={run.results} decision={run.decision} />
       <CellDetail run={run} />
       <AnnotationPanel runId={run.id} cells={run.results} />
     </div>

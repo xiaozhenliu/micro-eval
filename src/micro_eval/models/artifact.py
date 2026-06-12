@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+from micro_eval.models.decision import CostMetric
 
 SCHEMA_VERSION = "1.0"
 
@@ -19,6 +20,17 @@ class ArtifactRef(BaseModel):
     media_type: str = "text/plain"
     redacted: bool = True
     warning: str | None = None
+
+
+class TraceRef(BaseModel):
+    """Reference to a collected execution trace."""
+
+    schema_version: str = SCHEMA_VERSION
+    trace_id: str
+    provider: str
+    external_url: str | None = None
+    cost: "CostMetric | None" = None
+    summary: dict[str, str | int | float | bool | None] | None = None
 
 
 class EvidenceItem(BaseModel):
@@ -44,3 +56,4 @@ class Manifest(BaseModel):
     run_id: str
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
+    traces: list[TraceRef] = Field(default_factory=list)

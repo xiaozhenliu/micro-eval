@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.1.3](https://img.shields.io/badge/version-0.1.3-6f42c1)](VERSION)
+[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-当前版本：`0.1.3`
+当前版本：`0.2.0`
 
 **一个本地优先的 Agent / Skill 评测助手，帮助小型 AI 团队用证据而不是体感做对比。**
 
 `micro-eval` 把“candidate 感觉更强”转化为可复现对比：同一批任务、同一起点、同一证据链，并基于受保护的决策逻辑判断 baseline / candidate 在哪些 cell 上更强、更弱、样本不足、不可比或需要人工判断。
 
-当前 MVP 聚焦本地 pairwise 与矩阵式评测。项目自写执行层负责 subprocess 编排、有界并发、超时、workspace 隔离、run 存储、artifact 和报告。评分与观测集成后续可通过适配层接入；DeepEval 不是 test runner，Langfuse/OpenHands 也不是 MVP 路径的强依赖。
+0.2.0 将本地 MVP 扩展到 Phase 2：可复现矩阵执行现在会产出 pass@k / pass^k 聚合、独立 `decision.json`、可选 trace 捕获、cost source 展示、review UI，以及默认关闭的 LLM judge 适配器。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
 
 ## 为什么使用 micro-eval？
 
@@ -32,11 +32,13 @@
 - **安全 subprocess 契约**：canonical `agent.command` 必须是 argv list；legacy string command 只通过 migration bridge 转换并产生 warning。
 - **同起点证据**：`SameStartSnapshot`、`CellSnapshot`、`SnapshotGateResult` 和 `ReplayCanonical` 随 run 持久化。
 - **Workspace 隔离**：支持 `blank`、`files`、`git_repo`，每个 cell 在分配的 workspace 中执行。
-- **Artifact / Evidence 链**：`.micro-eval/runs/{run_id}/manifest.json` 索引 `ArtifactRef` 与 `EvidenceItem`。
+- **Artifact / Evidence / Trace 链**：`manifest.json` 索引 `ArtifactRef`、`EvidenceItem` 与可选 `TraceRef`。
 - **Deterministic validation**：支持 `exit_code`、`contains`、`file_exists`、argv-only `command` expectation。
+- **Pass@k / pass^k 聚合**：重复运行会产出按 configuration 聚合的 pass rate、latency、low-sample caveat 和 `CostMetric` source metadata。
 - **人工评分持久化**：UI 通过本地 API append human `EvaluationResult`；不把 `localStorage` 当作可信评分状态。
+- **默认关闭的 LLM judge**：可选 DeepEval adapter 能追加补充 judge evaluation，但不会覆盖 deterministic pass/fail。
 - **Guarded decision**：snapshot mismatch、缺失 evidence 或 repetitions 不足会生成 caveat，而不是伪造 winner 结论。
-- **本地 UI/API**：Next.js UI 通过 zod 读取 canonical run、cell、artifact、evaluation 和 decision 数据。
+- **本地 review UI/API**：Next.js UI 通过 zod 读取 canonical run、cell、artifact、evaluation、trace、cost 和 decision 数据。
 
 ## 快速开始
 
@@ -68,22 +70,22 @@ micro-eval report --format html --output report.html
 micro-eval ui --port 3000
 ```
 
-在 Web UI 中按以下路径查看：Run List → Decision Summary → Result Matrix → Cell Evidence → Artifact Viewer → Human Evaluation → Decision/Caveats。
+在 Web UI 中按以下路径查看：Run List → Decision Summary → Result Matrix → Cell Evidence → Review Page → Artifact / Trace Viewer → Human Evaluation → Decision/Caveats。
 
 ### Ready-to-run example
 
 如果想体验完整 MVP 流程、但还不想自己写 `eval.yaml`、task 或 fixture workspace，可以直接运行源码仓库中的示例：
 
 ```bash
-# From the repository root
-uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
-uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
+python examples/run-example.py
+```
 
-# list/report read the current directory's .micro-eval/runs store
-cd examples/agent-codefix-showdown
-uv run --project ../.. micro-eval list
-uv run --project ../.. micro-eval report --format text
-uv run --project ../.. micro-eval report --format html --output report.html
+这个脚本是跨平台 Python 入口：有 `uv` 时自动使用 `uv run --project`，否则回退到已安装的 `micro-eval`；它会从示例目录运行，因此 `.micro-eval/runs` 容易定位，并生成 `examples/agent-codefix-showdown/report.html`。
+
+如果要运行真实 agent 矩阵：
+
+```bash
+python examples/run-example.py --real
 ```
 
 [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) 中的真实 agent 矩阵覆盖 Claude Code、Codex CLI、OpenClaw 和 Hermes。示例索引见 [`examples/`](examples/)。
@@ -135,6 +137,15 @@ evaluation:
   comparison_subject: "candidate vs baseline"
   min_repetitions: 1
   required_evaluators: [validator]
+trace:
+  enabled: false
+  provider: process   # or langfuse when the optional extra and credentials are configured
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  pass_threshold: 0.5
+  required_secrets: []
 ```
 
 Task 描述输入、expectations、workspace 和可选 rubric 元数据：
@@ -161,6 +172,7 @@ Run 默认存储在项目输出目录 `.micro-eval/runs/`：
 ```text
 .micro-eval/runs/{run_id}/
 ├── run.json
+├── decision.json
 ├── manifest.json
 └── cells/{cell_id}/
     ├── result.json
@@ -170,7 +182,7 @@ Run 默认存储在项目输出目录 `.micro-eval/runs/`：
     └── evaluation.json
 ```
 
-Decision trace 是显式链路：`decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`。
+Decision trace 是显式链路：`decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`；启用 trace 时还会通过 `TraceRef` 关联 process 或 Langfuse trace metadata。
 
 ## 安全和本地数据
 
@@ -178,10 +190,11 @@ Decision trace 是显式链路：`decision.evaluation_refs → EvaluationResult.
 
 - Canonical agent 和 validation command 都是 argv list；可信执行路径不使用 shell interpolation。
 - Agent cwd 是分配给 cell 的 workspace。
-- MVP 不提供网络隔离；本地 CLI 可能按自身配置访问外部服务。
+- 本地 runner 不提供网络隔离；本地 CLI 可能按自身配置访问外部服务。
 - Secrets 必须使用 `MICRO_EVAL_SECRET_*` 环境变量，并由 configuration 显式声明。
 - 已声明和检测到的 `MICRO_EVAL_SECRET_*` 值会在 stdout/stderr/text artifact/evidence/human comment 持久化前被 redaction。
 - Raw artifact 访问必须经过 manifest `artifact_id` 和 run-directory 边界校验。
+- Trace 和 judge 集成默认关闭且为 optional extra。凭证保留在环境变量中，不写入 `eval.yaml`、run JSON、artifact 或 release docs。
 
 权威安全路由见 [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md)。
 
@@ -199,7 +212,9 @@ MICRO_EVAL_PROJECT_ROOT=/path/to/eval-project uv run micro-eval ui --port 3000
 | --- | --- |
 | `/` | Run List |
 | `/run/[id]` | Decision Summary、caveats、Result Matrix、Cell Evidence 和 Human Evaluation |
+| `/run/[id]/review` | Phase 2 review surface，包含 cost、trace、matrix heatmap 和 per-cell evidence |
 | `/run/[id]/artifact/[artifactId]` | 通过 manifest `artifact_id` 查看 artifact |
+| `/api/runs/[id]/cells/[cellId]/trace` | 按 manifest 边界读取单个 cell 的 trace |
 | `/api/runs/...` | read-only run/cell/artifact API + append-only human evaluation API |
 
 Binary、oversized、skipped 或越界 artifact 会返回 warning/placeholder，而不是原始内容。
@@ -212,8 +227,12 @@ flowchart LR
   CONFIGS["Configurations"] --> PLAN
   PLAN --> KERNEL["Execution Kernel"]
   KERNEL --> WORKSPACES["Isolated workspaces"]
+  KERNEL --> TRACE["Optional TraceProvider"]
+  KERNEL --> JUDGE["Optional LLM judge"]
   KERNEL --> STORE["RunStore + ArtifactStore"]
-  STORE --> DECISION["Guarded DecisionReport"]
+  TRACE --> STORE
+  JUDGE --> STORE
+  STORE --> DECISION["Guarded DecisionReport + decision.json"]
   STORE --> UI["Local Web UI / Reports"]
 ```
 
@@ -259,13 +278,14 @@ title: micro-eval 中文 README
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T15:56+08:00
-updated_at: 2026-06-03T16:16+08:00
+updated_at: 2026-06-12T12:35+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
   - readme
   - onboarding
   - mvp
+  - phase2
   - zh-CN
 related:
   - README.md

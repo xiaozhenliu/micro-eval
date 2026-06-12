@@ -18,6 +18,8 @@ class EvaluationResult(BaseModel):
     pass_fail: str | None = None
     score: float | None = None
     scores: dict[str, float] = Field(default_factory=dict)
+    evaluator_meta: dict[str, str | int | float | bool | None] | None = None
+    rubric_hash: str | None = None
     comment: str = ""
     evidence_refs: list[str] = Field(default_factory=list)
     created_at: str = ""

@@ -10,7 +10,7 @@ configurations:
     repetitions: 1
     agent:
       name: Claude Code
-      command: ["python3", "workspace/scripts/run-agent.py", "claude-code", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "claude-code", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -23,7 +23,7 @@ configurations:
     repetitions: 1
     agent:
       name: Codex CLI
-      command: ["python3", "workspace/scripts/run-agent.py", "codex-cli", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "codex-cli", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -36,7 +36,7 @@ configurations:
     repetitions: 1
     agent:
       name: OpenClaw
-      command: ["python3", "workspace/scripts/run-agent.py", "openclaw", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "openclaw", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -49,7 +49,7 @@ configurations:
     repetitions: 1
     agent:
       name: Hermes
-      command: ["python3", "workspace/scripts/run-agent.py", "hermes", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "hermes", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -80,3 +80,19 @@ evaluation:
   min_repetitions: 1
   required_evaluators: [validator]
   denominator_policy: include_failed
+
+# Phase 2 (optional): trace capture and supplemental LLM judge.
+# Both disabled by default for the real-agent matrix; see eval.mock.yaml for
+# an enabled process-trace example and eval.yaml.example at the repo root for
+# full field documentation.
+trace:
+  enabled: false
+  provider: process  # process | langfuse (needs LANGFUSE_* env vars)
+
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

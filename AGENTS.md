@@ -10,6 +10,9 @@ Critical rules:
 - Do not manually merge `dev` into `main`.
 - Release from `dev` to `main` only through `scripts/release-to-main.sh`.
 - Keep dev-only files out of `main`:
+  - `.codex/`
+  - `.understand-anything/`
+  - `docs/dev/`
   - `docs/superpowers/`
   - `docs/_archive/`
   - `docs/references/`

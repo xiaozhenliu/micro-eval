@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "decision_report_id": "run-phase2-fixture::decision::20260612T000000Z",
+  "verdict": "regressed",
+  "confidence": "medium",
+  "evaluation_refs": [
+    "cell-b1::validator::abc111",
+    "cell-c1::validator::abc121"
+  ],
+  "evidence_refs": [
+    "cell-b1::evidence::process",
+    "cell-c1::evidence::process"
+  ],
+  "caveats": [],
+  "aggregation": {
+    "schema_version": "1.0",
+    "per_configuration": {
+      "baseline": {
+        "schema_version": "1.0",
+        "n_cells": 3,
+        "n_successful": 3,
+        "pass_rate": 1.0,
+        "pass_at_k": {
+          "1": 1.0,
+          "2": 1.0,
+          "3": 1.0
+        },
+        "pass_hat_k": {
+          "1": 1.0,
+          "2": 1.0,
+          "3": 1.0
+        },
+        "mean_latency_ms": 110.0,
+        "median_latency_ms": 110.0,
+        "total_cost": {
+          "schema_version": "1.0",
+          "amount": null,
+          "currency": "USD",
+          "source": "unavailable"
+        },
+        "denominator_policy": "include_failed",
+        "caveats": []
+      },
+      "candidate": {
+        "schema_version": "1.0",
+        "n_cells": 3,
+        "n_successful": 3,
+        "pass_rate": 0.0,
+        "pass_at_k": {
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0
+        },
+        "pass_hat_k": {
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0
+        },
+        "mean_latency_ms": 210.0,
+        "median_latency_ms": 210.0,
+        "total_cost": {
+          "schema_version": "1.0",
+          "amount": null,
+          "currency": "USD",
+          "source": "unavailable"
+        },
+        "denominator_policy": "include_failed",
+        "caveats": []
+      }
+    }
+  },
+  "timestamp": "20260612T000000Z",
+  "recommended_action": "investigate candidate regression",
+  "created_at": "20260612T000000Z"
+}

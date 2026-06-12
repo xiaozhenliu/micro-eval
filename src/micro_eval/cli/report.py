@@ -45,9 +45,9 @@ th { background: #f5f5f5; }
 {% if stats %}
 <h2>Basic Honest Stats</h2>
 <table>
-<tr><th>Configuration</th><th>Pass rate</th><th>Mean latency</th><th>Median latency</th><th>Cost</th></tr>
+<tr><th>Configuration</th><th>Pass rate</th><th>pass@k</th><th>Mean latency</th><th>Median latency</th><th>Cost</th></tr>
 {% for s in stats %}
-<tr><td>{{ s.configuration }}</td><td>{{ s.pass_rate }}</td><td>{{ s.mean_latency }}</td><td>{{ s.median_latency }}</td><td>{{ s.cost }}</td></tr>
+<tr><td>{{ s.configuration }}</td><td>{{ s.pass_rate }}</td><td>{{ s.pass_at_k }}</td><td>{{ s.mean_latency }}</td><td>{{ s.median_latency }}</td><td>{{ s.cost }}</td></tr>
 {% endfor %}
 </table>
 {% endif %}
@@ -101,7 +101,7 @@ def _load_run_data(run_file: Path | None, run_id: str | None) -> dict[str, Any]:
             console.print(f"[red]Run file not found:[/red] {run_file}")
             raise typer.Exit(1)
         raw = json.loads(run_file.read_text())
-        return _normalize_run_data(raw)
+        return _normalize_run_data(raw, run_file=run_file)
     store = RunStore(Path.cwd())
     selected = run_id or store.latest_run_id()
     if selected is None:
@@ -122,9 +122,16 @@ def _render_html_report(data: dict[str, Any]) -> str:
     )
 
 
-def _normalize_run_data(raw: dict[str, Any]) -> dict[str, Any]:
+def _normalize_run_data(raw: dict[str, Any], run_file: Path | None = None) -> dict[str, Any]:
     if "cells" in raw and "project_name" in raw:
-        return RunRecord.model_validate(raw).model_dump(mode="json")
+        record = RunRecord.model_validate(raw)
+        if run_file is not None:
+            decision_path = run_file.parent / "decision.json"
+            if decision_path.exists():
+                from micro_eval.models.decision import DecisionReport
+
+                record.decision = DecisionReport.model_validate_json(decision_path.read_text())
+        return record.model_dump(mode="json")
     legacy = Run(**raw)
     return legacy.model_dump(mode="json")
 
@@ -151,16 +158,18 @@ def _print_text_report(data: dict[str, Any]) -> None:
         stats = Table(title="Basic Honest Stats")
         stats.add_column("Configuration")
         stats.add_column("Pass rate")
+        stats.add_column("pass@k")
         stats.add_column("Mean latency")
         stats.add_column("Median latency")
         stats.add_column("Cost")
-        for config_id, row in aggregation.items():
+        for config_id, row in _aggregation_items(aggregation):
             stats.add_row(
                 str(config_id),
-                f"{float(row.get('pass_rate', 0.0)) * 100:.0f}%",
-                _format_optional_seconds(row.get("mean_latency_s")),
-                _format_optional_seconds(row.get("median_latency_s")),
-                "-" if row.get("cost_usd") is None else f"${float(row['cost_usd']):.4f}",
+                _format_optional_rate(row.get("pass_rate")),
+                _format_pass_at_k(row.get("pass_at_k")),
+                _format_optional_ms(row.get("mean_latency_ms")),
+                _format_optional_ms(row.get("median_latency_ms")),
+                _format_cost(row),
             )
         console.print(stats)
 
@@ -198,16 +207,51 @@ def _format_optional_seconds(value: Any) -> str:
     return "-" if value is None else f"{float(value):.2f}s"
 
 
+def _format_optional_ms(value: Any) -> str:
+    return "-" if value is None else f"{float(value) / 1000.0:.2f}s"
+
+
+def _format_optional_rate(value: Any) -> str:
+    return "-" if value is None else f"{float(value) * 100:.0f}%"
+
+
+def _format_pass_at_k(value: Any) -> str:
+    if not value:
+        return "-"
+    items = sorted((int(k), float(v)) for k, v in value.items())
+    if len(items) == 1 and items[0][0] == 1:
+        return "-"
+    return ", ".join(f"@{k}={v * 100:.0f}%" for k, v in items)
+
+
+def _format_cost(row: dict[str, Any]) -> str:
+    cost = row.get("total_cost")
+    if isinstance(cost, dict):
+        amount = cost.get("amount")
+        source = cost.get("source", "unknown")
+        return f"unavailable ({source})" if amount is None else f"${float(amount):.4f} ({source})"
+    if row.get("cost_usd") is not None:
+        return f"${float(row['cost_usd']):.4f}"
+    return "-"
+
+
+def _aggregation_items(aggregation: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    per_config = aggregation.get("per_configuration") if isinstance(aggregation, dict) else None
+    source = per_config if isinstance(per_config, dict) else aggregation
+    return [(str(config_id), row) for config_id, row in source.items() if isinstance(row, dict)]
+
+
 def _stats_rows(aggregation: dict[str, Any]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    for config_id, row in aggregation.items():
+    for config_id, row in _aggregation_items(aggregation):
         rows.append(
             {
                 "configuration": str(config_id),
-                "pass_rate": f"{float(row.get('pass_rate', 0.0)) * 100:.0f}%",
-                "mean_latency": _format_optional_seconds(row.get("mean_latency_s")),
-                "median_latency": _format_optional_seconds(row.get("median_latency_s")),
-                "cost": "-" if row.get("cost_usd") is None else f"${float(row['cost_usd']):.4f}",
+                "pass_rate": _format_optional_rate(row.get("pass_rate")),
+                "pass_at_k": _format_pass_at_k(row.get("pass_at_k")),
+                "mean_latency": _format_optional_ms(row.get("mean_latency_ms")),
+                "median_latency": _format_optional_ms(row.get("median_latency_ms")),
+                "cost": _format_cost(row),
             }
         )
     return rows

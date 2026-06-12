@@ -3,7 +3,7 @@ title: Docs Directory Guide
 doc_type: reference
 status: active
 created_at: 2026-06-03T08:35+08:00
-updated_at: 2026-06-03T20:00+08:00
+updated_at: 2026-06-12T12:45+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -35,6 +35,7 @@ Use this README as the entry point for deciding where a document belongs.
 | `bug_reports/` | Review findings, defect inventories, and tracked remediation/tech-debt todo lists derived from code reviews. |
 | `dev/` | Development-time records such as logs, decisions, implementation notes, and future engineering journals. |
 | `dev/log/` | Chronological development logs. File names in this folder must include `dev-log`. |
+| `dev/decisions/` | Development decisions and lightweight design records. File names in this folder should include `decision`. |
 | `engineering/` | Engineering guardrails for architecture, implementation, Python, frontend, testing, UX, security, and release process. |
 | `references/` | External reference material and source notes. Large binary references should stay scoped and intentional. |
 | `releases/` | Release readiness evidence, verification records, and release-specific quality gates. |
@@ -47,6 +48,8 @@ Use this README as the entry point for deciding where a document belongs.
 | --- | --- |
 | `_archive/invocation-evidence.md` | Archived historical notes related to legacy invocation evidence behavior. |
 | `releases/2026-06-02-mvp-release-evidence.md` | MVP release-readiness evidence and verification summary. |
+| `releases/2026-06-12-v0.2.0-release-evidence.md` | Phase 2 / v0.2.0 release-readiness evidence and verification summary. |
+| `releases/2026-06-12-v0.2.0-dependency-inventory.md` | Dependency inventory for v0.2.0 release preparation. |
 | `.codex/skills/micro-eval-release/SKILL.md` | Project-level executable release skill for versioning, release evidence, dependency inventory, dev commits, tags, and dev-to-main publishing. |
 | `engineering/release-process.md` | Human-readable release reference that points back to the release skill. |
 

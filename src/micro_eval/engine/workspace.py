@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +46,7 @@ class WorkspaceManager:
     def __init__(self, project_root: Path | str, *, run_id: str | None = None):
         self.project_root = Path(project_root).resolve()
         self.run_id = run_id or "adhoc"
+        self.workspace_root = self.project_root / ".micro-eval" / "workspaces" / safe_path_segment(self.run_id)
         self._prepared: list[PreparedWorkspace] = []
 
     def create(self, suffix: str = "eval") -> Path:
@@ -68,12 +68,12 @@ class WorkspaceManager:
             workspace_path = self._create_git_worktree(source_repo, workspace.ref, safe_cell)
             cleanup_kind = "git_worktree"
         elif workspace.type == WorkspaceType.files:
-            workspace_path = Path(tempfile.mkdtemp(prefix=f"micro-eval-{safe_cell}-"))
-            cleanup_kind = "temp_dir"
+            workspace_path = self._create_local_workspace_dir(safe_cell)
+            cleanup_kind = "project_workspace"
             self._copy_files(workspace, workspace_path)
         else:
-            workspace_path = Path(tempfile.mkdtemp(prefix=f"micro-eval-{safe_cell}-"))
-            cleanup_kind = "temp_dir"
+            workspace_path = self._create_local_workspace_dir(safe_cell)
+            cleanup_kind = "project_workspace"
 
         if workspace.setup:
             setup_exit_code = self._run_setup(workspace.setup, workspace_path)
@@ -161,10 +161,22 @@ class WorkspaceManager:
             raise WorkspaceError(f"Workspace source is not a git repository: {source}")
         return source
 
+    def _workspace_path(self, safe_cell: str) -> Path:
+        return self.workspace_root / safe_cell
+
+    def _create_local_workspace_dir(self, safe_cell: str) -> Path:
+        workspace_path = self._workspace_path(safe_cell)
+        if workspace_path.exists():
+            raise WorkspaceError(f"Workspace path already exists: {workspace_path}")
+        workspace_path.mkdir(parents=True)
+        return workspace_path
+
     def _create_git_worktree(self, source_repo: Path, ref: str | None, safe_cell: str) -> Path:
         commit = resolve_git_commit(source_repo, ref)
-        workspace_path = Path(tempfile.mkdtemp(prefix=f"micro-eval-{safe_cell}-"))
-        workspace_path.rmdir()
+        workspace_path = self._workspace_path(safe_cell)
+        if workspace_path.exists():
+            raise WorkspaceError(f"Workspace path already exists: {workspace_path}")
+        workspace_path.parent.mkdir(parents=True, exist_ok=True)
         self._run_git(
             ["worktree", "add", "--detach", str(workspace_path), commit],
             cwd=source_repo,

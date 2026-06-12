@@ -2,6 +2,62 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.1 - 2026-06-12
+
+### Added
+
+- Update the examples to surface Phase 2: the deterministic mock path now runs 3 repetitions with process trace capture (real pass@k/pass^k in reports and decision.json), example configs document optional `trace:`/`judge:` blocks, and the READMEs explain the Phase 2 review surfaces.
+
+- Add cross-language API route contract tests: Python-generated Phase 2 fixtures (run + decision) consumed by both pytest (Pydantic) and vitest (zod), guarding the `.micro-eval/` JSON boundary.
+- Add a Phase 2 golden-path e2e covering trace + mock judge + decision.json + report cost source in one flow, including the judge-cannot-override-deterministic-failure contract.
+- Add a frozen v0.1.x legacy run fixture with compatibility tests on both the Python store/CLI side and the UI zod schema side.
+- Add CLI failure-path e2e tests asserting non-zero exit codes and error messages for invalid config, unknown run id, and malformed YAML.
+- Add Decision Surface honesty assertions: `not_comparable` runs render no winner marker; `low_sample` caveats are visible.
+- Add unit tests closing coverage gaps in the Langfuse provider (degradation, cost ladder, redaction), deterministic validator (path-escape, command, redaction branches), and run store boundaries (root escape, legacy fallback).
+
+## 0.2.0 - 2026-06-12
+
+### Added
+
+- Add Phase 2 aggregation with per-configuration `ConfigurationStats`, pass@k, pass^k, latency summaries, low-sample caveats, and `CostMetric` source metadata.
+- Persist guarded decisions as sibling `.micro-eval/runs/{run_id}/decision.json` while preserving legacy embedded-decision read compatibility.
+- Add optional trace capture through `TraceProvider`, a process fallback provider, optional Langfuse adapter, manifest `TraceRef` records, and per-cell trace references.
+- Add a Phase 2 review UI at `/run/[id]/review` with cost, trace, matrix heatmap, and per-cell evidence panels.
+- Add an optional default-off LLM judge path with DeepEval adapter plumbing, `EvaluationResult.evaluator_meta`, `rubric_hash`, and supplemental judge evidence.
+- Add development decision notes and logs for aggregation, trace collection, review UI, and LLM judge design.
+
+### Changed
+
+- Bump Python package, runtime schema fixture, and local UI package versions from `0.1.3` to `0.2.0`.
+- Extend canonical config with default-off `trace` and `judge` sections; credentials remain environment-only via `MICRO_EVAL_SECRET_*` declarations.
+- Update README, Chinese README, development guide, PRD, and example config to describe the current Phase 2 codebase.
+- Decision and report surfaces now display cost source / unavailable-cost state instead of implying cost data always exists.
+- Optional Langfuse and DeepEval integrations are loaded through optional extras/importlib and are not required for local MVP runs.
+
+### Fixed
+
+- Keep deterministic validator pass/fail authoritative when supplemental judge evaluations disagree.
+- Degrade optional trace provider failures through fallback warnings instead of failing a run.
+- Preserve old run compatibility by reading `decision.json` first and falling back to legacy embedded `run.json.decision`.
+- Keep trace/judge output within existing redaction, manifest, artifact, and workspace boundaries.
+
+### Verification
+
+- `uv run python -m compileall src/micro_eval tests`
+- `uv run pytest -q` — latest implementation gate: 89 passed
+- `cd ui && npm run lint && npm run build`
+- `uv run python examples/run-example.py`
+- `git diff --check`
+- Security greps for `create_subprocess_shell` and `shell=True` across `src`, `tests`, `ui`, and `examples`
+- Optional SDK boundary grep for direct `import deepeval` / `import langfuse` in trusted implementation paths
+
+### Known Gaps
+
+- Langfuse cost extraction remains best-effort and depends on the optional SDK/runtime payload shape.
+- Token-count × price-table cost estimation and calibrated larger-sample statistics are not implemented in 0.2.0.
+- ATIF import/export and hosted collaboration remain out of scope for this local-first release.
+- The UI still uses lint/build validation; no Vitest suite is configured yet.
+
 ## 0.1.3 - 2026-06-03
 
 ### Added

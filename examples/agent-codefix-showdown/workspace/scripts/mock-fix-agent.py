@@ -48,7 +48,7 @@ def main() -> int:
 
     (repo_dir / "ledger.py").write_text(FIXED_LEDGER)
     result = subprocess.run(
-        ["python3", "-m", "unittest", "discover", "-s", "tests"],
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
         cwd=repo_dir,
         text=True,
         capture_output=True,

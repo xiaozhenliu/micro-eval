@@ -29,7 +29,7 @@
       "stdout": "OpenClaw 2026.5.27 (27ae826)"
     }
   },
-  "generated_at": "2026-06-03T13:28+08:00",
+  "generated_at": "2026-06-03T17:02+08:00",
   "notes": [
     "External agent CLI checks are best-effort availability/version checks only.",
     "Inventory intentionally does not record environment variables, tokens, account identifiers, or credential paths."
@@ -42,15 +42,10 @@
         "hatchling"
       ]
     },
-    "dependency_groups": {
-      "dev": [
-        "pytest-asyncio>=1.4.0"
-      ]
-    },
     "optional_dependencies": {
       "dev": [
         "pytest>=7.0",
-        "pytest-asyncio>=0.21"
+        "pytest-asyncio>=1.4.0"
       ],
       "observability": [
         "langfuse>=2.0"
