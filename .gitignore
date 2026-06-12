@@ -32,3 +32,4 @@ micro-eval-prd.md
 
 # Local analysis/tool caches
 .understand-anything/
+.coverage
