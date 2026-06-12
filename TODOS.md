@@ -21,6 +21,35 @@
 **What:** 清理 `codex/bench-*` 与 `worktree-wf_*` 本地分支（若已无用）。
 **Priority:** 顺手项。
 
+## GitHub Issues 开放项（2026-06-12 核实，详情见各 issue）
+
+代码级核实后的状态：#7、#11 已解决并关闭；以下 12 个仍开放，按风险排序。
+
+### 正确性 bug（建议最优先）
+- **#13** `file_exists`/`command` expectations 验证的是 artifact 目录而非 agent 实际执行的 workspace——git_repo/files 工作区下验证看不到 agent 的改动（`kernel.py` 传 `artifact_store.cell_dir` 给 `validate_cell`）。
+- **#14** kernel 只捕获 `WorkspaceError`/`AdapterError`；validation/store 等其他异常会中止整个 run，应扩大 per-cell 隔离实现优雅的部分完成。
+
+### 安全/边界
+- **#10** `git_repo` workspace 的 source path 未限制在 project root 内（接受任意绝对路径）。
+
+### 双端一致性
+- **#1** UI `recomputeDecision` 手工镜像 Python `build_decision` 算法（denominator_policy 修复时双端各改一遍即此风险实证）；golden 契约只保护 schema 形状不保护算法等价。
+- **#6** zod `EvaluationResult` 缺 Python 端强制的 pass_fail → evidence_refs 校验（schema.ts 无 refine）。
+- **#12** 二进制内容检测阈值不统一：adapter 检查全文 `\x00`，artifact store 只看前 1024 字节。
+
+### 契约测试缺口（#5，部分完成）
+- exec-not-shell 已由 CI grep 门禁兜底（v0.2.2）；仍缺 kernel-must-use-adapter 与 timeout→terminate→kill 隔离两条契约测试。
+
+### 规格一致性与遗留清理
+- **#9** 小型 spec 偏差清单：默认 concurrency 2 vs spec 4、trace_id 格式、truncation flag 未持久化、artifact cap、错误分类命名、schema 字段超出文档模型、redactor 命名（spec 先行规则：部分项应先改权威 spec）。
+- **#8**（部分完成）validator 路径不写 `rubric_hash`（judge 路径已写）。
+- **#2** configuration 内容变化但 id 不变时缺少跨 run 可比性警告。
+- **#3** 退役不可达的 legacy 执行/评分模块（`models/schema.py`、`engine/scorer.py`；`test_full_flow.py` 仍依赖）。
+- **#4** 迁移 legacy run.json 读取路径，使 legacy schema 模块可退役（`list_runs` flat JSON fallback）。
+
+### 来自 #7 关闭时的剩余项
+- AdapterResult/CellResult 增加 agent 自报 cost 字段（cost ladder 第 2 级），等真实 agent 上报 cost 的用例。
+
 ## Phase 2+ 遗留（来自工程评审 2026-05-31，仍然开放的部分）
 
 ### Run ordering 随机化
