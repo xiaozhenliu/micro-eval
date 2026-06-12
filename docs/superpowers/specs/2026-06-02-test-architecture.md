@@ -162,11 +162,15 @@ Pydantic model ──► 生成 JSON 样本 ──► zod.parse(样本) 必须�
                      └── 包含 edge cases：null fields, enums, empty arrays
 ```
 
-具体做法：
-1. `tests/contract/` 目录同时被 pytest 和 vitest 引用。
-2. pytest fixture 用 Pydantic `model_dump_json()` 生成 golden JSON 文件。
-3. vitest 用 zod `parse()` 消费同一批 JSON 文件。
-4. 任一端改 schema → CI 红（golden 文件不匹配或 parse 失败）。
+具体做法（**已实施，v0.2.2**）：
+1. `scripts/generate-golden.py` 用 Pydantic 确定性生成
+   `tests/contract/golden/*.json`（典型 + 边界变体 + legacy v0.1.x）。
+2. `tests/contract/test_golden.py` 做 round-trip、幂等与 no-secrets 断言。
+3. `ui/src/lib/__tests__/golden-contract.test.ts` 用 zod 消费同一批文件，
+   并做 stripped-field 检查（zod 默认忽略未知字段，必须显式比对字段集合
+   才能抓到「Python 多出字段」方向的漂移）。
+4. CI `golden-sync` job：重新生成后 `git add -A` + `git diff --cached
+   --exit-code`——任一端改 schema 不同步即红（双向漂移均已注入实验验证）。
 
 需要覆盖的关键 schema：
 - `Run` / `RunResult` / `EnvironmentSnapshot`（当前 legacy）
@@ -260,6 +264,13 @@ tests/
 - LLM integration tests 不决定 CI 红绿——只做信号。
 
 ## 7. CI 与覆盖率门槛
+
+> **已实施（v0.2.2）**：`.github/workflows/ci.yml` 落地五个 job——
+> python-tests（3.11/3.12 矩阵，`--cov-fail-under=75`）、python-quality
+> （compileall + shell-injection grep 门禁）、golden-sync（重新生成 golden
+> 后 `git add -A` + `git diff --cached --exit-code`）、ui-tests
+> （lint + vitest + build）、example-smoke。CI 无 secrets，token 只读。
+> 下面的 yaml 保留为最初设计意图。
 
 ```yaml
 # 目标 CI pipeline（渐进启用）

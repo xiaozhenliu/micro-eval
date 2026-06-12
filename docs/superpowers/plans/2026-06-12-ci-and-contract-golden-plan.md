@@ -1,9 +1,9 @@
 ---
 title: "CI Pipeline 与 Contract Golden 机制实施计划"
 doc_type: spec
-status: draft
+status: completed
 created_at: 2026-06-12T21:30+08:00
-updated_at: 2026-06-12T21:30+08:00
+updated_at: 2026-06-12T22:30+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -18,6 +18,13 @@ related:
 ---
 
 # CI Pipeline 与 Contract Golden 机制实施计划
+
+> **交付状态（2026-06-12，v0.2.2）**：两个切片均已交付。pytest 147 passed
+> （覆盖 77.8%，门禁 75%）、vitest 41 passed。两个漂移注入实验均实测变红：
+> 生成器加字段未提交 golden → golden-sync diff exit 1；golden 含新字段而
+> zod 未声明 → strict 检查报 "zod silently stripped these fields"。
+> 实施中对计划的一处加固：golden-sync 改用 `git add -A` + `git diff --cached`，
+> 否则新增的 golden 文件（untracked）会被 `git diff` 静默放过。
 
 > **执行说明**：遵循项目硬规则——禁止 TDD；spec 先行（本计划落地前，
 > 若与 `2026-06-02-test-architecture.md` 冲突，先改该 spec）。

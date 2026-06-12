@@ -2,6 +2,17 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.2 - 2026-06-12
+
+### Added
+
+- Add a GitHub Actions CI pipeline (no secrets, read-only token): pytest with a 75% coverage gate on Python 3.11/3.12, compileall plus a shell-injection grep gate, golden fixture sync check, UI lint/vitest/build, and the example smoke run.
+- Add a contract golden mechanism: `scripts/generate-golden.py` deterministically generates all cross-language contract fixtures under `tests/contract/golden/` from Pydantic models; pytest validates round-trip/idempotency/no-secrets and vitest consumes the same files with strict stripped-field detection, so Pydantic↔zod drift in either direction fails CI.
+
+### Changed
+
+- Hand-maintained UI contract fixtures and `tests/fixtures/legacy/` are replaced by generated golden files (the P0 canonical fixture stays at its original path for release preflight compatibility).
+
 ## 0.2.1 - 2026-06-12
 
 ### Added
