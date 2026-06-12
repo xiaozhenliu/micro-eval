@@ -1,0 +1,436 @@
+{
+  "schema_version": "1.0",
+  "id": "run-phase2-fixture",
+  "project_name": "phase2-fixture",
+  "status": "completed",
+  "created_at": "2026-06-12T00:00:00+00:00",
+  "completed_at": "2026-06-12T00:01:00+00:00",
+  "output_dir": ".micro-eval/runs",
+  "config_hash": "config-hash-p2",
+  "tasks": [
+    "task-p2"
+  ],
+  "configurations": [
+    "baseline",
+    "candidate"
+  ],
+  "cells": [
+    "cell-b1",
+    "cell-b2",
+    "cell-b3",
+    "cell-c1",
+    "cell-c2",
+    "cell-c3"
+  ],
+  "results": [
+    {
+      "schema_version": "1.0",
+      "cell_id": "cell-b1",
+      "run_id": "run-phase2-fixture",
+      "task_id": "task-p2",
+      "configuration_id": "baseline",
+      "configuration_name": "Baseline",
+      "repetition": 1,
+      "status": "pass",
+      "score": 1.0,
+      "pass_fail": "pass",
+      "output_summary": "ok",
+      "stdout_summary": "ok",
+      "stderr_summary": "",
+      "exit_code": 0,
+      "latency_s": 0.1,
+      "failure_mode": null,
+      "artifact_refs": [
+        "cell-b1::stdout::abc111"
+      ],
+      "evidence_refs": [
+        "cell-b1::evidence::process"
+      ],
+      "evaluation_refs": [
+        "cell-b1::validator::abc111",
+        "cell-b1::llm-judge::abc111"
+      ],
+      "trace_refs": [
+        "process:cell-b1"
+      ],
+      "cell_snapshot": {
+        "schema_version": "1.0",
+        "workspace_path": "/tmp/ws/b1",
+        "git_commit": null,
+        "dirty": null,
+        "setup_exit_code": null,
+        "timestamp": "2026-06-12T00:00:00+00:00",
+        "cleanup_status": "cleaned",
+        "cleanup_error": null
+      },
+      "snapshot_gate_result": {
+        "schema_version": "1.0",
+        "status": "pass",
+        "mismatch_fields": [],
+        "gate_version": "1.0",
+        "caveats": []
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "cell_id": "cell-c1",
+      "run_id": "run-phase2-fixture",
+      "task_id": "task-p2",
+      "configuration_id": "candidate",
+      "configuration_name": "Candidate",
+      "repetition": 1,
+      "status": "fail",
+      "score": 0.0,
+      "pass_fail": "fail",
+      "output_summary": "missing expected",
+      "stdout_summary": "actual",
+      "stderr_summary": "",
+      "exit_code": 0,
+      "latency_s": 0.2,
+      "failure_mode": null,
+      "artifact_refs": [
+        "cell-c1::stdout::abc121"
+      ],
+      "evidence_refs": [
+        "cell-c1::evidence::process"
+      ],
+      "evaluation_refs": [
+        "cell-c1::validator::abc121",
+        "cell-c1::llm-judge::abc121"
+      ],
+      "trace_refs": [
+        "process:cell-c1"
+      ],
+      "cell_snapshot": {
+        "schema_version": "1.0",
+        "workspace_path": "/tmp/ws/c1",
+        "git_commit": null,
+        "dirty": null,
+        "setup_exit_code": null,
+        "timestamp": "2026-06-12T00:00:00+00:00",
+        "cleanup_status": "cleaned",
+        "cleanup_error": null
+      },
+      "snapshot_gate_result": {
+        "schema_version": "1.0",
+        "status": "pass",
+        "mismatch_fields": [],
+        "gate_version": "1.0",
+        "caveats": []
+      }
+    }
+  ],
+  "migration_warnings": [],
+  "same_start_snapshot": {
+    "schema_version": "1.0",
+    "workspace_type": "blank",
+    "git_commit": null,
+    "dirty": null,
+    "config_hash": "config-hash-p2",
+    "configuration_digests": {
+      "baseline": "digest-b",
+      "candidate": "digest-c"
+    },
+    "task_revisions": {
+      "task-p2": "revision-p2"
+    },
+    "python_version": "3.11.0",
+    "setup_commands_digest": null,
+    "guardrails_digest": "guardrails-p2",
+    "sandbox_resource_limits": null,
+    "workspace_map": null,
+    "timestamp": "2026-06-12T00:00:00+00:00",
+    "caveats": []
+  },
+  "replay_canonical": {
+    "schema_version": "1.0",
+    "tool_version": "0.2.0",
+    "config_hash": "config-hash-p2",
+    "task_ids": [
+      "task-p2"
+    ],
+    "task_revisions": {
+      "task-p2": "revision-p2"
+    },
+    "configuration_ids": [
+      "baseline",
+      "candidate"
+    ],
+    "configuration_digests": {
+      "baseline": "digest-b",
+      "candidate": "digest-c"
+    },
+    "workspace_type": "blank",
+    "git_commit": null,
+    "workspace_map": null,
+    "workspace_fingerprint": "workspace-fp-p2",
+    "setup_commands_digest": null,
+    "guardrails_digest": "guardrails-p2",
+    "max_concurrency": 2,
+    "digest": "replay-digest-p2"
+  },
+  "artifacts": [
+    {
+      "schema_version": "1.0",
+      "artifact_id": "cell-b1::stdout::abc111",
+      "kind": "stdout",
+      "path": "cells/cell-b1/stdout.txt",
+      "sha256": "abc111",
+      "size_bytes": 3,
+      "media_type": "text/plain",
+      "redacted": true,
+      "warning": null
+    },
+    {
+      "schema_version": "1.0",
+      "artifact_id": "cell-c1::stdout::abc121",
+      "kind": "stdout",
+      "path": "cells/cell-c1/stdout.txt",
+      "sha256": "abc121",
+      "size_bytes": 6,
+      "media_type": "text/plain",
+      "redacted": true,
+      "warning": null
+    }
+  ],
+  "evidence": [
+    {
+      "schema_version": "1.0",
+      "evidence_id": "cell-b1::evidence::process",
+      "kind": "process",
+      "summary": "status=pass exit_code=0",
+      "source_kind": "artifact_ref",
+      "source_ref": "cell-b1::stdout::abc111",
+      "cell_id": "cell-b1",
+      "status": "passed",
+      "severity": "info",
+      "artifact_refs": [
+        "cell-b1::stdout::abc111"
+      ],
+      "metadata": {}
+    },
+    {
+      "schema_version": "1.0",
+      "evidence_id": "cell-b1::evidence::judge",
+      "kind": "judge_rationale",
+      "summary": "Judge: looks good",
+      "source_kind": "evaluation_ref",
+      "source_ref": "cell-b1::llm-judge::abc111",
+      "cell_id": "cell-b1",
+      "status": "passed",
+      "severity": "info",
+      "artifact_refs": [],
+      "metadata": {}
+    },
+    {
+      "schema_version": "1.0",
+      "evidence_id": "cell-c1::evidence::process",
+      "kind": "process",
+      "summary": "status=fail exit_code=0",
+      "source_kind": "artifact_ref",
+      "source_ref": "cell-c1::stdout::abc121",
+      "cell_id": "cell-c1",
+      "status": "failed",
+      "severity": "error",
+      "artifact_refs": [
+        "cell-c1::stdout::abc121"
+      ],
+      "metadata": {}
+    },
+    {
+      "schema_version": "1.0",
+      "evidence_id": "cell-c1::evidence::judge",
+      "kind": "judge_rationale",
+      "summary": "Judge: does not meet criteria",
+      "source_kind": "evaluation_ref",
+      "source_ref": "cell-c1::llm-judge::abc121",
+      "cell_id": "cell-c1",
+      "status": "failed",
+      "severity": "warning",
+      "artifact_refs": [],
+      "metadata": {}
+    }
+  ],
+  "traces": [
+    {
+      "schema_version": "1.0",
+      "trace_id": "cell-b1",
+      "provider": "process",
+      "external_url": null,
+      "cost": {
+        "schema_version": "1.0",
+        "amount": null,
+        "currency": "USD",
+        "source": "unavailable"
+      },
+      "summary": {
+        "latency_ms": 100
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "trace_id": "cell-c1",
+      "provider": "process",
+      "external_url": null,
+      "cost": {
+        "schema_version": "1.0",
+        "amount": null,
+        "currency": "USD",
+        "source": "unavailable"
+      },
+      "summary": {
+        "latency_ms": 200
+      }
+    }
+  ],
+  "evaluations": [
+    {
+      "schema_version": "1.0",
+      "evaluation_id": "cell-b1::validator::abc111",
+      "cell_id": "cell-b1",
+      "evaluator_type": "validator",
+      "evaluator": "micro-eval-deterministic-validator",
+      "pass_fail": "pass",
+      "score": 1.0,
+      "scores": {},
+      "evaluator_meta": null,
+      "rubric_hash": null,
+      "comment": "ok",
+      "evidence_refs": [
+        "cell-b1::evidence::process"
+      ],
+      "created_at": "20260612T000000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "evaluation_id": "cell-b1::llm-judge::abc111",
+      "cell_id": "cell-b1",
+      "evaluator_type": "llm_judge",
+      "evaluator": "fake-judge",
+      "pass_fail": "pass",
+      "score": 1.0,
+      "scores": {
+        "overall": 1.0
+      },
+      "evaluator_meta": null,
+      "rubric_hash": "rubric-hash",
+      "comment": "looks good",
+      "evidence_refs": [
+        "cell-b1::evidence::judge"
+      ],
+      "created_at": "20260612T000000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "evaluation_id": "cell-c1::validator::abc121",
+      "cell_id": "cell-c1",
+      "evaluator_type": "validator",
+      "evaluator": "micro-eval-deterministic-validator",
+      "pass_fail": "fail",
+      "score": 0.0,
+      "scores": {},
+      "evaluator_meta": null,
+      "rubric_hash": null,
+      "comment": "missing expected",
+      "evidence_refs": [
+        "cell-c1::evidence::process"
+      ],
+      "created_at": "20260612T000000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "evaluation_id": "cell-c1::llm-judge::abc121",
+      "cell_id": "cell-c1",
+      "evaluator_type": "llm_judge",
+      "evaluator": "fake-judge",
+      "pass_fail": "pass",
+      "score": 0.9,
+      "scores": {
+        "overall": 0.9
+      },
+      "evaluator_meta": null,
+      "rubric_hash": "rubric-hash",
+      "comment": "mostly good",
+      "evidence_refs": [
+        "cell-c1::evidence::judge"
+      ],
+      "created_at": "20260612T000000Z"
+    }
+  ],
+  "decision": {
+    "schema_version": "1.0",
+    "decision_report_id": "run-phase2-fixture::decision::20260612T000000Z",
+    "verdict": "regressed",
+    "confidence": "medium",
+    "evaluation_refs": [
+      "cell-b1::validator::abc111",
+      "cell-c1::validator::abc121"
+    ],
+    "evidence_refs": [
+      "cell-b1::evidence::process",
+      "cell-c1::evidence::process"
+    ],
+    "caveats": [],
+    "aggregation": {
+      "schema_version": "1.0",
+      "per_configuration": {
+        "baseline": {
+          "schema_version": "1.0",
+          "n_cells": 3,
+          "n_successful": 3,
+          "pass_rate": 1.0,
+          "pass_at_k": {
+            "1": 1.0,
+            "2": 1.0,
+            "3": 1.0
+          },
+          "pass_hat_k": {
+            "1": 1.0,
+            "2": 1.0,
+            "3": 1.0
+          },
+          "mean_latency_ms": 110.0,
+          "median_latency_ms": 110.0,
+          "total_cost": {
+            "schema_version": "1.0",
+            "amount": null,
+            "currency": "USD",
+            "source": "unavailable"
+          },
+          "denominator_policy": "exclude_failed",
+          "caveats": []
+        },
+        "candidate": {
+          "schema_version": "1.0",
+          "n_cells": 3,
+          "n_successful": 3,
+          "pass_rate": 0.0,
+          "pass_at_k": {
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0
+          },
+          "pass_hat_k": {
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0
+          },
+          "mean_latency_ms": 210.0,
+          "median_latency_ms": 210.0,
+          "total_cost": {
+            "schema_version": "1.0",
+            "amount": null,
+            "currency": "USD",
+            "source": "unavailable"
+          },
+          "denominator_policy": "exclude_failed",
+          "caveats": []
+        }
+      }
+    },
+    "timestamp": "20260612T000000Z",
+    "recommended_action": "investigate candidate regression",
+    "created_at": "20260612T000000Z"
+  },
+  "denominator_policy": "exclude_failed"
+}

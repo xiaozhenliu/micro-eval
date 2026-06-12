@@ -22,7 +22,7 @@ scoring = ["deepeval>=0.20"]
 judge = ["deepeval>=0.20"]
 observability = ["langfuse>=2.0"]
 trace = ["langfuse>=2.0"]
-dev = ["pytest>=7.0", "pytest-asyncio>=1.4.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=1.4.0", "pytest-cov>=4.0"]
 
 [project.scripts]
 micro-eval = "micro_eval.cli.main:app"

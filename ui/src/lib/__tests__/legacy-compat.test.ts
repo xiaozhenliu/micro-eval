@@ -10,9 +10,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { RunSchema } from "../schema";
 
-const FIXTURE_DIR = path.resolve(__dirname, "../fixtures");
+const GOLDEN_DIR = path.resolve(__dirname, "../../../../tests/contract/golden");
 const legacyRaw: unknown = JSON.parse(
-  fs.readFileSync(path.join(FIXTURE_DIR, "legacy-run-v01x.json"), "utf-8")
+  fs.readFileSync(path.join(GOLDEN_DIR, "run-legacy-v01x.json"), "utf-8")
 );
 
 describe("ISSUE-3: zod RunSchema parses legacy v0.1.x fixture", () => {

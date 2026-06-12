@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Python tests (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Run pytest with coverage
+        run: uv run pytest -q --cov=micro_eval --cov-report=xml --cov-fail-under=75
+
+  python-quality:
+    name: Python quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Compile check (all Python sources)
+        run: uv run python -m compileall -q src/micro_eval tests
+      - name: Shell injection gate (no shell=True or create_subprocess_shell)
+        run: |
+          if grep -RInE 'create_subprocess_shell|shell=True' src tests ui/src examples; then
+            echo "FAIL: forbidden shell pattern found"
+            exit 1
+          fi
+
+  golden-sync:
+    name: Golden contract sync check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Verify golden fixtures are up to date
+        run: |
+          uv run python scripts/generate-golden.py
+          # add -A first so newly generated (untracked) files also fail the check
+          git add -A tests/contract/golden/ ui/src/lib/fixtures/canonical-run-p0.json
+          git diff --cached --exit-code -- tests/contract/golden/ ui/src/lib/fixtures/canonical-run-p0.json
+
+  ui-tests:
+    name: UI tests (lint + vitest + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install UI dependencies
+        run: cd ui && npm ci
+      - name: Lint
+        run: cd ui && npm run lint
+      - name: Vitest
+        run: cd ui && npx vitest run
+      - name: Build
+        run: cd ui && npm run build
+
+  example-smoke:
+    name: Example smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Run example
+        run: python examples/run-example.py

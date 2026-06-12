@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "id": "run-minimal-fixture",
+  "project_name": "minimal-fixture",
+  "status": "planned",
+  "created_at": "2026-06-12T00:00:00+00:00",
+  "completed_at": null,
+  "output_dir": ".micro-eval/runs",
+  "config_hash": "",
+  "tasks": [],
+  "configurations": [],
+  "cells": [],
+  "results": [],
+  "migration_warnings": [],
+  "same_start_snapshot": null,
+  "replay_canonical": null,
+  "artifacts": [],
+  "evidence": [],
+  "traces": [],
+  "evaluations": [],
+  "decision": null,
+  "denominator_policy": "include_failed"
+}
