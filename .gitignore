@@ -12,6 +12,7 @@ ui/.next/
 
 # micro-eval runtime
 .micro-eval/
+examples/**/report.html
 
 # OS
 .DS_Store

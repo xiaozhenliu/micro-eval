@@ -35,6 +35,28 @@ uv run micro-eval validate
 uv run micro-eval run --dry-run --format json
 ```
 
+## Example smoke
+
+源码 checkout 中的 example 提供一条跨平台入口，适合验证 CLI、workspace、run store 与 report 基本链路：
+
+```bash
+uv run python examples/run-example.py
+```
+
+该脚本从 `examples/agent-codefix-showdown/` 作为 eval project 运行 deterministic mock matrix，并生成：
+
+- run store：`examples/agent-codefix-showdown/.micro-eval/runs/`
+- cell workspace：`examples/agent-codefix-showdown/.micro-eval/workspaces/{run_id}/{cell_id}/`
+- static report：`examples/agent-codefix-showdown/report.html`
+
+`report.html` 与 `.micro-eval/` 属于运行时产物，已被 git ignore。默认情况下 cell workspace 会在 cell 结束后 cleanup；run 记录中的 `cell_snapshot.workspace_path` 保留路径证据。
+
+真实 agent matrix 仍需显式 opt-in：
+
+```bash
+uv run python examples/run-example.py --real
+```
+
 ## 本地验证
 
 功能或 release 相关改动至少运行：
@@ -51,7 +73,14 @@ grep -R "localStorage" ui/src || true
 grep -R "sessionStorage" ui/src || true
 ```
 
-纯文档改动可只运行 `git diff --check`，但如果文档更新了命令、schema 或 release claims，应抽样运行相关命令确认。
+涉及 examples、workspace、subprocess、artifact 或安全边界的改动，还应至少抽样运行：
+
+```bash
+uv run python examples/run-example.py
+grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples || true
+```
+
+纯文档改动可只运行 `git diff --check`，但如果文档更新了命令、schema、workspace 路径或 release claims，应抽样运行相关命令确认。
 
 ## 主要模块
 
@@ -75,11 +104,31 @@ ui/src/
 
 1. `load_config()` 读取 canonical `configurations[]`；legacy `baseline` / `candidate` 只通过 migration bridge 转换。
 2. `build_run_plan()` 展开 `tasks × configurations × repetitions`，生成 `SameStartSnapshot` 与 `ReplayCanonical`。
-3. `ExecutionKernel` 为每个 cell 分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
+3. `ExecutionKernel` 为每个 cell 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
 4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence。
 5. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json`，`ArtifactStore` 写入 `manifest.json`。
 6. `build_decision()` 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
 7. UI/API 通过 zod 读取 canonical JSON；human evaluation POST append 到 cell `evaluation.json` 并重算 `run.json.decision`。
+
+## Workspace boundary
+
+`WorkspaceManager` 是 workspace 路径与生命周期的唯一入口。开发时不要在 adapter、validator、report 或 UI 中自行创建 agent cwd。
+
+当前 MVP 支持三类 task workspace：
+
+| `workspace.type` | Runtime behavior |
+| --- | --- |
+| `blank` | 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下创建空目录。 |
+| `files` | 将声明的文件/目录复制到 `.micro-eval/workspaces/{run_id}/{cell_id}/`。 |
+| `git_repo` | 解析 `ref` 到 commit，并将 detached git worktree 创建到 `.micro-eval/workspaces/{run_id}/{cell_id}/`。 |
+
+安全边界：
+
+- agent cwd 必须位于当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/`。
+- 不得未经用户明确配置把 agent cwd 放到系统临时目录或项目外目录。
+- setup 命令和 agent 命令都必须 argv-only。
+- cell workspace cleanup 失败必须进入 snapshot/evidence，而不是静默吞掉。
+- raw workspace path 只能作为 snapshot/evidence 路径证据；UI/API 展示 artifact 内容仍必须走 manifest/ref 边界。
 
 ## CLI smoke
 
@@ -106,11 +155,17 @@ uv run --project /path/to/micro-eval micro-eval report --format html --output re
 
 - **shell interpolation**：canonical agent commands and validation commands are argv lists; no `shell=True` or `create_subprocess_shell` in trusted execution paths.
 - **secrets redaction**：only declared `MICRO_EVAL_SECRET_*` values are injected, and all non-empty host `MICRO_EVAL_SECRET_*` values participate in redaction before text artifact/evidence/UI persistence.
-- **workspace boundary**：agent cwd is the assigned blank/files/git worktree workspace; setup env is allowlisted and does not inherit secrets.
+- **workspace boundary**：agent cwd is the assigned blank/files/git worktree workspace under the current eval project's `.micro-eval/workspaces/`; setup env is allowlisted and does not inherit secrets.
 - **output_dir boundary**：`output_dir` must be project-relative and must not contain `..`.
 - **artifact safety**：reserved stdout/stderr/output paths are written atomically; symlink, hardlink, non-regular, oversized, and binary artifacts are skipped or represented with warnings/placeholders.
 - **raw artifact access**：Decision/UI consume refs and summaries; raw text content is available only through explicit manifest `artifact_id` lookup plus run-dir `realpath` boundary validation.
 - **snapshot mismatch**：Decision must stay guarded and never claim strong improvement/regression when comparability is degraded.
+
+Workspace 相关改动建议额外检查：
+
+- `tests/e2e/test_p0b_reproducibility_flow.py::test_files_workspace_stays_under_project_workspaces_dir`
+- `tests/e2e/test_p0b_reproducibility_flow.py::test_git_repo_workspace_runs_in_isolated_worktree_with_snapshot`
+- example smoke 的最新 `cell_snapshot.workspace_path` 是否位于当前 example project 的 `.micro-eval/workspaces/` 下。
 
 ## Release readiness checklist
 

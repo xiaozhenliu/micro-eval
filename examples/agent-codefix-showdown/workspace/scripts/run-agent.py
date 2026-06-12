@@ -54,7 +54,7 @@ def main() -> int:
         return 0
 
     agent_result = run_command(command, cwd=repo_dir, timeout_s=agent_timeout_s(), stdin_text=stdin_text)
-    test_result = run_command(["python3", "-m", "unittest", "discover", "-s", "tests"], cwd=repo_dir, timeout_s=TEST_TIMEOUT_S)
+    test_result = run_command([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=repo_dir, timeout_s=TEST_TIMEOUT_S)
     agent_file_output = read_text(agent_output_file)
 
     write_result(

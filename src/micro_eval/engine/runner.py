@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shlex
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -279,6 +280,7 @@ class AgentRunner:
             "{output_dir}": str(output_dir),
             "{output_file}": str(output_file),
             "{input_file}": str(input_file) if input_file else "",
+            "{python}": sys.executable,
         }
         for i, arg in enumerate(argv):
             for placeholder, value in replacements.items():

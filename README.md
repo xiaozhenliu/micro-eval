@@ -75,15 +75,15 @@ In the Web UI, follow: Run List → Decision Summary → Result Matrix → Cell 
 Use the repository example when you want a complete MVP flow without writing your own `eval.yaml`, task, or fixture workspace:
 
 ```bash
-# From the repository root
-uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
-uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
+python examples/run-example.py
+```
 
-# list/report read the current directory's .micro-eval/runs store
-cd examples/agent-codefix-showdown
-uv run --project ../.. micro-eval list
-uv run --project ../.. micro-eval report --format text
-uv run --project ../.. micro-eval report --format html --output report.html
+The script is a cross-platform Python entrypoint: it uses `uv run --project` when `uv` is available, falls back to an installed `micro-eval`, runs from the example directory so `.micro-eval/runs` is easy to find, and writes `examples/agent-codefix-showdown/report.html`.
+
+For the real-agent matrix, run:
+
+```bash
+python examples/run-example.py --real
 ```
 
 The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. The example index is in [`examples/`](examples/).

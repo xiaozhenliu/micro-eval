@@ -75,15 +75,15 @@ micro-eval ui --port 3000
 如果想体验完整 MVP 流程、但还不想自己写 `eval.yaml`、task 或 fixture workspace，可以直接运行源码仓库中的示例：
 
 ```bash
-# From the repository root
-uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
-uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
+python examples/run-example.py
+```
 
-# list/report read the current directory's .micro-eval/runs store
-cd examples/agent-codefix-showdown
-uv run --project ../.. micro-eval list
-uv run --project ../.. micro-eval report --format text
-uv run --project ../.. micro-eval report --format html --output report.html
+这个脚本是跨平台 Python 入口：有 `uv` 时自动使用 `uv run --project`，否则回退到已安装的 `micro-eval`；它会从示例目录运行，因此 `.micro-eval/runs` 容易定位，并生成 `examples/agent-codefix-showdown/report.html`。
+
+如果要运行真实 agent 矩阵：
+
+```bash
+python examples/run-example.py --real
 ```
 
 [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) 中的真实 agent 矩阵覆盖 Claude Code、Codex CLI、OpenClaw 和 Hermes。示例索引见 [`examples/`](examples/)。

@@ -64,7 +64,57 @@ def test_git_repo_workspace_runs_in_isolated_worktree_with_snapshot(tmp_path: Pa
     assert result.snapshot_gate_result is not None
     assert result.snapshot_gate_result.status == "pass"
     assert result.cell_snapshot.git_commit == record.same_start_snapshot.git_commit
-    assert result.cell_snapshot.workspace_path != str(tmp_path)
+    workspace_path = Path(result.cell_snapshot.workspace_path)
+    assert workspace_path != tmp_path
+    assert workspace_path.is_relative_to(tmp_path / ".micro-eval" / "workspaces" / plan.run_id)
+    assert not workspace_path.exists()
+    assert result.cell_snapshot.cleanup_status == "cleaned"
+
+
+def test_files_workspace_stays_under_project_workspaces_dir(tmp_path: Path) -> None:
+    fixture = tmp_path / "workspace"
+    fixture.mkdir()
+    (fixture / "marker.txt").write_text("from-copied-files")
+    task = TaskSpec(
+        id="files-task",
+        name="Files task",
+        input_payload="",
+        expectations=[{"type": "contains", "value": "from-copied-files", "stream": "stdout"}],
+        workspace=WorkspaceSpec(type=WorkspaceType.files, files=["workspace"]),
+    )
+    config = ProjectConfigV2(
+        project_name="files-workspace-test",
+        configurations=[
+            ConfigurationSpec(
+                id="agent",
+                name="agent",
+                agent=AgentSpec(
+                    name="agent",
+                    command=[
+                        sys.executable,
+                        "-c",
+                        (
+                            "import pathlib; "
+                            "print(pathlib.Path.cwd()); "
+                            "print(pathlib.Path('workspace/marker.txt').read_text())"
+                        ),
+                    ],
+                ),
+            )
+        ],
+        guardrails=Guardrails(max_concurrency=1),
+    )
+    config.config_hash = "config-hash"
+    plan = build_run_plan(config, [task], project_root=tmp_path)
+
+    record = asyncio.run(ExecutionKernel(tmp_path).run(plan))
+
+    result = record.results[0]
+    assert "from-copied-files" in result.stdout_summary
+    assert result.cell_snapshot is not None
+    workspace_path = Path(result.cell_snapshot.workspace_path)
+    assert workspace_path.is_relative_to(tmp_path / ".micro-eval" / "workspaces" / plan.run_id)
+    assert not workspace_path.exists()
     assert result.cell_snapshot.cleanup_status == "cleaned"
 
 
@@ -116,6 +166,37 @@ def test_replay_digest_changes_when_git_workspace_commit_changes(tmp_path: Path)
     assert second.replay_canonical is not None
     assert first.replay_canonical.workspace_fingerprint != second.replay_canonical.workspace_fingerprint
     assert first.replay_canonical.digest != second.replay_canonical.digest
+
+
+def test_python_placeholder_uses_current_interpreter(tmp_path: Path) -> None:
+    task = TaskSpec(
+        id="python-placeholder",
+        name="Python placeholder",
+        input_payload="",
+        expectations=[{"type": "contains", "value": sys.executable, "stream": "stdout"}],
+    )
+    config = ProjectConfigV2(
+        project_name="python-placeholder-test",
+        configurations=[
+            ConfigurationSpec(
+                id="agent",
+                name="agent",
+                agent=AgentSpec(
+                    name="agent",
+                    command=["{python}", "-c", "import sys; print(sys.executable)"],
+                ),
+            )
+        ],
+        guardrails=Guardrails(max_concurrency=1),
+    )
+    config.config_hash = "config-hash"
+    plan = build_run_plan(config, [task], project_root=tmp_path)
+
+    record = asyncio.run(ExecutionKernel(tmp_path).run(plan))
+
+    result = record.results[0]
+    assert result.status.value == "pass"
+    assert sys.executable in result.stdout_summary
 
 
 def test_snapshot_gate_uses_task_workspace_map_for_moved_ref(tmp_path: Path) -> None:

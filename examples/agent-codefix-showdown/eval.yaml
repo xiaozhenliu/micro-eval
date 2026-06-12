@@ -10,7 +10,7 @@ configurations:
     repetitions: 1
     agent:
       name: Claude Code
-      command: ["python3", "workspace/scripts/run-agent.py", "claude-code", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "claude-code", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -23,7 +23,7 @@ configurations:
     repetitions: 1
     agent:
       name: Codex CLI
-      command: ["python3", "workspace/scripts/run-agent.py", "codex-cli", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "codex-cli", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -36,7 +36,7 @@ configurations:
     repetitions: 1
     agent:
       name: OpenClaw
-      command: ["python3", "workspace/scripts/run-agent.py", "openclaw", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "openclaw", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900
@@ -49,7 +49,7 @@ configurations:
     repetitions: 1
     agent:
       name: Hermes
-      command: ["python3", "workspace/scripts/run-agent.py", "hermes", "{output_file}"]
+      command: ["{python}", "workspace/scripts/run-agent.py", "hermes", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 900

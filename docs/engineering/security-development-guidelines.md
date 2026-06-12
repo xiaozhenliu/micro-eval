@@ -3,7 +3,7 @@ title: micro-eval 开发实施安全规范
 doc_type: reference
 status: active
 created_at: 2026-06-03T09:28+08:00
-updated_at: 2026-06-03T09:28+08:00
+updated_at: 2026-06-03T18:14+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -37,6 +37,7 @@ related:
 ## Workspace and Artifact Handling
 
 - agent cwd 必须是分配的 workspace。
+- 分配的 workspace 必须位于当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/`；不得未经用户明确配置把 agent cwd 放到系统临时目录或项目外目录。
 - adapter / runner 不得写出 workspace 和 run artifact 边界。
 - artifact 暴露给 UI/API 前必须经过 manifest/ref 边界。
 - symlink、hardlink、binary、oversized、路径穿越等 artifact 风险必须被拒绝、降级或显式记录 warning。
@@ -53,6 +54,7 @@ related:
 - 是否引入 shell interpolation？
 - 是否可能泄露 secrets？
 - 是否绕过 workspace 边界？
+- 是否把 agent cwd 放到了当前 eval project 之外？
 - 是否把 raw artifact 直接暴露给 Decision / UI？
 - 是否让 snapshot mismatch 仍能产生强结论？
 - 是否缺少否定测试或等价的安全验证？

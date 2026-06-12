@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
+import sys
 import time
 from pathlib import Path
 
@@ -205,6 +206,7 @@ class AgentAdapter:
             "{output_dir}": str(output_dir),
             "{output_file}": str(output_file),
             "{input_file}": str(input_file),
+            "{python}": sys.executable,
         }
         argv: list[str] = []
         for arg in agent.command:

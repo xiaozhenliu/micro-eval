@@ -3,7 +3,7 @@ title: Agent Codefix Showdown
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T10:18+08:00
-updated_at: 2026-06-03T11:43+08:00
+updated_at: 2026-06-03T18:08+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -37,8 +37,8 @@ use case without writing their own `eval.yaml`, task, or fixture workspace.
 - `list`, text report, HTML report, and optional source-checkout UI viewing.
 
 The task asks an agent to fix a tiny Python ledger rounding bug. The wrapper
-then runs `python3 -m unittest discover -s tests` inside the copied workspace and
-writes `MICRO_EVAL_TASK_RESULT=PASS` only when those tests pass.
+then runs the copied workspace's unittest suite with the current Python
+interpreter and writes `MICRO_EVAL_TASK_RESULT=PASS` only when those tests pass.
 
 This marker is MVP smoke/use-case validation. It is **not** a benchmark-quality
 winner signal; review artifacts and caveats before making decisions.
@@ -57,34 +57,26 @@ high-privilege credentials into this example workspace.
 
 ## Fast deterministic smoke
 
-Use this path to prove the example, task, validation, run store, and reports work
-without model calls:
+From the repository root, use this path to prove the example, task, validation,
+run store, and reports work without model calls:
 
 ```bash
-# From the repository root
-uv run micro-eval validate --config examples/agent-codefix-showdown/eval.mock.yaml
-uv run micro-eval run --config examples/agent-codefix-showdown/eval.mock.yaml --max-concurrency 1
-
-# list/report read the current directory's .micro-eval/runs store
-cd examples/agent-codefix-showdown
-uv run --project ../.. micro-eval list
-uv run --project ../.. micro-eval report --format text
-uv run --project ../.. micro-eval report --format html --output report.html
+python examples/run-example.py
 ```
 
-Open `report.html` in a browser to inspect the static report.
+The script runs from this example directory, so `.micro-eval/runs` and
+`report.html` are written here. During each cell, the agent cwd is also created
+under `.micro-eval/workspaces/{run_id}/{cell_id}/` in this example directory and
+then cleaned up. Open `examples/agent-codefix-showdown/report.html` in a browser
+to inspect the static report.
 
 ## Real-agent run
 
-Run this when all four agent CLIs are installed and logged in:
+From the repository root, run this when all four agent CLIs are installed and
+logged in:
 
 ```bash
-cd examples/agent-codefix-showdown
-uv run --project ../.. micro-eval validate
-uv run --project ../.. micro-eval run --max-concurrency 1
-uv run --project ../.. micro-eval list
-uv run --project ../.. micro-eval report --format text
-uv run --project ../.. micro-eval report --format html --output report.html
+python examples/run-example.py --real
 ```
 
 Why `--max-concurrency 1`? It avoids surprise token spend, local resource
@@ -92,13 +84,11 @@ contention, and provider rate-limit spikes during first use.
 
 ## Optional source-checkout UI
 
-The current MVP UI is launched from the repository source tree. After producing a
-run in this example directory:
+The current MVP UI is launched from the repository source tree. From the
+repository root, after producing a run in this example directory:
 
 ```bash
-example_root="$PWD"
-cd ../..
-MICRO_EVAL_PROJECT_ROOT="$example_root" uv run micro-eval ui --port 3000
+python examples/run-example.py --ui
 ```
 
 Then open `http://localhost:3000`.
@@ -107,6 +97,7 @@ Then open `http://localhost:3000`.
 
 ```text
 agent-codefix-showdown/
+├── ../run-example.py      # cross-platform one-command runner
 ├── eval.yaml              # real Claude Code / Codex CLI / OpenClaw / Hermes matrix
 ├── eval.mock.yaml         # deterministic local smoke on the same task
 ├── tasks/

@@ -3,6 +3,8 @@ name: Fix ledger rounding
 description: Fix a small Python ledger allocation bug in a copied workspace.
 input_payload: |
   You are running inside a disposable copied workspace named `workspace/`.
+  The actual agent cwd is created under this example project's
+  `.micro-eval/workspaces/` directory and is cleaned up after the cell.
 
   Goal:
   - Fix `ledger.py` so `split_amount_cents(total_cents, weights)` preserves the
@@ -12,7 +14,7 @@ input_payload: |
   Constraints:
   - Edit only files inside this copied workspace.
   - Do not write secrets or credentials into files or output.
-  - The wrapper will run `python3 -m unittest discover -s tests` after your turn
+  - The wrapper will run the copied workspace's unittest suite after your turn
     and will write the smoke-validation marker to the micro-eval output file.
 
   Done means:

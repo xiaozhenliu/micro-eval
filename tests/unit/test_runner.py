@@ -1,6 +1,7 @@
 """Tests for the agent runner."""
 
 import re
+import sys
 
 import pytest
 
@@ -91,6 +92,18 @@ async def test_run_single_file_input(sample_task, tmp_path):
     result = await runner._run_single(agent, sample_task)
     assert result.status == TaskStatus.passed
     assert "Hello, world!" in result.output_summary
+
+
+@pytest.mark.asyncio
+async def test_run_single_python_placeholder_uses_current_interpreter(sample_task, tmp_path):
+    agent = AgentConfig(
+        name="python-placeholder",
+        command="{python} -c 'import sys; print(sys.executable)'",
+    )
+    runner = AgentRunner(work_dir=tmp_path)
+    result = await runner._run_single(agent, sample_task)
+    assert result.status == TaskStatus.passed
+    assert sys.executable in result.stdout_summary
 
 
 @pytest.mark.asyncio

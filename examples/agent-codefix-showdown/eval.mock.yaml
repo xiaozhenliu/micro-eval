@@ -11,7 +11,7 @@ configurations:
     repetitions: 1
     agent:
       name: Local mock fixer
-      command: ["python3", "workspace/scripts/mock-fix-agent.py", "{output_file}"]
+      command: ["{python}", "workspace/scripts/mock-fix-agent.py", "{output_file}"]
       input_mode: stdin
       output_mode: file
       timeout_s: 60

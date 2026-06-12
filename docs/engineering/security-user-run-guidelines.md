@@ -3,7 +3,7 @@ title: micro-eval 用户 run 安全规范
 doc_type: reference
 status: active
 created_at: 2026-06-03T09:28+08:00
-updated_at: 2026-06-03T09:28+08:00
+updated_at: 2026-06-03T18:08+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -31,7 +31,8 @@ related:
 ## Workspace
 
 - agent 只在分配的 workspace 中执行。
-- worktree / temp dir 生命周期由 Environment Layer 管理。
+- 分配的 workspace 必须创建在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下；不得未经用户明确配置让 agent cwd 落到系统临时目录或项目外目录。
+- project-local workspace / worktree 生命周期由 Environment Layer 管理。
 - cleanup 失败要记录，不要静默。
 - 不允许 adapter 任意写宿主项目根目录。
 - 用户应优先使用一次性 workspace 或受控 git worktree 运行不可信 agent。
