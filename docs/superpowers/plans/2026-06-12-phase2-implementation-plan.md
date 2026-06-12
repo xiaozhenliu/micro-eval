@@ -1,9 +1,9 @@
 ---
 title: "Phase 2 Implementation Plan: trace_enhanced.v1"
 doc_type: spec
-status: draft
+status: completed
 created_at: 2026-06-12T10:30+08:00
-updated_at: 2026-06-12T10:30+08:00
+updated_at: 2026-06-12T17:10+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 profile: trace_enhanced.v1
@@ -21,6 +21,12 @@ related:
 ---
 
 # Phase 2 Implementation Plan: `trace_enhanced.v1`
+
+> **交付状态（2026-06-12）**：四个里程碑（含 stretch 的 P2-d LLM judge）均已交付，
+> 随 v0.2.0 提交。统一交付门槛全部通过（pytest 92 passed、vitest、lint/build、
+> examples 冒烟、shell-interpolation grep 零匹配）。审查发现的两项阻断缺陷
+> （denominator_policy 未贯通、judge prompt 外发未脱敏）已修复，详见
+> `docs/dev/log/2026-06-12-1640-dev-log-blocker-fixes-denominator-judge-redaction.md`。
 
 > **执行说明**：本计划遵循项目硬规则——禁止 TDD。每个里程碑的开发顺序为：
 > 理解规格 → 模块/接口设计 → 实现可运行的垂直切片 → 用验收测试和真实产物验证。

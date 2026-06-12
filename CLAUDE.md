@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
-v0.1.0 MVP 已完成。Python CLI + Next.js 本地 Web UI 均可运行。25 个 pytest 测试通过。
+v0.2.0 已完成：Phase 2 全部四个里程碑（P2-a 统计聚合 + decision.json 独立化、P2-b Trace 适配层 + Langfuse 接入、P2-c 复盘页 + 成本分析 UI、P2-d LLM judge，含 stretch）已交付。Python CLI + Next.js 本地 Web UI 均可运行。92 个 pytest 测试通过。
 
 ## 开发方法硬规则
 
@@ -81,7 +81,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 底座**串行接入**,不要并行做完(风险:执行链路过长):
 
 - **Phase 1 (MVP)**:Configuration/Task/Run + 自写执行层 + 分层评分(validation → LLM judge) + 矩阵对比页 + Next.js 本地 UI。
-- **Phase 2**:Langfuse trace 接入 + 复盘页 + 成本分析 + repetitions 统计聚合。
+- **Phase 2(已完成,v0.2.0)**:Langfuse trace 接入 + 复盘页 + 成本分析 + repetitions 统计聚合 + LLM judge。
 - **Phase 3**:Docker sandbox + 更复杂 workspace 类型 + 趋势分析。
 
 完整规格见 `docs/superpowers/specs/2026-06-02-unicorn-design.md`(产品+技术设计)与 `micro-eval-brd.md`(商业背景)。

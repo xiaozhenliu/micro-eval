@@ -464,7 +464,7 @@ class SecretRedactor:
 
 **Must not bypass**：verdict 必须引用 EvaluationResult + EvidenceItem，不能只是主观结论。
 
-**DecisionReport 预留结构**（GAP 7 stub，为 Phase 2 独立化做准备）：
+**DecisionReport 预留结构**（GAP 7 stub —— 已于 v0.2.0 兑现：拆为独立 decision.json + `decision_report_id`，读取兼容旧 run.json）：
 
 run.json 中 verdict 相关字段组织为嵌套 `decision` 对象：
 ```python
@@ -475,7 +475,7 @@ decision: {
     "evaluation_refs": [...],       # evaluation_ids 列表
     "evidence_refs": [...],         # evidence_ids 列表，用于支撑 verdict/caveats
     "caveats": ["low_sample"],      # SnapshotGateResult 等 caveat
-    "aggregation": {                # GAP 5 stub: Phase 2 升级为独立 AggregationResult
+    "aggregation": {                # GAP 5 stub: 已于 v0.2.0 升级为独立 AggregationResult
         "pass_rate": {"claude-code-v2": 0.6, "cursor-agent": 0.8},
         "mean_latency_ms": {"claude-code-v2": 1200, "cursor-agent": 900},
         "cost": {"claude-code-v2": null, "cursor-agent": null}
@@ -484,7 +484,7 @@ decision: {
 }
 ```
 
-MVP 行为：`decision` 子结构在 `micro-eval report` 完成时写入 run.json。Phase 2 将其拆为独立 `decision.json` + 分配 `decision_report_id`，无需迁移旧数据（直接从 `run.json["decision"]` 提取）。
+MVP 行为：`decision` 子结构在 `micro-eval report` 完成时写入 run.json。Phase 2（v0.2.0）已将其拆为独立 `decision.json` + 分配 `decision_report_id`，无需迁移旧数据（读取时 fallback 到 `run.json["decision"]`）。
 
 ---
 

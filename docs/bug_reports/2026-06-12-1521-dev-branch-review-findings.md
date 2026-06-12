@@ -1,9 +1,9 @@
 ---
 title: Dev 分支审查发现的问题清单
 doc_type: analysis
-status: active
+status: resolved
 created_at: 2026-06-12T15:21+08:00
-updated_at: 2026-06-12T15:21+08:00
+updated_at: 2026-06-12T17:10+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -20,6 +20,11 @@ related:
 ---
 
 # Dev 分支审查发现的问题清单
+
+> **修复状态（2026-06-12）**：两项缺陷均已修复并通过验收（pytest 92 passed、vitest 全绿）。
+> 问题 1 采用方案 1：denominator_policy 经 RunPlan/RunRecord 端到端贯通，UI 重算同步。
+> 问题 2：judge prompt 所有外部来源字段先脱敏再截断，redactor 为必填参数。
+> 详见 `docs/dev/log/2026-06-12-1640-dev-log-blocker-fixes-denominator-judge-redaction.md`。
 
 ## 1. 范围与验证
 
