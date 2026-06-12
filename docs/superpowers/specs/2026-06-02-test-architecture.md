@@ -1,7 +1,8 @@
 ---
 title: "micro-eval 测试架构设计"
 date: 2026-06-02
-status: draft
+updated: 2026-06-12
+status: active
 type: design
 tags:
   - testing
@@ -39,13 +40,14 @@ tags:
     ╱────────╲
 ```
 
-| 层 | 测什么 | 工具 | 当前状态 |
+| 层 | 测什么 | 工具 | 当前状态（2026-06-12，v0.2.0） |
 |---|---|---|---|
-| Unit | 单模块逻辑、纯函数、边界 | pytest（Py）/ vitest（TS） | Py 已有 ~25；TS 未落地 |
-| Contract | 跨模块对象 schema、跨语言 parity | pytest + 生成/校验 | 未落地 |
-| Integration | 多模块协作、Provider 解析 | pytest + 受控 subprocess | 部分（runner） |
-| E2E | CLI 全流程、产物结构 | pytest + tmp project | 已有 full_flow |
-| UI | 组件渲染、run viewer | vitest + Testing Library | 未落地 |
+| Unit | 单模块逻辑、纯函数、边界 | pytest（Py）/ vitest（TS） | Py 87 个；TS 3 个（evaluation 纯函数） |
+| Contract | 跨模块对象 schema、跨语言 parity | pytest + 生成/校验 | 部分（canonical fixture 机制已建，未覆盖 Phase 2 字段） |
+| UI Route Contract | API route 消费 Python 产物、zod 严格解析 | vitest + 共享 fixture | **未落地（P0，见 §4.1）** |
+| Integration | 多模块协作、Provider 解析 | pytest + 受控 subprocess | 部分（runner、kernel、store） |
+| E2E | CLI 全流程、产物结构 | pytest + tmp project | 22 个，全部基于 Phase 1 链路（缺口见 §5.1） |
+| UI | 组件渲染、run viewer | vitest + Testing Library | 未落地（仅 §5.1 ISSUE-5 范围内补关键断言） |
 
 ## 3. 按模块的测试规格（投影自 Unicorn Part I §5）
 
@@ -168,7 +170,24 @@ Pydantic model ──► 生成 JSON 样本 ──► zod.parse(样本) 必须�
 
 需要覆盖的关键 schema：
 - `Run` / `RunResult` / `EnvironmentSnapshot`（当前 legacy）
-- 未来：`RunPlan` / `ExecutionResult` / `EvaluationResult` / `DecisionReport`
+- Phase 2 已落地、需纳入 parity 的：`RunPlan` / `EvaluationResult` /
+  `DecisionReport`（含 `AggregationResult` / `denominator_policy`）/ `TraceRef`
+
+### 4.1 UI API route 契约集成测试（Phase 2 后新增层级）
+
+> 登记自 `docs/bug_reports/2026-06-12-1810-e2e-integration-test-gaps.md` ISSUE-1（P0）。
+
+`/api/runs/[id]` 与 `/api/runs/[id]/cells/[cellId]/trace` 是 Python 写端
+（Pydantic → `.micro-eval/` JSON）与 TS 读端（route handler → zod）之间的
+跨语言契约边界，必须有独立测试层：
+
+1. 共享 fixture 由 Python 侧真实产出（扩展 `canonical-run-p0.json` 机制至
+   Phase 2 字段：decision.json、TraceRef、judge EvaluationResult）；
+2. vitest 中 route handler 读取该 fixture，响应必须通过 zod schema 严格解析；
+3. 任一端 schema 演进而另一端未同步 → 测试红。
+
+这一层与 §4 的 golden JSON parity 互补：parity 测 schema 形状对等，
+本层测 route handler 的真实消费路径（含文件读取、路径解析、错误分支）。
 
 ## 5. 当前状态 vs 目标（对齐 Unicorn §10 M0–M4）
 
@@ -185,6 +204,26 @@ Pydantic model ──► 生成 JSON 样本 ──► zod.parse(样本) 必须�
 - M3 后：Python unit + integration ≥ 75%；UI ≥ 40%
 - M4 后：总体 ≥ 80%
 
+当前实际（2026-06-12，v0.2.0）：Python 总覆盖 77%（109 tests）；
+关键模块：aggregation 97%、validator 94%、run_store 96%、langfuse_provider 80%
+（剩余为真实 SDK 路径，按 §6 mock 策略有意不测）。
+
+### 5.1 Phase 2 收口后登记的测试缺口（待实施）
+
+> 登记自 `docs/bug_reports/2026-06-12-1810-e2e-integration-test-gaps.md`，
+> 验收标准以该文档为准。实施顺序按严重度。
+
+| Issue | 层级 | 内容 | 严重度 |
+|---|---|---|---|
+| ISSUE-1 | UI Route Contract（§4.1） | API route 跨语言契约集成测试 | P0 |
+| ISSUE-2 | E2E | Phase 2 全开黄金路径（trace + judge mock + decision.json + report） | P0 |
+| ISSUE-3 | E2E + Contract | v0.1.x 旧 run 固化 fixture，report 与 zod 双端可消费 | P1 |
+| ISSUE-4 | E2E | CLI 失败路径契约（退出码 + 报错文案，subprocess） | P2 |
+| ISSUE-5 | UI | Decision Surface 诚实性断言（不显示 winner、low_sample 可见） | P2 |
+
+两个 P0 必须在 Phase 3 执行链路改动（Docker sandbox、复杂 workspace）
+动工前完成。
+
 ## 6. 测试数据 / Fixtures / Mock 策略
 
 ### Fixtures
@@ -195,6 +234,7 @@ tests/
 │   ├── tasks/              # 标准测试 task YAML（good + bad）
 │   ├── configs/            # 标准 eval.yaml（baseline/candidate + matrix）
 │   ├── golden/             # Pydantic 生成的 golden JSON（供 contract tests）
+│   ├── legacy/             # 旧版本（v0.1.x）run.json 固化样本（兼容性回归，ISSUE-3）
 │   └── repos/              # 小 git repo fixtures（用于 workspace tests）
 ├── unit/
 ├── contract/
@@ -208,7 +248,7 @@ tests/
 |---|---|---|
 | Agent subprocess | 受控 echo 脚本（exit 0/1/timeout） | 确定性、无真实 LLM 成本 |
 | LLM judge（DeepEval/Anthropic） | pytest monkeypatch → 固定 JSON | 不依赖网络和真实模型 |
-| Langfuse/LangSmith | 不 mock（它们是可选 provider） | 只测接口形状，不测真实调用 |
+| Langfuse | fake client 注入（不 import 真 SDK） | 测降级分支、cost ladder、脱敏；真实 SDK 实例化路径有意不测 |
 | 文件系统 | tmp_path（pytest 内建） | 隔离、可清理 |
 | git | tests/fixtures/repos/ 真实小 repo | worktree tests 需要真实 git |
 | wall-clock | `time.monotonic()` monkeypatch 或 freezegun | 确定性 latency 断言 |
