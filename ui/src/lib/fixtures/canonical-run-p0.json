@@ -27,7 +27,7 @@
       "configuration_name": "Baseline",
       "repetition": 1,
       "status": "pass",
-      "score": 1,
+      "score": 1.0,
       "pass_fail": "pass",
       "output_summary": "ok",
       "stdout_summary": "ok",
@@ -44,6 +44,7 @@
       "evaluation_refs": [
         "cell-1::validator::abc123"
       ],
+      "trace_refs": [],
       "cell_snapshot": {
         "schema_version": "1.0",
         "workspace_path": "/tmp/workspace",
@@ -87,7 +88,7 @@
   },
   "replay_canonical": {
     "schema_version": "1.0",
-    "tool_version": "0.1.3",
+    "tool_version": "0.2.0",
     "config_hash": "config-hash",
     "task_ids": [
       "task-1"
@@ -144,6 +145,7 @@
       }
     }
   ],
+  "traces": [],
   "evaluations": [
     {
       "schema_version": "1.0",
@@ -152,8 +154,10 @@
       "evaluator_type": "validator",
       "evaluator": "micro-eval-deterministic-validator",
       "pass_fail": "pass",
-      "score": 1,
+      "score": 1.0,
       "scores": {},
+      "evaluator_meta": null,
+      "rubric_hash": null,
       "comment": "ok",
       "evidence_refs": [
         "cell-1::evidence::process"
@@ -163,6 +167,7 @@
   ],
   "decision": {
     "schema_version": "1.0",
+    "decision_report_id": "run-contract-fixture::decision::20260602T000000Z",
     "verdict": "inconclusive",
     "confidence": "low",
     "evaluation_refs": [
@@ -175,16 +180,30 @@
       "low sample size for baseline: repetitions < 3"
     ],
     "aggregation": {
-      "baseline": {
-        "schema_version": "1.0",
-        "total": 1,
-        "passed": 1,
-        "pass_rate": 1,
-        "mean_latency_s": 0.1,
-        "median_latency_s": 0.1,
-        "cost_usd": null
+      "schema_version": "1.0",
+      "per_configuration": {
+        "baseline": {
+          "schema_version": "1.0",
+          "n_cells": 1,
+          "n_successful": 1,
+          "pass_rate": 1.0,
+          "pass_at_k": {
+            "1": 1.0
+          },
+          "pass_hat_k": {
+            "1": 1.0
+          },
+          "mean_latency_ms": 100.0,
+          "median_latency_ms": 100.0,
+          "total_cost": null,
+          "denominator_policy": "include_failed",
+          "caveats": [
+            "low_sample"
+          ]
+        }
       }
     },
+    "timestamp": "20260602T000000Z",
     "recommended_action": "review evidence",
     "created_at": "20260602T000000Z"
   }

@@ -588,3 +588,117 @@ def test_workspace_setup_does_not_inherit_micro_eval_secrets(tmp_path: Path, mon
 
     assert result.status.value == "pass"
     assert "setup-secret" not in result.stdout_summary
+
+
+def test_repetitions_write_decision_json_with_pass_at_k(tmp_path: Path) -> None:
+    task = TaskSpec(
+        id="repeat-task",
+        name="Repeat task",
+        input_payload="",
+        expectations=[{"type": "contains", "value": "ok", "stream": "stdout"}],
+    )
+    config = ProjectConfigV2(
+        project_name="repeat-test",
+        configurations=[
+            ConfigurationSpec(
+                id="agent",
+                name="agent",
+                repetitions=3,
+                agent=AgentSpec(name="agent", command=[sys.executable, "-c", "print('ok')"]),
+            )
+        ],
+        guardrails=Guardrails(max_concurrency=1),
+    )
+    config.config_hash = "config-hash"
+    plan = build_run_plan(config, [task], project_root=tmp_path)
+
+    record = asyncio.run(ExecutionKernel(tmp_path).run(plan))
+    decision_path = tmp_path / ".micro-eval" / "runs" / record.id / "decision.json"
+
+    assert decision_path.exists()
+    assert record.decision is not None
+    assert record.decision.decision_report_id.startswith(f"{record.id}::decision::")
+    stats = record.decision.aggregation.per_configuration["agent"]
+    assert stats.n_cells == 3
+    assert stats.pass_rate == 1.0
+    assert stats.pass_at_k == {1: 1.0, 2: 1.0, 3: 1.0}
+    assert "low_sample" not in stats.caveats
+
+
+def test_process_trace_ref_is_persisted_and_cost_unavailable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("MICRO_EVAL_SECRET_TRACE", "trace-secret-value")
+    task = TaskSpec(id="trace-task", name="Trace task", input_payload="")
+    config = ProjectConfigV2(
+        project_name="trace-test",
+        configurations=[
+            ConfigurationSpec(
+                id="agent",
+                name="agent",
+                agent=AgentSpec(
+                    name="agent",
+                    command=[sys.executable, "-c", "import os; print(os.environ['MICRO_EVAL_SECRET_TRACE'])"],
+                    required_secrets=["MICRO_EVAL_SECRET_TRACE"],
+                ),
+            )
+        ],
+    )
+    config.config_hash = "config-hash"
+    plan = build_run_plan(config, [task], project_root=tmp_path)
+
+    record = asyncio.run(ExecutionKernel(tmp_path).run(plan))
+    run_dir = tmp_path / ".micro-eval" / "runs" / record.id
+    persisted_json = "\n".join(path.read_text(errors="ignore") for path in run_dir.rglob("*.json"))
+
+    assert record.traces
+    assert record.traces[0].provider == "process"
+    assert record.traces[0].cost is not None
+    assert record.traces[0].cost.source == "unavailable"
+    assert record.results[0].trace_refs == [f"process:{record.results[0].cell_id}"]
+    assert record.decision is not None
+    assert record.decision.aggregation.per_configuration["agent"].total_cost is not None
+    assert record.decision.aggregation.per_configuration["agent"].total_cost.source == "unavailable"
+    assert "trace-secret-value" not in persisted_json
+    assert "[REDACTED:MICRO_EVAL_SECRET_TRACE]" in persisted_json
+
+
+def test_llm_judge_does_not_override_deterministic_validation_failure(tmp_path: Path, monkeypatch) -> None:
+    from micro_eval.evaluation.llm_judge import JudgeOutcome
+    import micro_eval.engine.kernel as kernel_module
+
+    class PassingJudge:
+        name = "fake-judge"
+
+        def judge(self, *, prompt, cell, result, config):  # noqa: ANN001
+            return JudgeOutcome(score=1.0, pass_fail="pass", rationale="judge liked it", scores={"overall": 1.0})
+
+    monkeypatch.setattr(kernel_module, "resolve_judge_client", lambda _config: PassingJudge())
+    task = TaskSpec(
+        id="judge-task",
+        name="Judge task",
+        input_payload="",
+        rubric="Score task alignment",
+        expectations=[{"type": "contains", "value": "expected", "stream": "stdout"}],
+    )
+    config = ProjectConfigV2(
+        project_name="judge-test",
+        configurations=[
+            ConfigurationSpec(
+                id="agent",
+                name="agent",
+                agent=AgentSpec(name="agent", command=[sys.executable, "-c", "print('actual')"]),
+            )
+        ],
+    )
+    config.judge.enabled = True
+    config.config_hash = "config-hash"
+    plan = build_run_plan(config, [task], project_root=tmp_path)
+
+    record = asyncio.run(ExecutionKernel(tmp_path).run(plan))
+    result = record.results[0]
+
+    assert result.pass_fail == "fail"
+    assert result.status.value == "fail"
+    assert any("::llm-judge::" in ref for ref in result.evaluation_refs)
+    assert any(item.kind == "judge_rationale" for item in record.evidence)
+    assert record.decision is not None
+    assert record.decision.verdict.value != "improved"

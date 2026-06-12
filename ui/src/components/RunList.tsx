@@ -12,8 +12,8 @@ function formatTimestamp(ts: string): string {
 }
 
 function passRate(run: Run, configurationId: string): string {
-  const stats = run.decision?.aggregation?.[configurationId];
-  if (stats) return `${Math.round(stats.pass_rate * 100)}%`;
+  const stats = run.decision?.aggregation.per_configuration[configurationId];
+  if (stats) return stats.pass_rate == null ? "N/A" : `${Math.round(stats.pass_rate * 100)}%`;
   const results = run.results.filter((r) => r.configuration_id === configurationId);
   if (results.length === 0) return "N/A";
   const passed = results.filter((r) =>

@@ -8,6 +8,7 @@ from typing import Any
 
 from micro_eval.models.run import CellResult, RunPlan, RunRecord, RunStatus
 from micro_eval.models.artifact import EvidenceItem
+from micro_eval.models.decision import DecisionReport
 from micro_eval.models.evaluation import EvaluationResult
 from micro_eval.models.ids import safe_path_segment
 from micro_eval.decision.summary import build_decision
@@ -50,22 +51,38 @@ class RunStore:
             migration_warnings=plan.migration_warnings,
             same_start_snapshot=plan.same_start_snapshot,
             replay_canonical=plan.replay_canonical,
+            denominator_policy=plan.denominator_policy,
         )
         self.write_run(record)
         return record
 
     def write_run(self, record: RunRecord) -> None:
-        """Persist run.json."""
-        run_path = self.run_dir(record.id, record.output_dir) / "run.json"
+        """Persist run.json and the Phase 2 decision.json projection."""
+        run_dir = self.run_dir(record.id, record.output_dir)
+        run_path = run_dir / "run.json"
         run_path.parent.mkdir(parents=True, exist_ok=True)
         run_path.write_text(record.model_dump_json(indent=2))
+        if record.decision is not None:
+            self.write_decision(record)
+
+    def write_decision(self, record: RunRecord) -> None:
+        """Persist decision.json beside run.json when a decision exists."""
+        if record.decision is None:
+            return
+        decision_path = self.run_dir(record.id, record.output_dir) / "decision.json"
+        decision_path.write_text(record.decision.model_dump_json(indent=2))
 
     def read_run(self, run_id: str, output_dir: str = ".micro-eval/runs") -> RunRecord:
-        """Read canonical run.json."""
-        path = self.run_dir(run_id, output_dir) / "run.json"
+        """Read canonical run.json, preferring sibling decision.json when present."""
+        run_dir = self.run_dir(run_id, output_dir)
+        path = run_dir / "run.json"
         if not path.exists():
             raise RunStoreError(f"Run not found: {run_id}")
-        return RunRecord.model_validate_json(path.read_text())
+        record = RunRecord.model_validate_json(path.read_text())
+        decision_path = run_dir / "decision.json"
+        if decision_path.exists():
+            record.decision = DecisionReport.model_validate_json(decision_path.read_text())
+        return record
 
     def append_cell_result(self, record: RunRecord, result: CellResult) -> RunRecord:
         """Persist one cell result and update run.json."""
@@ -138,7 +155,11 @@ class RunStore:
         for path in sorted(runs_dir.iterdir()):
             try:
                 if path.is_dir() and (path / "run.json").exists():
-                    runs.append(RunRecord.model_validate_json((path / "run.json").read_text()))
+                    record = RunRecord.model_validate_json((path / "run.json").read_text())
+                    decision_path = path / "decision.json"
+                    if decision_path.exists():
+                        record.decision = DecisionReport.model_validate_json(decision_path.read_text())
+                    runs.append(record)
                 elif path.is_file() and path.suffix == ".json":
                     import json
 

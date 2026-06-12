@@ -89,32 +89,100 @@ export const EvaluationResultSchema = z.object({
   pass_fail: z.enum(["pass", "fail"]).nullable().default(null),
   score: z.number().nullable().default(null),
   scores: z.record(z.string(), z.number()).default({}),
+  evaluator_meta: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).nullable().default(null),
+  rubric_hash: z.string().nullable().default(null),
   comment: z.string().default(""),
   evidence_refs: z.array(z.string()).default([]),
   created_at: z.string().default(""),
 });
 
-export const AggregationStatsSchema = z.object({
+export const CostMetricSchema = z.object({
   schema_version: z.string().default("1.0"),
-  total: z.number().int().default(0),
-  passed: z.number().int().default(0),
-  pass_rate: z.number().default(0),
-  mean_latency_s: z.number().nullable().default(null),
-  median_latency_s: z.number().nullable().default(null),
-  cost_usd: z.number().nullable().default(null),
+  amount: z.number().nullable().default(null),
+  currency: z.string().default("USD"),
+  source: z.string().default("unavailable"),
 });
 
-export const DecisionReportSchema = z.object({
+export const ConfigurationStatsSchema = z.preprocess((value) => {
+  if (value && typeof value === "object" && "total" in value) {
+    const legacy = value as Record<string, unknown>;
+    const total = Number(legacy.total ?? 0);
+    const passRate = Number(legacy.pass_rate ?? 0);
+    return {
+      schema_version: legacy.schema_version ?? "1.0",
+      n_cells: total,
+      n_successful: total,
+      pass_rate: legacy.pass_rate ?? null,
+      pass_at_k: total === 1 ? { 1: passRate } : null,
+      pass_hat_k: total === 1 ? { 1: passRate } : null,
+      mean_latency_ms: typeof legacy.mean_latency_s === "number" ? legacy.mean_latency_s * 1000 : null,
+      median_latency_ms: typeof legacy.median_latency_s === "number" ? legacy.median_latency_s * 1000 : null,
+      total_cost: typeof legacy.cost_usd === "number" ? { amount: legacy.cost_usd, currency: "USD", source: "legacy_cost_usd" } : null,
+      denominator_policy: "include_failed",
+      caveats: total < 3 ? ["low_sample"] : [],
+    };
+  }
+  return value;
+}, z.object({
   schema_version: z.string().default("1.0"),
+  n_cells: z.number().int().default(0),
+  n_successful: z.number().int().default(0),
+  pass_rate: z.number().nullable().default(null),
+  pass_at_k: z.record(z.string(), z.number()).nullable().default(null),
+  pass_hat_k: z.record(z.string(), z.number()).nullable().default(null),
+  mean_latency_ms: z.number().nullable().default(null),
+  median_latency_ms: z.number().nullable().default(null),
+  total_cost: CostMetricSchema.nullable().default(null),
+  denominator_policy: z.enum(["include_failed", "exclude_failed"]).default("include_failed"),
+  caveats: z.array(z.string()).default([]),
+}));
+
+export const AggregationResultSchema = z.preprocess((value) => {
+  if (value && typeof value === "object" && !("per_configuration" in value)) {
+    const raw = value as Record<string, unknown>;
+    const { schema_version, ...perConfiguration } = raw;
+    return { schema_version: schema_version ?? "1.0", per_configuration: perConfiguration };
+  }
+  return value;
+}, z.object({
+  schema_version: z.string().default("1.0"),
+  per_configuration: z.record(z.string(), ConfigurationStatsSchema).default({}),
+}));
+
+
+export const TraceRefSchema = z.object({
+  schema_version: z.string().default("1.0"),
+  trace_id: z.string(),
+  provider: z.string(),
+  external_url: z.string().nullable().default(null),
+  cost: CostMetricSchema.nullable().default(null),
+  summary: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).nullable().default(null),
+});
+
+export const DecisionReportSchema = z.preprocess((value) => {
+  if (value && typeof value === "object") {
+    const raw = value as Record<string, unknown>;
+    return {
+      ...raw,
+      timestamp: raw.timestamp ?? raw.created_at ?? "",
+      created_at: raw.created_at ?? raw.timestamp ?? "",
+      decision_report_id: raw.decision_report_id ?? "",
+    };
+  }
+  return value;
+}, z.object({
+  schema_version: z.string().default("1.0"),
+  decision_report_id: z.string().default(""),
   verdict: z.enum(["improved", "regressed", "mixed", "inconclusive", "not_comparable", "needs_human_review"]),
-  confidence: z.string(),
+  confidence: z.enum(["high", "medium", "low"]).default("low"),
   evaluation_refs: z.array(z.string()).default([]),
   evidence_refs: z.array(z.string()).default([]),
   caveats: z.array(z.string()).default([]),
-  aggregation: z.record(z.string(), AggregationStatsSchema).default({}),
-  recommended_action: z.string(),
-  created_at: z.string(),
-});
+  aggregation: AggregationResultSchema.default({ schema_version: "1.0", per_configuration: {} }),
+  recommended_action: z.string().default("review evidence"),
+  timestamp: z.string().default(""),
+  created_at: z.string().default(""),
+}));
 
 export const CellResultSchema = z.object({
   schema_version: z.string().default("1.0"),
@@ -136,6 +204,7 @@ export const CellResultSchema = z.object({
   artifact_refs: z.array(z.string()).default([]),
   evidence_refs: z.array(z.string()).default([]),
   evaluation_refs: z.array(z.string()).default([]),
+  trace_refs: z.array(z.string()).default([]),
   cell_snapshot: CellSnapshotSchema.nullable().default(null),
   snapshot_gate_result: SnapshotGateResultSchema.nullable().default(null),
 });
@@ -158,13 +227,19 @@ export const RunSchema = z.object({
   replay_canonical: ReplayCanonicalSchema.nullable().default(null),
   artifacts: z.array(ArtifactRefSchema).default([]),
   evidence: z.array(EvidenceItemSchema).default([]),
+  traces: z.array(TraceRefSchema).default([]),
   evaluations: z.array(EvaluationResultSchema).default([]),
   decision: DecisionReportSchema.nullable().default(null),
+  denominator_policy: z.enum(["include_failed", "exclude_failed"]).default("include_failed"),
 });
 
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 export type EvidenceItem = z.infer<typeof EvidenceItemSchema>;
+export type TraceRef = z.infer<typeof TraceRefSchema>;
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
+export type CostMetric = z.infer<typeof CostMetricSchema>;
+export type ConfigurationStats = z.infer<typeof ConfigurationStatsSchema>;
+export type AggregationResult = z.infer<typeof AggregationResultSchema>;
 export type CellResult = z.infer<typeof CellResultSchema>;
 export type DecisionReport = z.infer<typeof DecisionReportSchema>;
 export type Run = z.infer<typeof RunSchema>;

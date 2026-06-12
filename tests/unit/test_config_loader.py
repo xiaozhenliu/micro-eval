@@ -113,3 +113,52 @@ def test_load_legacy_config_bridge_has_warning():
     assert config.baseline.command == "cat"
     assert config.candidate.command == "cat"
     assert config.migration_warnings
+
+
+def test_trace_config_accepts_langfuse_without_credentials(tmp_path: Path) -> None:
+    config_path = tmp_path / "eval.yaml"
+    config_path.write_text(
+        """
+project_name: trace-config
+trace:
+  enabled: true
+  provider: langfuse
+configurations:
+  - id: agent
+    name: Agent
+    agent:
+      name: agent
+      command: ["python", "-c", "print('ok')"]
+"""
+    )
+
+    config = load_config(config_path)
+
+    assert config.trace.enabled is True
+    assert config.trace.provider == "langfuse"
+
+
+def test_judge_config_accepts_required_secret_names(tmp_path: Path) -> None:
+    config_path = tmp_path / "eval.yaml"
+    config_path.write_text(
+        """
+project_name: judge-config
+judge:
+  enabled: true
+  provider: deepeval
+  model: gpt-4.1-mini
+  required_secrets: [MICRO_EVAL_SECRET_OPENAI_API_KEY]
+configurations:
+  - id: agent
+    name: Agent
+    agent:
+      name: agent
+      command: ["python", "-c", "print('ok')"]
+"""
+    )
+
+    config = load_config(config_path)
+
+    assert config.judge.enabled is True
+    assert config.judge.provider == "deepeval"
+    assert config.judge.required_secrets == ["MICRO_EVAL_SECRET_OPENAI_API_KEY"]

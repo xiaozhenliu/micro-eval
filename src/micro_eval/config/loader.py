@@ -13,9 +13,11 @@ from micro_eval.models.configuration import (
     ConfigurationSpec,
     EvaluationContract,
     Guardrails,
+    JudgeConfig,
     InputMode,
     OutputMode,
     ProjectConfigV2,
+    TraceConfig,
 )
 from micro_eval.models.ids import canonical_digest, sha256_text
 from micro_eval.models.schema import AgentConfig
@@ -53,6 +55,8 @@ def load_config(path: Path | str) -> ProjectConfigV2:
             "tasks_dir": config.tasks_dir,
             "guardrails": config.guardrails,
             "evaluation": config.evaluation,
+            "trace": config.trace,
+            "judge": config.judge,
         }
     )
     return config
@@ -120,6 +124,8 @@ def _parse_canonical_config(raw: dict[str, Any]) -> ProjectConfigV2:
         output_dir=raw.get("output_dir", ".micro-eval/runs"),
         guardrails=Guardrails(**guardrails_raw),
         evaluation=EvaluationContract(**(raw.get("evaluation", {}) or {})),
+        trace=TraceConfig(**(raw.get("trace", {}) or {})),
+        judge=JudgeConfig(**(raw.get("judge", {}) or {})),
     )
 
 

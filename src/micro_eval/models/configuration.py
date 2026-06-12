@@ -169,6 +169,34 @@ class EvaluationContract(BaseModel):
         return value
 
 
+class JudgeConfig(BaseModel):
+    """Optional LLM judge configuration without inline credentials."""
+
+    schema_version: str = SCHEMA_VERSION
+    enabled: bool = False
+    provider: Literal["deepeval"] = "deepeval"
+    model: str = ""
+    temperature: float = 0.0
+    pass_threshold: float = 0.5
+    required_secrets: list[str] = Field(default_factory=list)
+
+    @field_validator("required_secrets")
+    @classmethod
+    def secrets_must_use_prefix(cls, value: list[str]) -> list[str]:
+        bad = [name for name in value if not name.startswith("MICRO_EVAL_SECRET_")]
+        if bad:
+            raise ValueError("judge.required_secrets must use MICRO_EVAL_SECRET_* names")
+        return value
+
+
+class TraceConfig(BaseModel):
+    """Optional trace provider configuration without credentials."""
+
+    schema_version: str = SCHEMA_VERSION
+    enabled: bool = False
+    provider: Literal["process", "langfuse"] = "process"
+
+
 class ProjectConfigV2(BaseModel):
     """Canonical project configuration."""
 
@@ -181,6 +209,8 @@ class ProjectConfigV2(BaseModel):
     output_dir: str = ".micro-eval/runs"
     guardrails: Guardrails = Field(default_factory=Guardrails)
     evaluation: EvaluationContract = Field(default_factory=EvaluationContract)
+    trace: TraceConfig = Field(default_factory=TraceConfig)
+    judge: JudgeConfig = Field(default_factory=JudgeConfig)
     migration_warnings: list[str] = Field(default_factory=list)
     config_hash: str = ""
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from micro_eval.decision.summary import build_decision
 from micro_eval.engine.adapter import AdapterError, AgentAdapter, Redactor
 from micro_eval.engine.workspace import PreparedWorkspace, WorkspaceError, WorkspaceManager, evaluate_snapshot_gate
+from micro_eval.evaluation.llm_judge import JudgeClient, evaluate_cell_with_judge, resolve_judge_client
 from micro_eval.evaluation.validator import validate_cell
 from micro_eval.models.artifact import EvidenceItem
 from micro_eval.models.evaluation import EvaluationResult
@@ -15,6 +16,8 @@ from micro_eval.models.ids import safe_path_segment
 from micro_eval.models.run import AdapterResult, CellResult, CellStatus, RunCell, RunPlan, RunRecord
 from micro_eval.store.artifact_store import ArtifactStore
 from micro_eval.store.run_store import RunStore
+from micro_eval.trace.process_provider import ProcessTraceProvider
+from micro_eval.trace.provider import TraceProvider, collect_trace_with_fallback
 
 
 class ExecutionKernel:
@@ -33,11 +36,13 @@ class ExecutionKernel:
         artifact_store = ArtifactStore(run_dir, artifact_cap_bytes=plan.guardrails.artifact_cap_bytes)
         adapter = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)
         workspace_manager = WorkspaceManager(self.project_root, run_id=plan.run_id)
+        trace_providers = self._trace_providers(plan)
+        judge_client = resolve_judge_client(plan.judge)
         semaphore = asyncio.Semaphore(plan.guardrails.max_concurrency)
 
         async def run_cell(cell):
             async with semaphore:
-                return await self._run_cell(cell, adapter, artifact_store, workspace_manager, record)
+                return await self._run_cell(cell, adapter, artifact_store, workspace_manager, record, trace_providers, judge_client, plan)
 
         tasks = [asyncio.create_task(run_cell(cell)) for cell in plan.cells]
         for completed in asyncio.as_completed(tasks):
@@ -45,6 +50,7 @@ class ExecutionKernel:
             record = self.run_store.append_cell_result(record, result)
         record.artifacts = artifact_store.manifest.artifacts
         record.evidence = artifact_store.manifest.evidence
+        record.traces = artifact_store.manifest.traces
         record.evaluations = []
         for result in record.results:
             eval_path = run_dir / "cells" / safe_path_segment(result.cell_id) / "evaluation.json"
@@ -65,6 +71,9 @@ class ExecutionKernel:
         artifact_store: ArtifactStore,
         workspace_manager: WorkspaceManager,
         record: RunRecord,
+        trace_providers: list[TraceProvider],
+        judge_client: JudgeClient | None,
+        plan: RunPlan,
     ) -> CellResult:
         cell_dir = artifact_store.cell_dir(cell.cell_id)
         prepared: PreparedWorkspace | None = None
@@ -137,6 +146,16 @@ class ExecutionKernel:
             },
         )
         artifact_store.add_evidence(process_evidence)
+        trace = collect_trace_with_fallback(
+            trace_providers,
+            cell=cell,
+            result=adapter_result,
+            redactor=redactor,
+        )
+        trace_refs: list[str] = []
+        if trace is not None:
+            artifact_store.add_trace(trace)
+            trace_refs.append(f"{trace.provider}:{trace.trace_id}")
         snapshot_evidence = EvidenceItem(
             evidence_id=f"{evidence_prefix}::snapshot-gate",
             kind="snapshot",
@@ -159,13 +178,33 @@ class ExecutionKernel:
         )
         for evidence in validation_evidence:
             artifact_store.add_evidence(evidence)
+        evaluations = [evaluation]
+        judge_result = evaluate_cell_with_judge(
+            cell=cell,
+            adapter_result=adapter_result,
+            validation=evaluation,
+            validation_evidence=validation_evidence,
+            config=plan.judge,
+            redactor=redactor,
+            evidence_prefix=evidence_prefix,
+            client=judge_client,
+        )
+        judge_evidence: EvidenceItem | None = None
+        if judge_result is not None:
+            judge_evaluation, judge_evidence = judge_result
+            artifact_store.add_evidence(judge_evidence)
+            evaluations.append(judge_evaluation)
 
         import json
 
-        (cell_dir / "evaluation.json").write_text(json.dumps([evaluation.model_dump(mode="json")], indent=2))
+        (cell_dir / "evaluation.json").write_text(
+            json.dumps([item.model_dump(mode="json") for item in evaluations], indent=2)
+        )
         evidence_refs = [process_evidence.evidence_id, snapshot_evidence.evidence_id] + [
             item.evidence_id for item in validation_evidence
         ]
+        if judge_evidence is not None:
+            evidence_refs.append(judge_evidence.evidence_id)
         status = adapter_result.status
         if status == CellStatus.passed and evaluation.pass_fail == "fail":
             status = CellStatus.failed
@@ -187,7 +226,24 @@ class ExecutionKernel:
             failure_mode=adapter_result.failure_mode,
             artifact_refs=[artifact.artifact_id for artifact in artifacts],
             evidence_refs=evidence_refs,
-            evaluation_refs=[evaluation.evaluation_id],
+            evaluation_refs=[item.evaluation_id for item in evaluations],
+            trace_refs=trace_refs,
             cell_snapshot=prepared.snapshot if prepared else None,
             snapshot_gate_result=snapshot_gate,
         )
+
+
+    def _trace_providers(self, plan: RunPlan) -> list[TraceProvider]:
+        """Resolve optional trace providers with process fallback."""
+        providers: list[TraceProvider] = []
+        if plan.trace.enabled and plan.trace.provider == "langfuse":
+            try:
+                from micro_eval.trace.langfuse_provider import LangfuseProvider
+
+                langfuse = LangfuseProvider.from_env()
+                if langfuse is not None:
+                    providers.append(langfuse)
+            except Exception:
+                pass
+        providers.append(ProcessTraceProvider())
+        return providers

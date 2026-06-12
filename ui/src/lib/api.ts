@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import { RunSchema, type ArtifactRef, type CellResult, type Run } from "./schema";
+import { DecisionReportSchema, RunSchema, type ArtifactRef, type CellResult, type Run, type TraceRef } from "./schema";
 
 export function getProjectRoot(): string {
   return (
@@ -30,8 +30,9 @@ export async function listRuns(): Promise<Run[]> {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     try {
-      const content = fs.readFileSync(path.join(runsDir, entry.name, "run.json"), "utf-8");
-      runs.push(RunSchema.parse(JSON.parse(content)));
+      const runDir = path.join(runsDir, entry.name);
+      const content = fs.readFileSync(path.join(runDir, "run.json"), "utf-8");
+      runs.push(parseRunWithDecision(JSON.parse(content), runDir));
     } catch (err) {
       console.warn(`Skipping invalid run directory: ${entry.name}`, err);
     }
@@ -52,7 +53,7 @@ export async function getRun(id: string): Promise<Run | null> {
 
   try {
     const content = fs.readFileSync(filePath, "utf-8");
-    return RunSchema.parse(JSON.parse(content));
+    return parseRunWithDecision(JSON.parse(content), path.dirname(filePath));
   } catch (err) {
     console.warn(`Failed to load run ${id}`, err);
     return null;
@@ -70,6 +71,17 @@ export function saveRun(run: Run): void {
   if (!runDir) throw new Error("invalid run id");
   fs.mkdirSync(runDir, { recursive: true });
   fs.writeFileSync(path.join(runDir, "run.json"), JSON.stringify(run, null, 2));
+  if (run.decision) {
+    fs.writeFileSync(path.join(runDir, "decision.json"), JSON.stringify(run.decision, null, 2));
+  }
+}
+
+function parseRunWithDecision(raw: unknown, runDir: string): Run {
+  const run = RunSchema.parse(raw);
+  const decisionPath = path.join(runDir, "decision.json");
+  if (!fs.existsSync(decisionPath)) return run;
+  const decision = DecisionReportSchema.parse(JSON.parse(fs.readFileSync(decisionPath, "utf-8")));
+  return { ...run, decision };
 }
 
 export async function getCell(runId: string, cellId: string): Promise<CellResult | null> {
@@ -100,4 +112,14 @@ export async function getArtifact(runId: string, artifactId: string): Promise<{ 
   }
 
   return { artifact, content: fs.readFileSync(realArtifactPath, "utf-8") };
+}
+
+
+export async function getCellTrace(runId: string, cellId: string): Promise<TraceRef[]> {
+  const run = await getRun(runId);
+  if (!run) return [];
+  const cell = run.results.find((result) => result.cell_id === cellId);
+  if (!cell) return [];
+  const traceByRef = new Map(run.traces.map((trace) => [`${trace.provider}:${trace.trace_id}`, trace]));
+  return cell.trace_refs.map((traceRef) => traceByRef.get(traceRef)).filter((trace): trace is TraceRef => trace != null);
 }

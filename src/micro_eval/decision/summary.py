@@ -2,36 +2,15 @@
 
 from __future__ import annotations
 
-from statistics import mean, median
-
-from micro_eval.models.decision import AggregationStats, DecisionReport, DecisionStatus
+from micro_eval.decision.aggregation import build_aggregation
+from micro_eval.models.decision import DecisionReport, DecisionStatus
 from micro_eval.models.ids import compact_timestamp
-from micro_eval.models.run import CellResult, RunRecord
+from micro_eval.models.run import RunRecord
 
 
 def build_decision(record: RunRecord) -> DecisionReport:
-    """Build a guarded MVP decision from available cell facts."""
-    aggregation: dict[str, AggregationStats] = {}
-    by_config: dict[str, list[CellResult]] = {}
-    for result in record.results:
-        by_config.setdefault(result.configuration_id, []).append(result)
-
-    for config_id, results in by_config.items():
-        total = len(results)
-        passed = sum(
-            1
-            for result in results
-            if (result.pass_fail == "pass" if result.pass_fail is not None else result.status.value == "pass")
-        )
-        latencies = [result.latency_s for result in results]
-        aggregation[config_id] = AggregationStats(
-            total=total,
-            passed=passed,
-            pass_rate=passed / total if total else 0.0,
-            mean_latency_s=mean(latencies) if latencies else None,
-            median_latency_s=median(latencies) if latencies else None,
-        )
-
+    """Build a guarded decision from available cell facts."""
+    aggregation = build_aggregation(record.results, traces=record.traces, denominator_policy=record.denominator_policy)
     evaluation_refs = [ref for result in record.results for ref in result.evaluation_refs]
     evidence_refs = [ref for result in record.results for ref in result.evidence_refs]
     caveats = list(record.migration_warnings)
@@ -49,8 +28,10 @@ def build_decision(record: RunRecord) -> DecisionReport:
         caveats.append("run is partial; not all cells completed")
     if len(record.configurations) < 2:
         caveats.append("single configuration run cannot produce comparative verdict")
-    for config_id, stats in aggregation.items():
-        if stats.total < 3:
+    if any("low_sample" in stats.caveats for stats in aggregation.per_configuration.values()):
+        caveats.append("low_sample")
+    for config_id, stats in aggregation.per_configuration.items():
+        if "low_sample" in stats.caveats:
             caveats.append(f"low sample size for {config_id}: repetitions < 3")
 
     verdict = DecisionStatus.inconclusive
@@ -62,13 +43,28 @@ def build_decision(record: RunRecord) -> DecisionReport:
         verdict = DecisionStatus.needs_human_review
         recommended = "collect evaluation evidence before deciding"
 
+    timestamp = compact_timestamp()
     return DecisionReport(
+        decision_report_id=f"{record.id}::decision::{timestamp}",
         verdict=verdict,
         confidence="low",
         evaluation_refs=evaluation_refs,
         evidence_refs=evidence_refs,
-        caveats=caveats,
+        caveats=_dedupe(caveats),
         aggregation=aggregation,
         recommended_action=recommended,
-        created_at=compact_timestamp(),
+        timestamp=timestamp,
+        created_at=timestamp,
     )
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    """Keep caveat order while removing duplicates."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result

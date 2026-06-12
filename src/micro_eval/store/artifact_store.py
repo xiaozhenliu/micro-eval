@@ -6,7 +6,7 @@ import stat
 import uuid
 from pathlib import Path
 
-from micro_eval.models.artifact import ArtifactRef, EvidenceItem, Manifest
+from micro_eval.models.artifact import ArtifactRef, EvidenceItem, Manifest, TraceRef
 from micro_eval.models.ids import safe_path_segment, sha256_bytes
 
 
@@ -113,6 +113,17 @@ class ArtifactStore:
         self.manifest.evidence = existing + [evidence]
         self.save()
         return evidence
+
+    def add_trace(self, trace: TraceRef) -> TraceRef:
+        """Add a normalized trace reference and update manifest."""
+        existing = [
+            item
+            for item in self.manifest.traces
+            if not (item.trace_id == trace.trace_id and item.provider == trace.provider)
+        ]
+        self.manifest.traces = existing + [trace]
+        self.save()
+        return trace
 
     def save(self) -> None:
         """Write manifest.json."""
