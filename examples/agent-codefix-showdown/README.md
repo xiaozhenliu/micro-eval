@@ -3,7 +3,7 @@ title: Agent Codefix Showdown
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T10:18+08:00
-updated_at: 2026-06-03T18:08+08:00
+updated_at: 2026-06-12T20:20+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -35,6 +35,9 @@ use case without writing their own `eval.yaml`, task, or fixture workspace.
 - argv-only wrapper commands.
 - Deterministic validator expectations.
 - `list`, text report, HTML report, and optional source-checkout UI viewing.
+- Phase 2: repetitions aggregation (pass@k / pass^k via the mock path),
+  process-level trace capture, an independent `decision.json`, and the
+  review page in the source-checkout UI.
 
 The task asks an agent to fix a tiny Python ledger rounding bug. The wrapper
 then runs the copied workspace's unittest suite with the current Python
@@ -69,6 +72,29 @@ The script runs from this example directory, so `.micro-eval/runs` and
 under `.micro-eval/workspaces/{run_id}/{cell_id}/` in this example directory and
 then cleaned up. Open `examples/agent-codefix-showdown/report.html` in a browser
 to inspect the static report.
+
+### What Phase 2 adds to this smoke run
+
+The mock path runs `repetitions: 3` with process trace capture enabled, so a
+single smoke run demonstrates the Phase 2 surfaces:
+
+- **pass@k / pass^k** — the text and HTML reports show per-configuration
+  aggregation instead of a single pass rate; with 3 successful repetitions
+  there is no `low_sample` caveat.
+- **`decision.json`** — written next to `run.json` under
+  `.micro-eval/runs/{run_id}/`, with a `decision_report_id` and
+  per-configuration stats including `denominator_policy`.
+- **TraceRef + cost source** — each cell records a process-level trace
+  (wall clock, exit code); the report annotates cost as unavailable unless a
+  Langfuse trace or agent-reported cost exists (see `trace:` in
+  `eval.mock.yaml` for switching providers).
+- **Review page** — with the source-checkout UI running, open
+  `http://localhost:3000/run/{run_id}/review` for the verdict, caveats,
+  matrix heatmap, and cost panel.
+
+The optional LLM judge (`judge:` block) stays disabled here to keep the smoke
+path offline. When enabled it only supplements deterministic validation and
+never overrides a deterministic failure.
 
 ## Real-agent run
 

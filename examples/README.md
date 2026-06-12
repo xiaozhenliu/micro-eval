@@ -3,7 +3,7 @@ title: micro-eval Examples
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T10:18+08:00
-updated_at: 2026-06-03T17:35+08:00
+updated_at: 2026-06-12T20:20+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -29,7 +29,7 @@ This directory contains source-checkout examples for `micro-eval`.
 
 | Use case | What it demonstrates |
 | --- | --- |
-| [Agent Codefix Showdown](agent-codefix-showdown/) | A complete MVP run over one local code-fix task, with a real-agent matrix for Claude Code, Codex CLI, OpenClaw, and Hermes plus a deterministic mock smoke path. |
+| [Agent Codefix Showdown](agent-codefix-showdown/) | A complete run over one local code-fix task, with a real-agent matrix for Claude Code, Codex CLI, OpenClaw, and Hermes plus a deterministic mock smoke path. The mock path runs 3 repetitions with process trace capture, demonstrating Phase 2 pass@k aggregation, `decision.json`, and the review UI. |
 
 ## Quick start
 

@@ -80,3 +80,19 @@ evaluation:
   min_repetitions: 1
   required_evaluators: [validator]
   denominator_policy: include_failed
+
+# Phase 2 (optional): trace capture and supplemental LLM judge.
+# Both disabled by default for the real-agent matrix; see eval.mock.yaml for
+# an enabled process-trace example and eval.yaml.example at the repo root for
+# full field documentation.
+trace:
+  enabled: false
+  provider: process  # process | langfuse (needs LANGFUSE_* env vars)
+
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

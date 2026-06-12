@@ -8,7 +8,9 @@ configurations:
   - id: mock-local
     name: Local mock fixer
     role: baseline
-    repetitions: 1
+    # 3 deterministic repetitions: zero cost, and the report/decision.json
+    # show real pass@k / pass^k aggregation instead of a low_sample caveat.
+    repetitions: 3
     agent:
       name: Local mock fixer
       command: ["{python}", "workspace/scripts/mock-fix-agent.py", "{output_file}"]
@@ -41,3 +43,20 @@ evaluation:
   min_repetitions: 1
   required_evaluators: [validator]
   denominator_policy: include_failed
+
+# Phase 2: process-level trace capture (wall clock, exit code, trace_id).
+# Switch provider to "langfuse" only after exporting LANGFUSE_PUBLIC_KEY /
+# LANGFUSE_SECRET_KEY; without credentials it degrades back to process.
+trace:
+  enabled: true
+  provider: process
+
+# Phase 2: optional supplemental LLM judge. Disabled here to keep the smoke
+# path offline; it never overrides deterministic validation failures.
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []
