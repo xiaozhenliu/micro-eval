@@ -14,6 +14,9 @@ AGENTS_PUBLISH_TEMPLATE="$TEMPLATE_DIR/agents-publish-template.md"
 CLAUDE_PUBLISH_TEMPLATE="$TEMPLATE_DIR/claude-publish-template.md"
 
 EXCLUDED_DIRS=(
+  ".codex"
+  ".understand-anything"
+  "docs/dev"
   "docs/superpowers"
   "docs/_archive"
   "docs/references"
@@ -26,6 +29,9 @@ EXCLUDED_FILES=(
 )
 
 MAIN_GITIGNORE_PATTERNS=(
+  ".codex/"
+  ".understand-anything/"
+  "docs/dev/"
   "docs/superpowers/"
   "docs/_archive/"
   "docs/references/"
@@ -146,9 +152,9 @@ fi
   done
   git add .gitignore
 
-  if [[ -n "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')" ]]; then
-    echo "Error: dev-only docs are still tracked in the release tree" >&2
-    git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*' >&2
+  if [[ -n "$(git ls-files '.codex/*' '.understand-anything/*' 'docs/dev/*' 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')" ]]; then
+    echo "Error: dev-only release exclusions are still tracked in the release tree" >&2
+    git ls-files '.codex/*' '.understand-anything/*' 'docs/dev/*' 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*' >&2
     exit 1
   fi
 

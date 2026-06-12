@@ -24,6 +24,9 @@ scripts/release-to-main.sh dev main
 
 `main` 不得跟踪以下 dev-only 内容：
 
+- `.codex/`
+- `.understand-anything/`
+- `docs/dev/`
 - `docs/superpowers/`
 - `docs/_archive/`
 - `docs/references/`
@@ -38,10 +41,10 @@ scripts/release-to-main.sh dev main
 
 完整可执行 release 流程以项目级 skill `.codex/skills/micro-eval-release/SKILL.md` 及其 bundled scripts/assets 为准；本节只保留不可违反的 main 发布边界。
 
-发布后必须确认 main 没有跟踪 dev-only docs：
+发布后必须确认 main 没有跟踪 dev-only 内容：
 
 ```bash
-test -z "$(git ls-files 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
+test -z "$(git ls-files '.codex/*' '.understand-anything/*' 'docs/dev/*' 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
 ```
 
 ## 执行任务前的行动路由

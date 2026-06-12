@@ -64,7 +64,7 @@ If code changes touch subprocess, env, artifacts, workspace, report, or UI/API e
     scripts/release-to-main.sh dev main
     ```
     The wrapper delegates to this skill's `scripts/release-to-main.sh`.
-11. Verify `main` excludes dev-only docs and generated publish templates match the skill assets.
+11. Verify `main` excludes dev-only release exclusions and generated publish templates match the skill assets.
 12. Create a local annotated tag only if approved. Do not push unless explicitly approved.
 
 ## Hard gates
@@ -74,7 +74,7 @@ If code changes touch subprocess, env, artifacts, workspace, report, or UI/API e
 - Abort if release evidence or dependency inventory is missing.
 - Abort if trusted paths contain `create_subprocess_shell` or `shell=True`.
 - Abort if `git diff --check`, `git diff --cached --check`, tests, build, or package build fail.
-- Abort if release publishing reports a dirty source tree or `main` keeps dev-only docs.
+- Abort if release publishing reports a dirty source tree or `main` keeps dev-only release exclusions.
 - Never record secrets, credential paths, absolute local executable paths, home-directory paths, or environment dumps in release docs.
 
 ## Validation commands
@@ -90,7 +90,7 @@ For release publishing:
 
 ```bash
 scripts/release-to-main.sh dev main
-if git ls-tree -r --name-only main | grep -E '^(docs/superpowers/|docs/_archive/|docs/references/|docs/bug_reports/|micro-eval-brd\.md|micro-eval-prd\.md$)'; then
+if git ls-tree -r --name-only main | grep -E '^(\.codex/|\.understand-anything/|docs/dev/|docs/superpowers/|docs/_archive/|docs/references/|docs/bug_reports/|micro-eval-brd\.md|micro-eval-prd\.md$)'; then
   echo 'main contains dev-only release exclusions' >&2
   exit 1
 fi

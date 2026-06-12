@@ -3,7 +3,7 @@ title: micro-eval 产品/服务安全规范
 doc_type: reference
 status: active
 created_at: 2026-06-03T09:28+08:00
-updated_at: 2026-06-03T09:28+08:00
+updated_at: 2026-06-12T13:05+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -36,7 +36,7 @@ related:
 
 ## 发布与分支边界
 
-- `main` 发布分支不得跟踪 `docs/superpowers/`、`docs/_archive/`、`docs/references/`、BRD、PRD。
+- `main` 发布分支不得跟踪 `.codex/`、`.understand-anything/`、`docs/dev/`、`docs/superpowers/`、`docs/_archive/`、`docs/references/`、`docs/bug_reports/`、BRD、PRD。
 - 发布 evidence 必须记录安全相关验证结果。
 - 发布脚本生成的 `AGENTS.md` / `CLAUDE.md` 只能提供 main 分支必要 guardrails，不应泄露 dev-only 内容。
 

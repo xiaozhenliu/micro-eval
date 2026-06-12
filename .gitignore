@@ -29,3 +29,6 @@ examples/**/report.html
 CLAUDE.md
 micro-eval-brd.md
 micro-eval-prd.md
+
+# Local analysis/tool caches
+.understand-anything/

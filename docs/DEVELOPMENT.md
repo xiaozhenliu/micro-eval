@@ -1,12 +1,12 @@
 # 开发指南
 
-本文是当前 0.1.3 MVP 实现的工程入口。正式工程规范仍以 `docs/engineering/` 为准；长期架构/范围权威来源仍是：
+本文是当前 0.2.0 Phase 2 实现的工程入口。正式工程规范仍以 `docs/engineering/` 为准；长期架构/范围权威来源仍是：
 
 - `docs/superpowers/specs/2026-06-02-unicorn-design.md`
 - `docs/superpowers/specs/2026-06-02-mvp-profile.md`
 - `docs/superpowers/specs/2026-06-02-test-architecture.md`
 
-MVP release evidence 见 `docs/releases/2026-06-02-mvp-release-evidence.md`；完整 release 流程见 `docs/engineering/release-process.md`。
+MVP release evidence 见 `docs/releases/2026-06-02-mvp-release-evidence.md`；0.2.0 release evidence 见 `docs/releases/2026-06-12-v0.2.0-release-evidence.md`。完整 release 流程见项目级 release skill `.codex/skills/micro-eval-release/SKILL.md`。
 
 ## 开发原则
 
@@ -89,14 +89,15 @@ src/micro_eval/
 ├── cli/                 # init / validate / run / list / report / ui
 ├── config/              # loader bridge + RunPlan builder
 ├── engine/              # AgentAdapter, ExecutionKernel, WorkspaceManager
-├── evaluation/          # deterministic validator + human evaluation helper
-├── decision/            # guarded DecisionReport / Basic Honest Stats
+├── evaluation/          # deterministic validator + human evaluation + optional LLM judge helper
+├── decision/            # guarded DecisionReport + pass@k/pass^k aggregation
+├── trace/               # optional TraceProvider adapters (process fallback, Langfuse optional)
 ├── models/              # canonical Pydantic contracts
 └── store/               # RunStore / ArtifactStore
 
 ui/src/
-├── app/                 # pages and API routes
-├── components/          # RunList, ResultMatrix, CellDetail, ArtifactViewer, EvaluationPanel
+├── app/                 # pages and API routes, including /run/[id]/review and trace lookup API
+├── components/          # RunList, ResultMatrix, CellDetail, ArtifactViewer, EvaluationPanel, review panels
 └── lib/                 # zod schema, fs data access, evaluation append helpers, contract fixture
 ```
 
@@ -105,10 +106,11 @@ ui/src/
 1. `load_config()` 读取 canonical `configurations[]`；legacy `baseline` / `candidate` 只通过 migration bridge 转换。
 2. `build_run_plan()` 展开 `tasks × configurations × repetitions`，生成 `SameStartSnapshot` 与 `ReplayCanonical`。
 3. `ExecutionKernel` 为每个 cell 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
-4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence。
-5. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json`，`ArtifactStore` 写入 `manifest.json`。
-6. `build_decision()` 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
-7. UI/API 通过 zod 读取 canonical JSON；human evaluation POST append 到 cell `evaluation.json` 并重算 `run.json.decision`。
+4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence；如 `judge.enabled=true`，可追加 supplemental judge evaluation，但不得覆盖 deterministic cell pass/fail。
+5. `TraceProvider` 在 `trace.enabled=true` 时收集 `TraceRef`；`process` fallback 不需要 SDK，`langfuse` 通过 optional extra/importlib 接入。
+6. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json` 和 sibling `decision.json`，`ArtifactStore` 写入 `manifest.json`（含 artifacts/evidence/traces）。
+7. `build_decision()` 基于 pass@k/pass^k、latency、cost source 与 caveat 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
+8. UI/API 通过 zod 读取 canonical JSON；human evaluation POST append 到 cell `evaluation.json` 并重算 `decision.json` / `run.json.decision`。
 
 ## Workspace boundary
 
@@ -160,6 +162,7 @@ uv run --project /path/to/micro-eval micro-eval report --format html --output re
 - **artifact safety**：reserved stdout/stderr/output paths are written atomically; symlink, hardlink, non-regular, oversized, and binary artifacts are skipped or represented with warnings/placeholders.
 - **raw artifact access**：Decision/UI consume refs and summaries; raw text content is available only through explicit manifest `artifact_id` lookup plus run-dir `realpath` boundary validation.
 - **snapshot mismatch**：Decision must stay guarded and never claim strong improvement/regression when comparability is degraded.
+- **trace/judge safety**：Trace 和 LLM judge 默认关闭；外部 SDK 只能通过 optional extra/importlib 接入，凭证只用 `MICRO_EVAL_SECRET_*` 环境变量，不写入 config/artifact/release docs。
 
 Workspace 相关改动建议额外检查：
 
@@ -176,5 +179,5 @@ Before claiming a release-ready MVP:
 3. Build the package with `uv build`.
 4. Install the wheel in a Python `>=3.11` virtual environment and run a CLI smoke.
 5. Run or review UltraQA adversarial scenarios for normal path, malformed argv, misleading exit code, timeout, secret leakage, artifact traversal, and binary artifact handling.
-6. Get independent code-review and architecture review evidence.
-7. Record final evidence in `docs/releases/` and follow `docs/engineering/release-process.md` for version, dependency inventory, commit, tag, and dev→main projection gates.
+6. Get independent code-review and architecture review evidence when the release risk warrants it.
+7. Record final evidence in `docs/releases/`, generate dependency inventory with `.codex/skills/micro-eval-release/scripts/generate-dependency-inventory.py --version <version>`, and follow `.codex/skills/micro-eval-release/SKILL.md` for version, commit, tag, and dev→main projection gates.
