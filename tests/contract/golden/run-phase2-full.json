@@ -397,7 +397,7 @@
             "currency": "USD",
             "source": "unavailable"
           },
-          "denominator_policy": "include_failed",
+          "denominator_policy": "exclude_failed",
           "caveats": []
         },
         "candidate": {
@@ -423,7 +423,7 @@
             "currency": "USD",
             "source": "unavailable"
           },
-          "denominator_policy": "include_failed",
+          "denominator_policy": "exclude_failed",
           "caveats": []
         }
       }
@@ -432,5 +432,5 @@
     "recommended_action": "investigate candidate regression",
     "created_at": "20260612T000000Z"
   },
-  "denominator_policy": "include_failed"
+  "denominator_policy": "exclude_failed"
 }

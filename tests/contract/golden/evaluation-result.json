@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "evaluation_id": "cell-b1::llm-judge::abc111",
+  "cell_id": "cell-b1",
+  "evaluator_type": "llm_judge",
+  "evaluator": "fake-judge",
+  "pass_fail": "pass",
+  "score": 0.95,
+  "scores": {
+    "overall": 0.95,
+    "correctness": 1.0
+  },
+  "evaluator_meta": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.0
+  },
+  "rubric_hash": "rubric-hash-abc",
+  "comment": "Meets all criteria",
+  "evidence_refs": [
+    "cell-b1::evidence::judge"
+  ],
+  "created_at": "20260612T000000Z"
+}

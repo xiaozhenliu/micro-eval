@@ -19,7 +19,7 @@ from micro_eval.models.run import RunRecord
 from micro_eval.store.run_store import RunStore
 
 # Path to the committed v0.1.x fixture
-LEGACY_FIXTURE = Path(__file__).parent.parent / "fixtures" / "legacy" / "run-v01x-embedded-decision.json"
+LEGACY_FIXTURE = Path(__file__).parent.parent / "contract" / "golden" / "run-legacy-v01x.json"
 
 
 def test_legacy_fixture_parses_with_pydantic() -> None:
