@@ -40,14 +40,14 @@ tags:
     ╱────────╲
 ```
 
-| 层 | 测什么 | 工具 | 当前状态（2026-06-12，v0.2.0） |
+| 层 | 测什么 | 工具 | 当前状态（2026-06-12，v0.2.1） |
 |---|---|---|---|
-| Unit | 单模块逻辑、纯函数、边界 | pytest（Py）/ vitest（TS） | Py 87 个；TS 3 个（evaluation 纯函数） |
-| Contract | 跨模块对象 schema、跨语言 parity | pytest + 生成/校验 | 部分（canonical fixture 机制已建，未覆盖 Phase 2 字段） |
-| UI Route Contract | API route 消费 Python 产物、zod 严格解析 | vitest + 共享 fixture | **未落地（P0，见 §4.1）** |
+| Unit | 单模块逻辑、纯函数、边界 | pytest（Py）/ vitest（TS） | Py 89 个；TS 3 个（evaluation 纯函数） |
+| Contract | 跨模块对象 schema、跨语言 parity | pytest + 生成/校验 | 已落地：canonical（P0 + Phase 2）与 legacy fixture 双端校验 |
+| UI Route Contract | API route 消费 Python 产物、zod 严格解析 | vitest + 共享 fixture | 已落地（§4.1，10 用例） |
 | Integration | 多模块协作、Provider 解析 | pytest + 受控 subprocess | 部分（runner、kernel、store） |
-| E2E | CLI 全流程、产物结构 | pytest + tmp project | 22 个，全部基于 Phase 1 链路（缺口见 §5.1） |
-| UI | 组件渲染、run viewer | vitest + Testing Library | 未落地（仅 §5.1 ISSUE-5 范围内补关键断言） |
+| E2E | CLI 全流程、产物结构 | pytest + tmp project | 33 个：Phase 1 链路 + Phase 2 黄金路径 + legacy 兼容 + CLI 失败路径 |
+| UI | 组件渲染、run viewer | vitest + Testing Library | 关键断言已落地（Decision Surface 诚实性 2 用例），不做系统性组件测试 |
 
 ## 3. 按模块的测试规格（投影自 Unicorn Part I §5）
 
@@ -204,14 +204,14 @@ Pydantic model ──► 生成 JSON 样本 ──► zod.parse(样本) 必须�
 - M3 后：Python unit + integration ≥ 75%；UI ≥ 40%
 - M4 后：总体 ≥ 80%
 
-当前实际（2026-06-12，v0.2.0）：Python 总覆盖 77%（109 tests）；
+当前实际（2026-06-12，v0.2.1）：Python 总覆盖 78%（122 tests）+ vitest 18 tests；
 关键模块：aggregation 97%、validator 94%、run_store 96%、langfuse_provider 80%
 （剩余为真实 SDK 路径，按 §6 mock 策略有意不测）。
 
-### 5.1 Phase 2 收口后登记的测试缺口（待实施）
+### 5.1 Phase 2 收口后登记的测试缺口（已实施，v0.2.1）
 
-> 登记自 `docs/bug_reports/2026-06-12-1810-e2e-integration-test-gaps.md`，
-> 验收标准以该文档为准。实施顺序按严重度。
+> 登记自 `docs/bug_reports/2026-06-12-1810-e2e-integration-test-gaps.md`（已 resolved）。
+> 五项均已于 v0.2.1 交付：Python 122 tests、vitest 18 tests。
 
 | Issue | 层级 | 内容 | 严重度 |
 |---|---|---|---|
@@ -221,8 +221,8 @@ Pydantic model ──► 生成 JSON 样本 ──► zod.parse(样本) 必须�
 | ISSUE-4 | E2E | CLI 失败路径契约（退出码 + 报错文案，subprocess） | P2 |
 | ISSUE-5 | UI | Decision Surface 诚实性断言（不显示 winner、low_sample 可见） | P2 |
 
-两个 P0 必须在 Phase 3 执行链路改动（Docker sandbox、复杂 workspace）
-动工前完成。
+两个 P0 已在 Phase 3 执行链路改动（Docker sandbox、复杂 workspace）
+动工前完成；Phase 3 改动以 ISSUE-1/2 的测试为主要回归防线。
 
 ## 6. 测试数据 / Fixtures / Mock 策略
 

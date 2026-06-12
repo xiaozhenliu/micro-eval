@@ -2,6 +2,17 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.1 - 2026-06-12
+
+### Added
+
+- Add cross-language API route contract tests: Python-generated Phase 2 fixtures (run + decision) consumed by both pytest (Pydantic) and vitest (zod), guarding the `.micro-eval/` JSON boundary.
+- Add a Phase 2 golden-path e2e covering trace + mock judge + decision.json + report cost source in one flow, including the judge-cannot-override-deterministic-failure contract.
+- Add a frozen v0.1.x legacy run fixture with compatibility tests on both the Python store/CLI side and the UI zod schema side.
+- Add CLI failure-path e2e tests asserting non-zero exit codes and error messages for invalid config, unknown run id, and malformed YAML.
+- Add Decision Surface honesty assertions: `not_comparable` runs render no winner marker; `low_sample` caveats are visible.
+- Add unit tests closing coverage gaps in the Langfuse provider (degradation, cost ladder, redaction), deterministic validator (path-escape, command, redaction branches), and run store boundaries (root escape, legacy fallback).
+
 ## 0.2.0 - 2026-06-12
 
 ### Added

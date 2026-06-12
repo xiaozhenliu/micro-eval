@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
-v0.2.0 已完成：Phase 2 全部四个里程碑（P2-a 统计聚合 + decision.json 独立化、P2-b Trace 适配层 + Langfuse 接入、P2-c 复盘页 + 成本分析 UI、P2-d LLM judge，含 stretch）已交付。Python CLI + Next.js 本地 Web UI 均可运行。92 个 pytest 测试通过。
+v0.2.1 已完成：Phase 2 全部四个里程碑（P2-a 统计聚合 + decision.json 独立化、P2-b Trace 适配层 + Langfuse 接入、P2-c 复盘页 + 成本分析 UI、P2-d LLM judge，含 stretch）已交付，测试架构缺口（跨语言契约、黄金路径 e2e、legacy 兼容、CLI 失败路径、Decision Surface 断言）已补齐。Python CLI + Next.js 本地 Web UI 均可运行。122 个 pytest 测试 + 18 个 vitest 测试通过，Python 覆盖率 78%。
 
 ## 开发方法硬规则
 

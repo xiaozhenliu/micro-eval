@@ -1,9 +1,9 @@
 ---
 title: E2E 与集成测试缺口（Issue 清单）
 doc_type: analysis
-status: active
+status: resolved
 created_at: 2026-06-12T18:10+08:00
-updated_at: 2026-06-12T18:10+08:00
+updated_at: 2026-06-12T19:30+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -18,6 +18,13 @@ related:
 ---
 
 # E2E 与集成测试缺口（Issue 清单）
+
+> **修复状态（2026-06-12，v0.2.1）**：五个 ISSUE 全部实施完成。
+> 新增 13 个 Python 测试（122 passed）与 15 个 vitest 用例（18 passed），
+> lint/build/shell-interpolation grep 全部通过。
+> 关键产物：`canonical-run-phase2.json`（Python 产出、双端契约校验）、
+> `tests/e2e/test_phase2_golden_path.py`、`tests/fixtures/legacy/`、
+> `tests/e2e/test_cli_failure_paths.py`、`DecisionSummary.test.tsx`。
 
 ## 背景
 
