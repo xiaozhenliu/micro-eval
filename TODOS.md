@@ -7,20 +7,18 @@
 > - **无 issue 的事项必须展开**：待做事项 + 关联文件，信息密度达到"新会话不靠考古就能动手"。
 > - 完成项一行留档进 Done，定期清入 CHANGELOG 后删除。
 >
-> 最近整理：2026-06-14（v0.2.10 发布后）。所有 GitHub issue #1–#14 已解决或明确延后（#9 仅剩错误分类重构）；Phase 3 设计文档已交付；P3 已清空。剩余仅 Phase 3 **实施**（未来里程碑，按 plan）与若干 Blocked 项（解除条件未到）。
+> 最近整理：2026-06-14（v0.3.0 发布后）。Phase 3 全部五个里程碑已交付（P3-a→P3-e）。所有 GitHub issue #1–#14 已解决或明确延后。P0/P1/P3 已清空；P2 仅剩 #9 错误分类重构（低价值）。
 
 ## Ready
 
 ### P0
-- **Phase 3 实施**（里程碑，设计文档已交付）
-  - **设计:** `docs/superpowers/plans/2026-06-14-phase3-implementation-plan.md`（codename `reproducible_sandbox.v1`）——provider 化 sandbox（本地 OS 策略 + 远程 E2B/Modal，不用本地 Docker）、复杂 workspace、趋势分析。串行接入 P3-a→P3-e。
-  - **注意:** 执行链路改动安全敏感度高（网络边界、信任等级降级面、凭证传递），每里程碑动工前过 `docs/engineering/security-guidelines.md` 评审。两个 P0 测试防线（跨语言契约、黄金路径 e2e）已就位作为回归保障。
+- *(P0 已清空：Phase 3 全部交付)*
 
 ### P1
-- *(P1 已清空：#10/#1/#6/#12/#5 均已交付)*
+- *(P1 已清空)*
 
 ### P2
-- **#9**（接近完成）已交付：v0.2.9 concurrency=4 + artifact cap 50MB + truncation flag 持久化；spec 对齐 trace_id 格式（`::`=cell_id，注明 cost 聚合承重）、redactor 命名（SecretRedactor→Redactor + MICRO_EVAL_SECRET_* 通道）、EvidenceItem/Artifact schema 字段对齐权威模型。**仅剩**错误分类命名 + crash 区分（enum 重构，低价值/有回归风险，后续视需要再做）。
+- **#9**（接近完成）已交付：v0.2.9 concurrency=4 + artifact cap 50MB + truncation flag 持久化；spec 对齐 trace_id/redactor/evidence schema。**仅剩**错误分类命名 + crash 区分（enum 重构，低价值/有回归风险，后续视需要再做）。
 
 ### P3
 - *(P3 已清空)*
@@ -49,13 +47,14 @@
 - **待做:** ① run 级 wall-clock 超时；② SIGINT 优雅取消（已完成 cell 落盘）；③ 断点恢复（跳过已有结果的 cell 重跑剩余矩阵）。三项可独立交付，断点恢复依赖 run_store 的 cell 级幂等写入。
 - **已交付部分:** `--max-concurrency`（CLI + guardrails）、per-cell timeout、`stop_on_cell_error`。
 
-### JSON 文件存储 → SQLite 迁移
-- **解除条件:** 出现跨 run 查询需求（趋势分析、Phase 3 触发）。
-- **关联文件:** `src/micro_eval/store/run_store.py`、`src/micro_eval/store/artifact_store.py`、ui API routes（直接读 `.micro-eval/` JSON）。
-- **待做:** schema_version 字段已预留；迁移时需同步改 UI 数据读取层（API routes 不能再直接读 JSON 文件）。
+### JSON 文件存储 → SQLite 迁移（已部分交付 — P3-e）
+- **已交付（v0.3.0）:** SQLite 索引层 `sqlite_store.py`，JSON 仍为 source of truth，趋势 API route 经 SQLite 查询。
+- **剩余:** UI 数据读取层全面改经 store 抽象（当前仍直读 JSON），artifact_store SQLite 索引。
+- **解除条件:** UI 性能出现瓶颈（大量 run 列表加载慢）。
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **Phase 3 实施**（v0.3.0，5 个里程碑全部交付）—— P3-a WorkspaceProvider Protocol + registry + GitWorktreeProvider 重构；P3-b Seatbelt/Bubblewrap OS 策略 provider；P3-c E2B/Modal 远程 provider（可选）；P3-d 多源 fixture digest + toolchain fingerprint；P3-e SQLite 索引 + 趋势分析 + drift breakpoint。224 pytest + 48 vitest 全绿。
 - **本地残留分支清理**（无 issue）—— 移除 4 个陈旧 `worktree-wf_*`（Workflow 隔离孤立残留，指向废弃的 5/30 提交，锁定进程已死）+ 其 worktree。`codex/bench-*` 与 `/private/tmp/micro-eval-agent-bench-*` 的 detached worktree 是 agent 能力评估用、与项目开发无关，**保留**。
 - **Run ordering 随机化**（v0.2.10，无 issue）—— RunRecord 始终记 `execution_order`；opt-in `Guardrails.randomize_execution_order` 用 seeded RNG 打乱并记 `execution_seed`（可复现）；默认关保持确定性。
 - **#9 spec 对齐**（v0.2.9 + docs）—— concurrency=4、artifact cap 50MB、truncation flag 持久化（代码）；trace_id/redactor/evidence schema 对齐权威 spec（docs）。仅剩错误分类重构未做。

@@ -2,6 +2,33 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.0 - 2026-06-14
+
+### Added
+
+- **P3-a: WorkspaceProvider abstraction** — introduce `WorkspaceProvider` Protocol, `ProviderRegistry`, and `IsolationLevel`/`TrustLevel`/`NetworkPolicy` enums (spec §3.4.4). Refactor the existing worktree logic into `GitWorktreeProvider` (Level 0, logical isolation). `WorkspaceManager` becomes a registry facade; all existing behavior is preserved (zero behavior change).
+- **P3-b: OS policy sandbox** — add `SeatbeltProvider` (macOS `sandbox-exec`) and `BubblewrapProvider` (Linux `bwrap`) for Level 1 semi-trusted isolation. Filesystem writes restricted to workspace directory; network policy configurable (full/allowlist/none). Platform unavailability degrades gracefully to Level 0 with a caveat; higher levels (container/vm) never degrade locally.
+- **P3-c: Remote providers** — add `E2BProvider` (VM, Level 4 adversarial) and `ModalProvider` (container, Level 3 untrusted) for remote sandbox execution. Credentials required via `MICRO_EVAL_SECRET_*` env vars; missing credentials → fail hard with clear error (no silent local degradation). Artifact/stdout/stderr handling follows existing redaction and cap boundaries.
+- **P3-d: Complex workspace types** — add `FixtureSource` (per-source sha256 digest) and `ToolchainSpec` (runtime/lockfile declaration) to `WorkspaceSpec`. Fixture digests and toolchain fingerprint flow into `SameStartSnapshot` as comparability dimensions; mismatches produce caveats through the existing P0-b gate.
+- **P3-e: Trend analysis + SQLite** — add `SqliteStore` as a derived index over JSON run data (JSON remains source of truth). `run_store.finalize_run` auto-indexes to SQLite; existing JSON runs importable via `import_json_runs`. Add `compute_trend`/`compute_all_trends` with drift-aware breakpoints (reusing #2 configuration drift logic). Add Next.js `/api/trends` route backed by `better-sqlite3`.
+- New fields on `SameStartSnapshot`: `sandbox_policy`, `network_policy`, `toolchain_fingerprint`, `fixture_digests` — all with backward-compatible defaults.
+- 52 new tests: provider protocol (16), OS policy provider (15), remote provider (14), SQLite/trends (7).
+- Zod schema and contract golden fixtures updated for all new fields.
+
+### Security
+
+- `exec_command` enforces argv-only execution across all providers (negative tests for empty argv and empty-string elements).
+- Remote providers use `MICRO_EVAL_SECRET_*` naming convention for automatic redaction compatibility.
+- Seatbelt profile verified: workspace-external writes are denied (negative test on macOS).
+- Container/VM isolation levels fail hard when no provider is available — untrusted code never silently falls back to local execution.
+- Shell interpolation zero-match gate: `grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples` — clean.
+
+### Changed
+
+- `WorkspaceManager` now uses provider registry internally; public API unchanged.
+- `build_same_start_snapshot` collects isolation levels, network policies, fixture digests, and toolchain fingerprints as comparability dimensions; mixed isolation/network in a single run produces a caveat.
+- `kernel._execute_cell` flows workspace-level caveats (e.g., os_policy degradation) into the snapshot gate result.
+
 ## 0.2.10 - 2026-06-14
 
 ### Added

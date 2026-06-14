@@ -144,7 +144,21 @@ class RunStore:
         record.completed_at = datetime.now(timezone.utc).isoformat()
         record.status = RunStatus.completed if len(record.results) == len(record.cells) else RunStatus.partial
         self.write_run(record)
+        self._index_to_sqlite(record)
         return record
+
+    def _index_to_sqlite(self, record: RunRecord) -> None:
+        """Best-effort index to SQLite for trend queries."""
+        try:
+            from micro_eval.store.sqlite_store import SqliteStore
+
+            store = SqliteStore(self.project_root)
+            try:
+                store.index_run(record)
+            finally:
+                store.close()
+        except Exception:
+            pass
 
     def list_runs(self, output_dir: str = ".micro-eval/runs") -> list[RunRecord | dict[str, Any]]:
         """List canonical runs, with legacy flat JSON fallback."""

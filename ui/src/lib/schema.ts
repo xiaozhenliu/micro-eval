@@ -39,6 +39,10 @@ export const SameStartSnapshotSchema = z.object({
   guardrails_digest: z.string().default(""),
   sandbox_resource_limits: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).nullable().default(null),
   workspace_map: z.record(z.string(), z.string().nullable()).nullable().default(null),
+  sandbox_policy: z.string().nullable().default(null),
+  network_policy: z.string().nullable().default(null),
+  toolchain_fingerprint: z.string().nullable().default(null),
+  fixture_digests: z.record(z.string(), z.string()).default({}),
   timestamp: z.string(),
   caveats: z.array(z.string()).default([]),
 });

@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
-v0.2.10 已完成：Phase 2 全部四个里程碑（P2-a 统计聚合 + decision.json 独立化、P2-b Trace 适配层 + Langfuse 接入、P2-c 复盘页 + 成本分析 UI、P2-d LLM judge，含 stretch）已交付，测试架构缺口（跨语言契约、黄金路径 e2e、legacy 兼容、CLI 失败路径、Decision Surface 断言）已补齐。已修复 issue：v0.2.3 #13/#14/#10、v0.2.4 #1、v0.2.5 #6+#12、v0.2.6 #5+#8、v0.2.7 #2 + report 渲染契约测试、v0.2.8 #3+#4（退役 legacy 栈）、v0.2.9 #9（concurrency=4/artifact cap 50MB/truncation flag + spec 对齐 trace_id/redactor/evidence schema）、v0.2.10 run ordering 随机化（execution_order/seed 记录 + opt-in）。**所有 GitHub issue #1–#14 已解决或明确延后（#9 仅剩错误分类重构）。Phase 3 设计文档已交付（`docs/superpowers/plans/2026-06-14-phase3-implementation-plan.md`）。** Python CLI + Next.js 本地 Web UI 均可运行。172 个 pytest 测试 + 48 个 vitest 测试通过，Python 覆盖率 80%（CI 门禁 75%）。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制（`scripts/generate-golden.py` 为跨语言契约 fixture 的唯一来源，含决策算法等价 golden）。执行层唯一 agent spawner 是 `engine/adapter.py`（AgentAdapter），由契约测试 `tests/contract/test_execution_contract.py` 守护。
+v0.3.0 已完成：Phase 3 全部五个里程碑交付。P3-a WorkspaceProvider Protocol + ProviderRegistry + GitWorktreeProvider 重构（零行为变化）。P3-b Seatbelt(macOS)/Bubblewrap(Linux) Level 1 OS 策略 provider（不可用时降级 Level 0 + caveat）。P3-c E2B/Modal 远程 provider（可选，无凭证时 fail-hard 不降级）。P3-d 多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot 可比性维度。P3-e SQLite 索引（JSON 仍为 source of truth）+ 趋势分析（drift breakpoint 标注不可比断点）+ 趋势 API route。Phase 2 全部四个里程碑此前已交付。所有 GitHub issue #1–#14 已解决或明确延后。Python CLI + Next.js 本地 Web UI 均可运行。224 个 pytest 测试 + 48 个 vitest 测试通过。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制。执行层通过 provider registry 选择隔离后端，由 `tests/unit/test_provider_protocol.py` + `tests/contract/test_execution_contract.py` 守护。
 
 ## 开发方法硬规则
 
@@ -82,7 +82,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 
 - **Phase 1 (MVP)**:Configuration/Task/Run + 自写执行层 + 分层评分(validation → LLM judge) + 矩阵对比页 + Next.js 本地 UI。
 - **Phase 2(已完成,v0.2.0)**:Langfuse trace 接入 + 复盘页 + 成本分析 + repetitions 统计聚合 + LLM judge。
-- **Phase 3**:provider 化 sandbox（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal，**不用本地 Docker**，见 spec §3.4.5）+ 更复杂 workspace 类型 + 趋势分析。实施计划见 `docs/superpowers/plans/2026-06-14-phase3-implementation-plan.md`。
+- **Phase 3（已完成，v0.3.0）**：provider 化 sandbox（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal，**不用本地 Docker**，见 spec §3.4.5）+ 更复杂 workspace 类型（多源 fixture + toolchain 指纹）+ 趋势分析（SQLite 索引 + drift breakpoint）。实施计划见 `docs/superpowers/plans/2026-06-14-phase3-implementation-plan.md`。
 
 完整规格见 `docs/superpowers/specs/2026-06-02-unicorn-design.md`(产品+技术设计)与 `micro-eval-brd.md`(商业背景)。
 

@@ -140,8 +140,13 @@ class ExecutionKernel:
         cell_dir = artifact_store.cell_dir(cell.cell_id)
         prepared: PreparedWorkspace | None = None
         redactor = Redactor({})
+        workspace_caveats: list[str] = []
         try:
-            prepared = workspace_manager.prepare(cell_id=cell.cell_id, workspace=cell.task.workspace)
+            prepared = workspace_manager.prepare(
+                cell_id=cell.cell_id,
+                workspace=cell.task.workspace,
+                caveats=workspace_caveats,
+            )
             adapter_result, redactor = await adapter.invoke(
                 agent=cell.configuration.agent,
                 input_payload=cell.task.input_payload,
@@ -173,6 +178,10 @@ class ExecutionKernel:
 
         assert prepared is not None
         snapshot_gate = evaluate_snapshot_gate(record.same_start_snapshot, prepared.snapshot, task_id=cell.task.id)
+        if workspace_caveats:
+            snapshot_gate.caveats.extend(workspace_caveats)
+            if snapshot_gate.status == "pass":
+                snapshot_gate.status = "warn"
         artifacts = [
             artifact_store.write_text(cell.cell_id, "stdout", "stdout.txt", adapter_result.stdout),
             artifact_store.write_text(cell.cell_id, "stderr", "stderr.txt", adapter_result.stderr),

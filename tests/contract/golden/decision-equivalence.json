@@ -210,6 +210,10 @@
       "guardrails_digest": "guardrails-eq",
       "sandbox_resource_limits": null,
       "workspace_map": null,
+      "sandbox_policy": null,
+      "network_policy": null,
+      "toolchain_fingerprint": null,
+      "fixture_digests": {},
       "timestamp": "2026-06-14T00:00:00+00:00",
       "caveats": [
         "example same-start caveat"

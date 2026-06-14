@@ -24,6 +24,10 @@ class SameStartSnapshot(BaseModel):
     guardrails_digest: str = ""
     sandbox_resource_limits: dict[str, str | int | float | bool | None] | None = None
     workspace_map: dict[str, str | None] | None = None
+    sandbox_policy: str | None = None
+    network_policy: str | None = None
+    toolchain_fingerprint: str | None = None
+    fixture_digests: dict[str, str] = Field(default_factory=dict)
     timestamp: str = ""
     caveats: list[str] = Field(default_factory=list)
 
