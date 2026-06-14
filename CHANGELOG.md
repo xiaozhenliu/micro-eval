@@ -2,6 +2,13 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.7 - 2026-06-14
+
+### Added
+
+- Emit a cross-run comparability caveat when a configuration id is reused but its content changed since the most recent prior run with that id (#2). The decision now warns that the same matrix "column" no longer means the same thing instead of comparing silently. Detection lives in the kernel (which has run-history access) and is surfaced through the same-start snapshot caveats.
+- Add rendering contract tests for the report CLI (text + HTML branches), covering the pass@k column, caveat rendering, and HTML autoescaping; `cli/report.py` line coverage rises from 32% to 69%.
+
 ## 0.2.6 - 2026-06-14
 
 ### Changed

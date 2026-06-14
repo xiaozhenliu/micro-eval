@@ -7,7 +7,7 @@
 > - **无 issue 的事项必须展开**：待做事项 + 关联文件，信息密度达到"新会话不靠考古就能动手"。
 > - 完成项一行留档进 Done，定期清入 CHANGELOG 后删除。
 >
-> 最近整理：2026-06-14（v0.2.6 发布后；#13、#14、#10、#1、#6、#12、#5、#8 已交付并移入 Done）。
+> 最近整理：2026-06-14（v0.2.7 发布后；#13、#14、#10、#1、#6、#12、#5、#8、#2 + report 渲染契约测试 已交付并移入 Done）。
 
 ## Ready
 
@@ -21,13 +21,8 @@
 
 ### P2
 - **#9** 小型 spec 偏差清单：默认 concurrency 2 vs spec 4、trace_id 格式、truncation flag 未持久化、artifact cap、错误分类命名、schema 字段超出文档模型、redactor 命名（spec 先行：部分项应先改权威 spec）
-- **#2** configuration 内容变化但 id 不变时缺少跨 run 可比性警告
-- **#3** 退役不可达的 legacy 执行/评分模块（`models/schema.py`、`engine/scorer.py`；`test_full_flow.py` 仍依赖）
+- **#3** 退役不可达的 legacy 执行/评分模块（`models/schema.py`、`engine/scorer.py`、`engine/runner.py`；`test_full_flow.py` 仍依赖）
 - **#4** 迁移 legacy run.json 读取路径（`list_runs` flat JSON fallback），使 legacy schema 模块可退役
-- **cli/report.py 渲染契约测试**（无 issue）
-  - **待做:** 文本/HTML 报表渲染分支补契约测试，至少覆盖 pass@k 列与 caveat 渲染。
-  - **关联文件:** `src/micro_eval/cli/report.py`（当前行覆盖 32%）。
-  - **Why:** 报表是用户决策界面，渲染回归直接误导结论。
 
 ### P3
 - **本地残留分支清理**（无 issue）
@@ -68,6 +63,8 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **#2**（v0.2.7）—— 跨 run 可比性警告：config id 复用但内容（digest）变化时，决策 caveat 提示不可比；检测在 kernel（有 run 历史访问），经 same_start_snapshot.caveats 流入。`RunStore.configuration_drift_caveats`。
+- **cli/report.py 渲染契约测试**（v0.2.7，无 issue）—— 文本/HTML 渲染分支契约测试（pass@k 列、caveat、HTML autoescape），覆盖率 32%→69%。
 - **#5**（v0.2.6）—— 补两条执行层契约测试：kernel-must-use-adapter（静态源码 + adapter.invoke 断言）、timeout→terminate→kill 升级链（monkeypatch terminate/kill 行为验证）；exec-not-shell 由 CI grep 兜底。
 - **#8**（v0.2.6）—— validator 路径补写 `rubric_hash`，与 judge 共用 `rubric_digest`（`models/ids.py`），跨 evaluator provenance 一致。
 - **#6**（v0.2.5）—— zod `EvaluationResult` 补 `.superRefine`，镜像 Python `pass_fail_requires_evidence`（pass/fail 必须有 evidence_refs）；vitest 否定+肯定测试。

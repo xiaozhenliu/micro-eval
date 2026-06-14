@@ -63,6 +63,13 @@ class ExecutionKernel:
                 record.evaluations.extend(
                     EvaluationResult.model_validate(item) for item in json.loads(eval_path.read_text())
                 )
+        # Cross-run comparability: warn when a configuration id was reused with
+        # changed content vs a prior run (#2). Surfaced via the snapshot caveats
+        # so build_decision folds it into the decision's comparability caveats.
+        if record.same_start_snapshot is not None:
+            record.same_start_snapshot.caveats.extend(
+                self.run_store.configuration_drift_caveats(record)
+            )
         record.decision = build_decision(record)
         record = self.run_store.finalize_run(record)
         return record
