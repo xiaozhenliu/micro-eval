@@ -3,9 +3,37 @@
 import pytest
 from pydantic import ValidationError
 
-from micro_eval.models.configuration import AgentSpec, ConfigurationSpec
+from micro_eval.models.configuration import AgentSpec, ConfigurationSpec, Guardrails
 from micro_eval.models.evaluation import EvaluationResult
+from micro_eval.models.run import CellResult, CellStatus
 from micro_eval.models.task import ExpectationSpec, TaskSpec
+
+
+def test_guardrails_defaults_match_spec():
+    # #9: spec defaults are concurrency 4 and a distinct, larger artifact cap.
+    guardrails = Guardrails()
+    assert guardrails.max_concurrency == 4
+    assert guardrails.output_cap_bytes == 10 * 1024 * 1024
+    assert guardrails.artifact_cap_bytes == 50 * 1024 * 1024
+    assert guardrails.artifact_cap_bytes > guardrails.output_cap_bytes
+
+
+def test_cell_result_persists_truncation_flags():
+    # #9: truncation flags computed by the adapter must survive on CellResult.
+    result = CellResult(
+        cell_id="c1",
+        run_id="r1",
+        task_id="t1",
+        configuration_id="cfg",
+        configuration_name="cfg",
+        repetition=1,
+        status=CellStatus.passed,
+        output_truncated=True,
+        stdout_truncated=True,
+    )
+    assert result.output_truncated is True
+    assert result.stdout_truncated is True
+    assert result.stderr_truncated is False  # default
 
 
 def test_agent_spec_requires_argv_list():

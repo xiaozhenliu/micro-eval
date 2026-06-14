@@ -40,6 +40,9 @@
         "exit_code": 0,
         "latency_s": 0.1,
         "failure_mode": null,
+        "stdout_truncated": false,
+        "stderr_truncated": false,
+        "output_truncated": false,
         "artifact_refs": [],
         "evidence_refs": [
           "cell-b1::evidence::process"
@@ -70,6 +73,9 @@
         "exit_code": 0,
         "latency_s": 0.2,
         "failure_mode": null,
+        "stdout_truncated": false,
+        "stderr_truncated": false,
+        "output_truncated": false,
         "artifact_refs": [],
         "evidence_refs": [
           "cell-b2::evidence::process"
@@ -100,6 +106,9 @@
         "exit_code": 0,
         "latency_s": 0.3,
         "failure_mode": null,
+        "stdout_truncated": false,
+        "stderr_truncated": false,
+        "output_truncated": false,
         "artifact_refs": [],
         "evidence_refs": [
           "cell-b3::evidence::process"
@@ -130,6 +139,9 @@
         "exit_code": 0,
         "latency_s": 0.15,
         "failure_mode": null,
+        "stdout_truncated": false,
+        "stderr_truncated": false,
+        "output_truncated": false,
         "artifact_refs": [],
         "evidence_refs": [
           "cell-c1::evidence::process"
@@ -160,6 +172,9 @@
         "exit_code": 0,
         "latency_s": 0.0,
         "failure_mode": null,
+        "stdout_truncated": false,
+        "stderr_truncated": false,
+        "output_truncated": false,
         "artifact_refs": [],
         "evidence_refs": [
           "cell-c2::evidence::process"

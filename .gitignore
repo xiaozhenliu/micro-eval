@@ -33,3 +33,6 @@ micro-eval-prd.md
 # Local analysis/tool caches
 .understand-anything/
 .coverage
+
+# rtk (Rust Token Killer) local cache/filters — not project content
+.rtk/

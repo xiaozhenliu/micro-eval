@@ -24,6 +24,9 @@ def build_aggregation(
     for result in results:
         by_config.setdefault(result.configuration_id, []).append(result)
 
+    # Traces are matched to cells by trace_id == cell_id (the adapter always sets
+    # trace_id to the cell id). The UI recomputeDecision mirrors this; see #9 (the
+    # spec's distinct trace_id format would break this matching, so code is canonical).
     trace_by_id = {trace.trace_id: trace for trace in traces or []}
     per_configuration = {
         config_id: aggregate_configuration(

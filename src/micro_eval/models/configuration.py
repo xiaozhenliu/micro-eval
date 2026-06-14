@@ -113,10 +113,10 @@ class Guardrails(BaseModel):
     """Execution guardrails for a run."""
 
     schema_version: str = SCHEMA_VERSION
-    max_concurrency: int = 2
+    max_concurrency: int = 4
     timeout_s: float = 300.0
     output_cap_bytes: int = 10 * 1024 * 1024
-    artifact_cap_bytes: int = 10 * 1024 * 1024
+    artifact_cap_bytes: int = 50 * 1024 * 1024
     stop_on_cell_error: bool = False
 
     @field_validator("max_concurrency")

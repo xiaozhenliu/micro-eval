@@ -2,6 +2,21 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.9 - 2026-06-14
+
+### Changed
+
+- Default `max_concurrency` is now 4 (was 2) to match the spec; `Guardrails`, the `micro-eval init` template, and the run fallback all align (#9).
+- The default artifact size cap is now a distinct 50MB (output cap stays 10MB), in both `Guardrails` and `ArtifactStore`, so large artifacts are not capped at the smaller output limit (#9).
+
+### Added
+
+- Persist the per-cell truncation flags (`stdout_truncated`/`stderr_truncated`/`output_truncated`) on `CellResult` (Python + zod) so a truncated output is no longer silently dropped before the report/UI (#9).
+
+### Notes
+
+- Remaining #9 items are deliberate keeps: trace_id stays `trace_id == cell_id` because cost aggregation matches on it (the spec format would break matching — spec to be updated, not code); the error-classification rename and redactor-naming/spec-field alignment are cosmetic/spec-only and deferred.
+
 ## 0.2.8 - 2026-06-14
 
 ### Removed

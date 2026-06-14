@@ -39,10 +39,10 @@ tasks:
 output_dir: .micro-eval/runs
 
 guardrails:
-  max_concurrency: 2
+  max_concurrency: 4
   timeout_s: 30
   output_cap_bytes: 1048576
-  artifact_cap_bytes: 1048576
+  artifact_cap_bytes: 5242880
 
 evaluation:
   comparison_subject: null

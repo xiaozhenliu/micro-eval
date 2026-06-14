@@ -103,6 +103,9 @@ class CellResult(BaseModel):
     exit_code: int | None = None
     latency_s: float = 0.0
     failure_mode: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    output_truncated: bool = False
     artifact_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     evaluation_refs: list[str] = Field(default_factory=list)

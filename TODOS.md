@@ -20,7 +20,7 @@
 - *(P1 已清空：#10/#1/#6/#12/#5 均已交付)*
 
 ### P2
-- **#9** 小型 spec 偏差清单：默认 concurrency 2 vs spec 4、trace_id 格式、truncation flag 未持久化、artifact cap、错误分类命名、schema 字段超出文档模型、redactor 命名（spec 先行：部分项应先改权威 spec）
+- **#9**（部分完成，v0.2.9 交付 concurrency=4 + artifact cap 50MB + truncation flag 持久化）剩余项均为 spec 先行/cosmetic，需改权威 spec 而非代码：trace_id 格式（保留 `::`=cell_id，cost 聚合依赖；应更新 spec）、错误分类命名 + crash 区分（enum 重构，低价值）、schema 字段超出文档模型（更新权威 spec）、redactor 命名/构造（cosmetic）
 
 ### P3
 - **本地残留分支清理**（无 issue）
