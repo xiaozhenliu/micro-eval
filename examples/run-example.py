@@ -11,13 +11,31 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-EXAMPLE_NAME = "agent-codefix-showdown"
+DEFAULT_EXAMPLE = "agent-codefix-showdown"
+
+# All known examples in recommended order
+ALL_EXAMPLES = [
+    "agent-codefix-showdown",
+    "multi-task-matrix",
+    "git-workspace-isolation",
+]
 
 
 def main() -> int:
     args = parse_args()
+
+    if args.example == DEFAULT_EXAMPLE:
+        return run_codefix_showdown(args)
+    elif args.example == "all":
+        return run_all_examples(args)
+    else:
+        return run_delegated_example(args.example, args)
+
+
+def run_codefix_showdown(args: argparse.Namespace) -> int:
+    """Run the default agent-codefix-showdown example with full flag support."""
     repo_root = Path(__file__).resolve().parents[1]
-    example_root = repo_root / "examples" / EXAMPLE_NAME
+    example_root = repo_root / "examples" / DEFAULT_EXAMPLE
     config_name = "eval.yaml" if args.real else "eval.mock.yaml"
     command_prefix = micro_eval_command(repo_root)
 
@@ -34,7 +52,7 @@ def main() -> int:
         return 2
 
     mode = "real-agent" if args.real else "deterministic mock"
-    print(f"Running {EXAMPLE_NAME} ({mode}) from {example_root}", flush=True)
+    print(f"Running {DEFAULT_EXAMPLE} ({mode}) from {example_root}", flush=True)
     if args.real:
         print("Real-agent mode expects local agent CLIs to be installed and logged in.", flush=True)
 
@@ -62,9 +80,65 @@ def main() -> int:
     return 0
 
 
+def run_delegated_example(name: str, args: argparse.Namespace) -> int:
+    """Delegate to the example's own run.py script."""
+    repo_root = Path(__file__).resolve().parents[1]
+    run_script = repo_root / "examples" / name / "run.py"
+
+    if not run_script.exists():
+        print(f"Error: {run_script} not found.", file=sys.stderr, flush=True)
+        return 2
+
+    cmd = [sys.executable, str(run_script)]
+    if args.skip_run:
+        cmd.append("--skip-run")
+    if args.max_concurrency != 1:
+        cmd.extend(["--max-concurrency", str(args.max_concurrency)])
+    if args.ui:
+        cmd.append("--ui")
+    if args.port != 3000:
+        cmd.extend(["--port", str(args.port)])
+
+    print(f"\n==> {name}", flush=True)
+    result = subprocess.run(cmd, check=False)
+    return result.returncode
+
+
+def run_all_examples(args: argparse.Namespace) -> int:
+    """Run all examples sequentially."""
+    repo_root = Path(__file__).resolve().parents[1]
+
+    for name in ALL_EXAMPLES:
+        print(f"\n{'=' * 60}", flush=True)
+        print(f"Example: {name}", flush=True)
+        print(f"{'=' * 60}", flush=True)
+
+        if name == DEFAULT_EXAMPLE:
+            rc = run_codefix_showdown(args)
+        else:
+            rc = run_delegated_example(name, args)
+
+        if rc != 0:
+            print(f"\nExample '{name}' failed with exit code {rc}.", file=sys.stderr, flush=True)
+            return rc
+
+    print(f"\nAll {len(ALL_EXAMPLES)} examples completed successfully.", flush=True)
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the micro-eval source-checkout example.")
-    parser.add_argument("--real", action="store_true", help="Run eval.yaml against real local agent CLIs.")
+    parser = argparse.ArgumentParser(description="Run the micro-eval source-checkout examples.")
+    parser.add_argument(
+        "--example",
+        choices=["agent-codefix-showdown", "multi-task-matrix", "git-workspace-isolation", "all"],
+        default=DEFAULT_EXAMPLE,
+        help=(
+            "Which example to run. "
+            "Default: agent-codefix-showdown (backward compatible). "
+            "Use 'all' to run all examples sequentially."
+        ),
+    )
+    parser.add_argument("--real", action="store_true", help="Run eval.yaml against real local agent CLIs (agent-codefix-showdown only).")
     parser.add_argument("--skip-run", action="store_true", help="Validate and regenerate reports from existing runs.")
     parser.add_argument("--max-concurrency", type=int, default=1, help="Maximum concurrent cells for the example run.")
     parser.add_argument("--ui", action="store_true", help="Launch the source-checkout UI after generating reports.")

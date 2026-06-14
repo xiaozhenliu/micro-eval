@@ -2,6 +2,21 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.1 - 2026-06-15
+
+### Added
+
+- **Example coverage expansion**: two new examples demonstrate the remaining ~50% of project capabilities.
+  - `examples/multi-task-matrix/` — 2 configs × 3 tasks × 2 reps (12 cells) exercising all four expectation types (`exit_code`, `contains`, `file_exists`, `command`), workspace `setup` commands, and a deliberately partial-failing candidate that produces an `inconclusive` decision.
+  - `examples/git-workspace-isolation/` — `git_repo` workspace with per-cell git worktree isolation, OS policy sandbox configuration (Seatbelt/Bubblewrap), fixture digest + toolchain fingerprint in `SameStartSnapshot`, and two-run trend analysis with a drift breakpoint.
+- `examples/run-example.py` now supports `--example <name>` to run individual examples or `--example all` to run all sequentially; `--skip-run` and `--max-concurrency` are forwarded to delegated examples.
+- `examples/README.md` adds a capability coverage matrix across all three examples and an "Advanced: Optional External Integrations" section with YAML snippets for LLM Judge, Langfuse, secrets channel, and E2B/Modal remote VM.
+- Overall example capability coverage rises from ~50% to ~85%.
+
+### Changed
+
+- Version bump to 0.3.1 (Python, UI, VERSION file, READMEs).
+
 ## 0.3.0 - 2026-06-14
 
 ### Added

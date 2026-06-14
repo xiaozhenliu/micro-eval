@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.3.0](https://img.shields.io/badge/version-0.3.0-6f42c1)](VERSION)
+[![Version: 0.3.1](https://img.shields.io/badge/version-0.3.1-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.3.0`
+Current version: `0.3.1`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-Version 0.3.0 completes Phase 3: provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints. Phase 2 features (pass@k aggregation, `decision.json`, trace capture, cost reporting, review UI, LLM judge) remain fully available. Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
+Version 0.3.1 completes Phase 3: provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints. Phase 2 features (pass@k aggregation, `decision.json`, trace capture, cost reporting, review UI, LLM judge) remain fully available. Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
 
 ## Why micro-eval?
 
@@ -90,7 +90,15 @@ For the real-agent matrix, run:
 python examples/run-example.py --real
 ```
 
-The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. The example index is in [`examples/`](examples/).
+The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. Additional examples cover multi-task matrices, git workspace isolation, and trend analysis:
+
+```bash
+python examples/run-example.py --example multi-task-matrix
+python examples/run-example.py --example git-workspace-isolation
+python examples/run-example.py --example all
+```
+
+The example index and capability coverage matrix are in [`examples/`](examples/).
 
 ## CLI Commands
 
