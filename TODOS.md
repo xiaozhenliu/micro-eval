@@ -12,9 +12,9 @@
 ## Ready
 
 ### P0
-- **Phase 3 设计文档**（里程碑，下一个动手项）
-  - **待做:** Docker sandbox + 更复杂 workspace 类型 + 趋势分析的实施计划，沿用 Phase 2 计划格式（`docs/superpowers/plans/`）。
-  - **注意:** 执行链路改动安全敏感度高（网络边界、容器逃逸面、凭证传递），动工前过 `docs/engineering/security-guidelines.md` 评审。两个 P0 测试防线（跨语言契约、黄金路径 e2e）已就位作为回归保障。
+- **Phase 3 实施**（里程碑，设计文档已交付）
+  - **设计:** `docs/superpowers/plans/2026-06-14-phase3-implementation-plan.md`（codename `reproducible_sandbox.v1`）——provider 化 sandbox（本地 OS 策略 + 远程 E2B/Modal，不用本地 Docker）、复杂 workspace、趋势分析。串行接入 P3-a→P3-e。
+  - **注意:** 执行链路改动安全敏感度高（网络边界、信任等级降级面、凭证传递），每里程碑动工前过 `docs/engineering/security-guidelines.md` 评审。两个 P0 测试防线（跨语言契约、黄金路径 e2e）已就位作为回归保障。
 
 ### P1
 - *(P1 已清空：#10/#1/#6/#12/#5 均已交付)*

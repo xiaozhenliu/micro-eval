@@ -82,7 +82,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 
 - **Phase 1 (MVP)**:Configuration/Task/Run + 自写执行层 + 分层评分(validation → LLM judge) + 矩阵对比页 + Next.js 本地 UI。
 - **Phase 2(已完成,v0.2.0)**:Langfuse trace 接入 + 复盘页 + 成本分析 + repetitions 统计聚合 + LLM judge。
-- **Phase 3**:Docker sandbox + 更复杂 workspace 类型 + 趋势分析。
+- **Phase 3**:provider 化 sandbox（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal，**不用本地 Docker**，见 spec §3.4.5）+ 更复杂 workspace 类型 + 趋势分析。实施计划见 `docs/superpowers/plans/2026-06-14-phase3-implementation-plan.md`。
 
 完整规格见 `docs/superpowers/specs/2026-06-02-unicorn-design.md`(产品+技术设计)与 `micro-eval-brd.md`(商业背景)。
 
