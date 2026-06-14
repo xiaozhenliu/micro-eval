@@ -9,19 +9,24 @@ from micro_eval.config.loader import (
     load_config,
     load_tasks,
 )
-from micro_eval.models.schema import InputMode, OutputMode
+from micro_eval.models.configuration import InputMode
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
+
+
+def _by_role(config) -> dict:
+    return {cfg.role: cfg for cfg in config.configurations}
 
 
 def test_load_config_success():
     config = load_config(FIXTURES / "eval.yaml")
     assert config.project_name == "test-project"
-    assert config.baseline.name == "echo-baseline"
-    assert config.candidate.name == "echo-candidate"
-    assert config.baseline.command == "cat"
-    assert config.baseline.input_mode == InputMode.stdin
-    assert config.parallel is True
+    by_role = _by_role(config)
+    assert by_role["baseline"].agent.name == "echo-baseline"
+    assert by_role["candidate"].agent.name == "echo-candidate"
+    assert by_role["baseline"].agent.command == ["cat"]
+    assert by_role["baseline"].agent.input_mode == InputMode.stdin
+    assert config.guardrails.max_concurrency > 1
 
 
 def test_load_config_missing_file():
@@ -110,8 +115,9 @@ def test_load_canonical_config_rejects_output_dir_escape(tmp_path):
 
 def test_load_legacy_config_bridge_has_warning():
     config = load_config(FIXTURES / "configs" / "eval_legacy.yaml")
-    assert config.baseline.command == "cat"
-    assert config.candidate.command == "cat"
+    by_role = _by_role(config)
+    assert by_role["baseline"].agent.command == ["cat"]
+    assert by_role["candidate"].agent.command == ["cat"]
     assert config.migration_warnings
 
 

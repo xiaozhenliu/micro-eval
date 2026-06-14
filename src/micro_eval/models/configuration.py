@@ -214,28 +214,6 @@ class ProjectConfigV2(BaseModel):
     migration_warnings: list[str] = Field(default_factory=list)
     config_hash: str = ""
 
-
-    @property
-    def baseline(self):
-        """Legacy baseline AgentConfig view when available."""
-        from micro_eval.config.loader import legacy_agent_config
-
-        cfg = next((item for item in self.configurations if item.role == "baseline"), self.configurations[0])
-        return legacy_agent_config(cfg)
-
-    @property
-    def candidate(self):
-        """Legacy candidate AgentConfig view when available."""
-        from micro_eval.config.loader import legacy_agent_config
-
-        cfg = next((item for item in self.configurations if item.role == "candidate"), self.configurations[-1])
-        return legacy_agent_config(cfg)
-
-    @property
-    def parallel(self) -> bool:
-        """Legacy parallel flag view."""
-        return self.guardrails.max_concurrency > 1
-
     @field_validator("output_dir")
     @classmethod
     def output_dir_must_stay_inside_project(cls, value: str) -> str:

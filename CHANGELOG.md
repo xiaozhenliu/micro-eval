@@ -2,6 +2,16 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.8 - 2026-06-14
+
+### Removed
+
+- Retire the unreachable legacy execution/scoring stack (#3, #4): `engine/runner.py` (the v0.1 `AgentRunner`), `engine/scorer.py` (`Scorer`), `models/schema.py` (legacy `AgentConfig`/`Run`/`Task`/…), the `legacy_agent_config` converter, and the `ProjectConfigV2.baseline`/`candidate`/`parallel` legacy view properties. These were reachable only from tests; agent execution runs through `AgentAdapter`/`ExecutionKernel` and decisions through `build_decision`.
+
+### Changed
+
+- The report CLI reads legacy run.json directly through `RunRecord` (which absorbs the v0.1.x shape) instead of a separate legacy `Run` model (#4), removing the last production dependency on `models/schema.py`. The execution contract test now asserts `AgentAdapter` is the *only* async agent spawner in the engine.
+
 ## 0.2.7 - 2026-06-14
 
 ### Added

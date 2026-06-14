@@ -4,10 +4,10 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.2.7](https://img.shields.io/badge/version-0.2.7-6f42c1)](VERSION)
+[![Version: 0.2.8](https://img.shields.io/badge/version-0.2.8-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-当前版本：`0.2.7`
+当前版本：`0.2.8`
 
 **一个本地优先的 Agent / Skill 评测助手，帮助小型 AI 团队用证据而不是体感做对比。**
 

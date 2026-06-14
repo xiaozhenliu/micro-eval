@@ -20,7 +20,6 @@ from micro_eval.models.configuration import (
     TraceConfig,
 )
 from micro_eval.models.ids import canonical_digest, sha256_text
-from micro_eval.models.schema import AgentConfig
 from micro_eval.models.task import ExpectationSpec, RubricSpec, TaskSpec, WorkspaceSpec
 
 
@@ -247,15 +246,3 @@ def _parse_task(raw: dict[str, Any], path: Path) -> TaskSpec:
     )
     task.revision_id = sha256_text(path.read_text())
     return task
-
-
-def legacy_agent_config(configuration: ConfigurationSpec) -> AgentConfig:
-    """Convert canonical configuration to the v0.1 legacy AgentConfig."""
-    return AgentConfig(
-        name=configuration.agent.name,
-        command=" ".join(shlex.quote(part) for part in configuration.agent.command),
-        input_mode=configuration.agent.input_mode,
-        output_mode=configuration.agent.output_mode,
-        timeout_s=configuration.agent.timeout_s,
-        env=configuration.agent.env,
-    )

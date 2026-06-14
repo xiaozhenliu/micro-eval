@@ -58,11 +58,10 @@ def test_kernel_does_not_spawn_subprocesses_directly() -> None:
     assert "adapter.invoke" in source, "kernel.py must invoke the adapter"
 
 
-# adapter.py is the canonical agent spawner. runner.py is the legacy AgentRunner
-# (AgentConfig-based) still pending retirement (#3); it is the only sanctioned
-# exception. Any *new* engine module that spawns async subprocesses is a
+# adapter.py is the sole agent spawner in the engine (the legacy AgentRunner was
+# retired in #3). Any other engine module that spawns async subprocesses is a
 # contract violation — agent execution belongs in the adapter.
-SANCTIONED_SPAWNERS = {"adapter.py", "runner.py"}
+SANCTIONED_SPAWNERS = {"adapter.py"}
 
 
 def test_only_the_adapter_spawns_agent_subprocesses_in_engine() -> None:
