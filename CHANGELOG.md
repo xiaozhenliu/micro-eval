@@ -2,6 +2,16 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.6 - 2026-06-14
+
+### Changed
+
+- The deterministic validator now records `rubric_hash` on its `EvaluationResult`, like the LLM judge already did (#8). Both evaluator paths share a single `rubric_digest` helper, so a given rubric yields one identical hash regardless of which evaluator recorded the result, keeping evaluation provenance comparable across evaluator types.
+
+### Added
+
+- Add execution-layer contract tests (#5): the run kernel must delegate agent process spawning to `AgentAdapter` (no direct subprocess spawning), and a timed-out agent must escalate SIGTERM → SIGKILL only after the grace window. These cover the two remaining #5 contracts; the shell-injection gate already runs in CI.
+
 ## 0.2.5 - 2026-06-14
 
 ### Fixed

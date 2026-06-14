@@ -75,3 +75,18 @@ def looks_binary(data: bytes) -> bool:
 def canonical_digest(value: Any) -> str:
     """Hash canonical JSON data."""
     return sha256_text(canonical_json(value))
+
+
+def rubric_digest(rubric: Any) -> str | None:
+    """Stable short digest of a task rubric, or None when no rubric is set.
+
+    Shared by every evaluator path (validator + LLM judge) so a single rubric
+    definition produces one identical ``rubric_hash`` regardless of which
+    evaluator recorded the result — keeping evaluation provenance comparable
+    across evaluator types (#8). Accepts a RubricSpec (any pydantic model) or a
+    raw mapping.
+    """
+    if rubric is None:
+        return None
+    material = rubric.model_dump(mode="json") if isinstance(rubric, BaseModel) else rubric
+    return canonical_digest(material)[:16]

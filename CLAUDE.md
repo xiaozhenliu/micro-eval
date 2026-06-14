@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
-v0.2.5 已完成：Phase 2 全部四个里程碑（P2-a 统计聚合 + decision.json 独立化、P2-b Trace 适配层 + Langfuse 接入、P2-c 复盘页 + 成本分析 UI、P2-d LLM judge，含 stretch）已交付，测试架构缺口（跨语言契约、黄金路径 e2e、legacy 兼容、CLI 失败路径、Decision Surface 断言）已补齐。已修复 issue：v0.2.3 #13/#14/#10、v0.2.4 #1（跨语言决策算法等价契约 + recomputeDecision 补 cost 聚合）、v0.2.5 #6（zod EvaluationResult 补 pass_fail→evidence_refs 校验）+ #12（二进制检测统一为共享 looks_binary）。Python CLI + Next.js 本地 Web UI 均可运行。171 个 pytest 测试 + 48 个 vitest 测试通过，Python 覆盖率 78%（CI 门禁 75%）。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制（`scripts/generate-golden.py` 为跨语言契约 fixture 的唯一来源，含决策算法等价 golden）。
+v0.2.6 已完成：Phase 2 全部四个里程碑（P2-a 统计聚合 + decision.json 独立化、P2-b Trace 适配层 + Langfuse 接入、P2-c 复盘页 + 成本分析 UI、P2-d LLM judge，含 stretch）已交付，测试架构缺口（跨语言契约、黄金路径 e2e、legacy 兼容、CLI 失败路径、Decision Surface 断言）已补齐。已修复 issue：v0.2.3 #13/#14/#10、v0.2.4 #1（跨语言决策算法等价契约 + recomputeDecision 补 cost 聚合）、v0.2.5 #6（zod EvaluationResult 补 pass_fail→evidence_refs 校验）+ #12（二进制检测统一为共享 looks_binary）、v0.2.6 #5（执行层契约测试：kernel-must-use-adapter、timeout 升级链）+ #8（validator 路径补 rubric_hash，与 judge 共用 rubric_digest）。所有 P0/P1 issue 已清空。Python CLI + Next.js 本地 Web UI 均可运行。177 个 pytest 测试 + 48 个 vitest 测试通过，Python 覆盖率 78%（CI 门禁 75%）。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制（`scripts/generate-golden.py` 为跨语言契约 fixture 的唯一来源，含决策算法等价 golden）。
 
 ## 开发方法硬规则
 

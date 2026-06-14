@@ -7,7 +7,7 @@
 > - **无 issue 的事项必须展开**：待做事项 + 关联文件，信息密度达到"新会话不靠考古就能动手"。
 > - 完成项一行留档进 Done，定期清入 CHANGELOG 后删除。
 >
-> 最近整理：2026-06-14（v0.2.5 发布后；#13、#14、#10、#1、#6、#12 已交付并移入 Done）。
+> 最近整理：2026-06-14（v0.2.6 发布后；#13、#14、#10、#1、#6、#12、#5、#8 已交付并移入 Done）。
 
 ## Ready
 
@@ -17,11 +17,10 @@
   - **注意:** 执行链路改动安全敏感度高（网络边界、容器逃逸面、凭证传递），动工前过 `docs/engineering/security-guidelines.md` 评审。两个 P0 测试防线（跨语言契约、黄金路径 e2e）已就位作为回归保障。
 
 ### P1
-- **#5**（部分完成）剩余两条契约测试：kernel-must-use-adapter、timeout→terminate→kill 升级链；exec-not-shell 已由 CI grep 门禁兜底（v0.2.2）
+- *(P1 已清空：#10/#1/#6/#12/#5 均已交付)*
 
 ### P2
 - **#9** 小型 spec 偏差清单：默认 concurrency 2 vs spec 4、trace_id 格式、truncation flag 未持久化、artifact cap、错误分类命名、schema 字段超出文档模型、redactor 命名（spec 先行：部分项应先改权威 spec）
-- **#8**（部分完成）validator 路径补写 `rubric_hash`（judge 路径已写）
 - **#2** configuration 内容变化但 id 不变时缺少跨 run 可比性警告
 - **#3** 退役不可达的 legacy 执行/评分模块（`models/schema.py`、`engine/scorer.py`；`test_full_flow.py` 仍依赖）
 - **#4** 迁移 legacy run.json 读取路径（`list_runs` flat JSON fallback），使 legacy schema 模块可退役
@@ -69,6 +68,8 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **#5**（v0.2.6）—— 补两条执行层契约测试：kernel-must-use-adapter（静态源码 + adapter.invoke 断言）、timeout→terminate→kill 升级链（monkeypatch terminate/kill 行为验证）；exec-not-shell 由 CI grep 兜底。
+- **#8**（v0.2.6）—— validator 路径补写 `rubric_hash`，与 judge 共用 `rubric_digest`（`models/ids.py`），跨 evaluator provenance 一致。
 - **#6**（v0.2.5）—— zod `EvaluationResult` 补 `.superRefine`，镜像 Python `pass_fail_requires_evidence`（pass/fail 必须有 evidence_refs）；vitest 否定+肯定测试。
 - **#12**（v0.2.5）—— 二进制检测统一为共享 `looks_binary`（全 buffer 扫描 `\x00`），adapter 与 artifact_store 共用；修复 null byte 在 1024 后被误判文本+误标 redacted 的 bug。
 - **#1**（v0.2.4）—— 跨语言决策算法等价契约：`recomputeDecision` 补 trace cost 聚合（修复人工标注抹掉 cost 的真 bug）；新增 `decision-equivalence.json` golden（Python `build_decision` 为权威），pytest 自洽 + vitest 容差等价双端钉死算法漂移。

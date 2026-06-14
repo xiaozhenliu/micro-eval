@@ -11,7 +11,7 @@ from micro_eval.engine.adapter import Redactor
 from micro_eval.models.artifact import EvidenceItem
 from micro_eval.models.configuration import JudgeConfig
 from micro_eval.models.evaluation import EvaluationResult
-from micro_eval.models.ids import canonical_digest, compact_timestamp, sha256_text
+from micro_eval.models.ids import compact_timestamp, rubric_digest, sha256_text
 from micro_eval.models.run import AdapterResult, RunCell
 from micro_eval.models.task import RubricSpec
 
@@ -203,14 +203,8 @@ def _rubric_text(cell: RunCell) -> str:
 
 
 def _rubric_hash(cell: RunCell) -> str | None:
-    rubric = cell.task.rubric
-    if rubric is None:
-        return None
-    if isinstance(rubric, RubricSpec):
-        material = rubric.model_dump(mode="json")
-    else:
-        material = rubric
-    return canonical_digest(material)[:16]
+    # Delegate to the shared digest so validator and judge stay byte-identical (#8).
+    return rubric_digest(cell.task.rubric)
 
 
 def _coerce_score(value: object) -> float | None:

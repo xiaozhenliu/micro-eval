@@ -9,7 +9,7 @@ from pathlib import Path
 from micro_eval.engine.adapter import Redactor
 from micro_eval.models.artifact import EvidenceItem
 from micro_eval.models.evaluation import EvaluationResult
-from micro_eval.models.ids import compact_timestamp, sha256_text
+from micro_eval.models.ids import compact_timestamp, rubric_digest, sha256_text
 from micro_eval.models.run import AdapterResult, RunCell
 
 
@@ -77,6 +77,7 @@ async def validate_cell(
         evaluator="micro-eval-deterministic-validator",
         pass_fail="pass" if passed else "fail",
         score=1.0 if passed else 0.0,
+        rubric_hash=rubric_digest(cell.task.rubric),
         comment=redactor.redact("; ".join(summary for _ok, summary in checks))[:500],
         evidence_refs=[item.evidence_id for item in evidence],
         created_at=compact_timestamp(),
