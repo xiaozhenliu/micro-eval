@@ -325,21 +325,24 @@ EvidenceItem = 有类型、不可变、已脱敏、带来源（provenance）的�
 | `snapshot_gate_result` | 可比性判断 |
 | `aggregation_result` | pass rate、mean、std、pass@k |
 
-`EvidenceItem` 最小形状：
+`EvidenceItem` 规范形状（实现以此为准，#9 对齐；权威模型 `src/micro_eval/models/artifact.py`，由 golden + zod 双端守护）：
 
 ```yaml
 evidence:
-  id: ev-test-001
-  type: validation_result
-  source: "npm test"
+  schema_version: "1.0"
+  evidence_id: "run-42::...::rep-1::evidence::process"   # stable id（§4）
+  kind: validation | process | judge_rationale | annotation
+  summary: "12 tests passed, 1 failed in auth_redirect.test.ts"  # 已脱敏摘要
+  source_kind: artifact_ref | evaluation_ref | evaluation_id     # 来源种类
+  source_ref: "run-42::...::stdout::abc111"                      # 指向 artifact/evaluation 的 id
+  cell_id: "run-42::fix-auth-redirect::claude-skill-v2::rep-1"
   status: passed | failed | error | skipped
   severity: info | warning | critical
-  summary: "12 tests passed, 1 failed in auth_redirect.test.ts"
-  artifact_ref: artifact-test-output-001
-  excerpt: "Expected /home, received /dashboard"
-  redacted: true
-  run_cell_id: "run-42::fix-auth-redirect::claude-skill-v2::rep-1"
+  artifact_refs: ["run-42::...::stdout::abc111"]                 # 多 artifact 引用
+  metadata: {}                                                   # 结构化附加（已脱敏）
 ```
+
+说明（#9）：规范模型相对早期文档草案的差异已对齐到此——`kind`（原 `type`）、`source_kind`+`source_ref`（原单一 `source`）、`cell_id`（原 `run_cell_id`）、`artifact_refs` 列表（原单 `artifact_ref`）、新增 `metadata`。脱敏由 §11.6 `Redactor` 在写入前强制（不再用 evidence 上的 `redacted`/`excerpt` 字段表达）。`TraceRef`/`ArtifactRef` 的规范字段同样以 `models/artifact.py` 为准。
 
 规则：
 - raw stdout/stderr **不等于** evidence——raw logs 是 artifact，evidence 是结构化、可引用、可展示的证据摘要。
@@ -1977,8 +1980,11 @@ trace_providers:
 Agent 执行前，micro-eval 通过环境变量注入关联 ID：
 
 ```python
+# 实现以此为准（#9 对齐）：trace_id == 规范 cell_id，`::` 分隔、`rep-{n}`。
+# 该等价是承重契约：聚合层按 trace_id == cell_id 关联 trace 做 cost 聚合
+# （src/micro_eval/decision/aggregation.py），UI recomputeDecision 镜像之。
 env_inject = {
-    "MICRO_EVAL_TRACE_ID": f"{run_id}--{task_id}--{config_id}--rep{repetition}",
+    "MICRO_EVAL_TRACE_ID": f"{run_id}::{task_id}::{config_id}::rep-{repetition}",
     "MICRO_EVAL_RUN_ID": run_id,
     "MICRO_EVAL_CONFIG_ID": config_id,
 }
@@ -2757,24 +2763,21 @@ configurations:
 
 所有输出路径都经过 redaction：
 
+实现以此为准（#9 对齐）：规范实现类名为 `Redactor`（`src/micro_eval/engine/adapter.py`，非 `SecretRedactor`），通过 **`MICRO_EVAL_SECRET_*` 声明通道**（而非内置正则 pattern）获取已知 secret 值并按出现位置遮蔽。`Redactor` 按 invocation 构造（`Redactor.from_env()`），与"run 起始构造一次"功能等价——secret 值在一次 run 内不变，重建无语义差异。
+
 ```python
-class SecretRedactor:
-    """在持久化前扫描并遮蔽 secrets"""
-    
-    patterns = [
-        r"sk-ant-[a-zA-Z0-9-_]{20,}",   # Anthropic
-        r"sk-[a-zA-Z0-9]{20,}",          # OpenAI
-        r"ghp_[a-zA-Z0-9]{36,}",         # GitHub PAT
-        r"gho_[a-zA-Z0-9]{36,}",         # GitHub OAuth
-    ]
-    
-    def redact(self, text: str, known_secrets: list[str]) -> str:
-        """替换已知 secrets + 匹配 patterns"""
-        for secret in known_secrets:
-            text = text.replace(secret, f"[REDACTED:{secret[:4]}...]")
-        for pattern in self.patterns:
-            text = re.sub(pattern, "[REDACTED]", text)
-        return text
+class Redactor:
+    """在持久化前遮蔽已声明的 secrets。"""
+    SECRET_ENV_PREFIX = "MICRO_EVAL_SECRET_"
+
+    def __init__(self, values: dict[str, str]): ...
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> "Redactor":
+        """从 MICRO_EVAL_SECRET_* 环境值构造。"""
+
+    def redact(self, text: str) -> str:
+        """把每个已声明 secret 值替换为 [REDACTED:NAME]。"""
 ```
 
 应用位置：

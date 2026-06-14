@@ -20,7 +20,7 @@
 - *(P1 已清空：#10/#1/#6/#12/#5 均已交付)*
 
 ### P2
-- **#9**（部分完成，v0.2.9 交付 concurrency=4 + artifact cap 50MB + truncation flag 持久化）剩余项均为 spec 先行/cosmetic，需改权威 spec 而非代码：trace_id 格式（保留 `::`=cell_id，cost 聚合依赖；应更新 spec）、错误分类命名 + crash 区分（enum 重构，低价值）、schema 字段超出文档模型（更新权威 spec）、redactor 命名/构造（cosmetic）
+- **#9**（接近完成）已交付：v0.2.9 concurrency=4 + artifact cap 50MB + truncation flag 持久化；spec 对齐 trace_id 格式（`::`=cell_id，注明 cost 聚合承重）、redactor 命名（SecretRedactor→Redactor + MICRO_EVAL_SECRET_* 通道）、EvidenceItem/Artifact schema 字段对齐权威模型。**仅剩**错误分类命名 + crash 区分（enum 重构，低价值/有回归风险，后续视需要再做）。
 
 ### P3
 - **本地残留分支清理**（无 issue）
