@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from micro_eval.models.configuration import AgentSpec, InputMode, OutputMode
+from micro_eval.models.ids import looks_binary
 from micro_eval.models.run import AdapterResult, CellStatus
 
 
@@ -332,7 +333,7 @@ class AgentAdapter:
         data = path.read_bytes()
         truncated = len(data) > self.output_cap_bytes
         retained = data[: self.output_cap_bytes]
-        if b"\x00" in retained:
+        if looks_binary(retained):
             return f"[binary artifact skipped: {path.name}]", truncated
         text = retained.decode(errors="replace")
         redacted = redactor.redact(text)

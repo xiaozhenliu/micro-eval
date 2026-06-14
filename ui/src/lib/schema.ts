@@ -94,6 +94,16 @@ export const EvaluationResultSchema = z.object({
   comment: z.string().default(""),
   evidence_refs: z.array(z.string()).default([]),
   created_at: z.string().default(""),
+}).superRefine((value, ctx) => {
+  // Mirror Python EvaluationResult.pass_fail_requires_evidence: a pass/fail
+  // verdict must be backed by at least one evidence reference (#6).
+  if (value.pass_fail !== null && value.evidence_refs.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["evidence_refs"],
+      message: "pass_fail evaluation requires evidence_refs",
+    });
+  }
 });
 
 export const CostMetricSchema = z.object({

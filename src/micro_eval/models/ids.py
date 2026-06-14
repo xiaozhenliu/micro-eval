@@ -59,6 +59,19 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def looks_binary(data: bytes) -> bool:
+    """Return True if *data* should be treated as binary (a NUL byte anywhere).
+
+    Single source of truth for the binary heuristic so the adapter (which
+    decides whether to skip text redaction) and the artifact store (which
+    decides media type and the ``redacted`` flag) classify the same bytes
+    identically. The whole buffer is scanned — a prefix-only check could
+    misclassify a binary file as text and attempt (or claim) text redaction on
+    it (#12).
+    """
+    return b"\x00" in data
+
+
 def canonical_digest(value: Any) -> str:
     """Hash canonical JSON data."""
     return sha256_text(canonical_json(value))

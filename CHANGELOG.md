@@ -2,6 +2,16 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.5 - 2026-06-14
+
+### Fixed
+
+- Unify binary-content detection across the adapter and the artifact store (#12). The artifact store previously inspected only the first 1024 bytes, so a binary file whose first NUL byte appeared later was mislabelled `text/plain` and marked `redacted=true`. Both call sites now use a shared `looks_binary` helper that scans the whole buffer, matching the adapter.
+
+### Changed
+
+- The zod `EvaluationResult` schema now enforces, like the Python model, that a `pass_fail` verdict must carry at least one `evidence_refs` entry (#6). Previously the UI silently accepted an evidence-less pass/fail evaluation that the Python side rejects.
+
 ## 0.2.4 - 2026-06-14
 
 ### Fixed
