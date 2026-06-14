@@ -423,22 +423,27 @@ MVP 的 `EvaluationResult` 结构已能支撑 pass@k 计算（每个 rep 独立�
   - EvidenceItem.summary：不得包含原始 secret 值
 - **不进 evidence**：任何 `EvidenceItem.summary` 和 `ArtifactRef` 引用的内容在持久化时已脱敏
 
-**数据模型**：
+**数据模型**（实现以此为准：规范类名 `Redactor`，`src/micro_eval/engine/adapter.py`）：
 ```python
-@dataclass
-class SecretRedactor:
-    patterns: dict[str, str]  # env_var_name -> actual_value (in memory only)
+class Redactor:
+    SECRET_ENV_PREFIX = "MICRO_EVAL_SECRET_"
+
+    def __init__(self, values: dict[str, str]):  # name -> actual_value (in memory only)
+        ...
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> "Redactor":
+        """从所有 MICRO_EVAL_SECRET_* 变量构建。"""
 
     def redact(self, text: str) -> str:
-        for name, value in self.patterns.items():
-            text = text.replace(value, f"[REDACTED:{name}]")
-        return text
+        # 把每个已声明 secret 值替换为 [REDACTED:NAME]
+        ...
 ```
 
 **流程**：
-1. Run 开始 → 从 `os.environ` 读取所有 `MICRO_EVAL_SECRET_*` 变量，构建 `SecretRedactor`
+1. 从 `MICRO_EVAL_SECRET_*` 变量构建 `Redactor`（`Redactor.from_env()`）
 2. AgentInvocation 构建 → 将 Configuration 声明的 secrets 注入 `env` dict
-3. AdapterResult 返回 → `SecretRedactor.redact(stdout)` 和 `redact(stderr)` 后再写入文件
+3. AdapterResult 返回 → `Redactor.redact(stdout)` 和 `redact(stderr)` 后再写入文件
 4. Manifest/Evidence 层 → 只引用 redacted artifacts
 
 **MVP 不做**：keyring/vault 集成、per-tenant secrets、secrets rotation、secrets 审计日志。
