@@ -133,6 +133,50 @@ def test_run_p0_contract_roundtrip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Decision algorithm equivalence (issue #1)
+# ---------------------------------------------------------------------------
+
+
+def _round_floats(value):  # type: ignore[no-untyped-def]
+    if isinstance(value, float):
+        return round(value, 12)
+    if isinstance(value, dict):
+        return {key: _round_floats(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_round_floats(item) for item in value]
+    return value
+
+
+def _normalize_decision(decision: dict) -> dict:  # type: ignore[type-arg]
+    normalized = dict(decision)
+    for field in ("decision_report_id", "timestamp", "created_at"):
+        normalized.pop(field, None)
+    return _round_floats(normalized)
+
+
+def test_decision_equivalence_golden_matches_python_algorithm() -> None:
+    """The pinned expected_decision must equal build_decision(run) output.
+
+    Guards the equivalence golden against staleness: if build_decision changes
+    without regenerating the fixture, this fails (and so does the idempotency
+    test). The vitest counterpart asserts recomputeDecision produces the same
+    decision from the same input, closing the cross-language contract.
+    """
+    from micro_eval.decision.summary import build_decision
+
+    data = _load("decision-equivalence.json")
+    record = RunRecord.model_validate(data["run"])
+    decision = build_decision(record)
+
+    assert _normalize_decision(decision.model_dump(mode="json")) == data["expected_decision"]
+    # Sanity: the fixture must actually exercise cost aggregation (the drift #1
+    # was about), otherwise the contract would not protect that code path.
+    baseline = data["expected_decision"]["aggregation"]["per_configuration"]["baseline"]
+    assert baseline["total_cost"]["amount"] == 0.03
+    assert baseline["total_cost"]["source"] == "langfuse"
+
+
+# ---------------------------------------------------------------------------
 # Idempotency test
 # ---------------------------------------------------------------------------
 

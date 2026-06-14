@@ -1,0 +1,344 @@
+{
+  "run": {
+    "schema_version": "1.0",
+    "id": "run-decision-equivalence",
+    "project_name": "decision-equivalence",
+    "status": "completed",
+    "created_at": "2026-06-14T00:00:00+00:00",
+    "completed_at": "2026-06-14T00:01:00+00:00",
+    "output_dir": ".micro-eval/runs",
+    "config_hash": "config-hash-eq",
+    "tasks": [
+      "task-eq"
+    ],
+    "configurations": [
+      "baseline",
+      "candidate"
+    ],
+    "cells": [
+      "cell-b1",
+      "cell-b2",
+      "cell-b3",
+      "cell-c1",
+      "cell-c2"
+    ],
+    "results": [
+      {
+        "schema_version": "1.0",
+        "cell_id": "cell-b1",
+        "run_id": "run-decision-equivalence",
+        "task_id": "task-eq",
+        "configuration_id": "baseline",
+        "configuration_name": "Baseline",
+        "repetition": 1,
+        "status": "pass",
+        "score": 1.0,
+        "pass_fail": "pass",
+        "output_summary": "pass",
+        "stdout_summary": "pass",
+        "stderr_summary": "",
+        "exit_code": 0,
+        "latency_s": 0.1,
+        "failure_mode": null,
+        "artifact_refs": [],
+        "evidence_refs": [
+          "cell-b1::evidence::process"
+        ],
+        "evaluation_refs": [
+          "cell-b1::validator::eq"
+        ],
+        "trace_refs": [
+          "process:cell-b1"
+        ],
+        "cell_snapshot": null,
+        "snapshot_gate_result": null
+      },
+      {
+        "schema_version": "1.0",
+        "cell_id": "cell-b2",
+        "run_id": "run-decision-equivalence",
+        "task_id": "task-eq",
+        "configuration_id": "baseline",
+        "configuration_name": "Baseline",
+        "repetition": 2,
+        "status": "pass",
+        "score": 1.0,
+        "pass_fail": "pass",
+        "output_summary": "pass",
+        "stdout_summary": "pass",
+        "stderr_summary": "",
+        "exit_code": 0,
+        "latency_s": 0.2,
+        "failure_mode": null,
+        "artifact_refs": [],
+        "evidence_refs": [
+          "cell-b2::evidence::process"
+        ],
+        "evaluation_refs": [
+          "cell-b2::validator::eq"
+        ],
+        "trace_refs": [
+          "process:cell-b2"
+        ],
+        "cell_snapshot": null,
+        "snapshot_gate_result": null
+      },
+      {
+        "schema_version": "1.0",
+        "cell_id": "cell-b3",
+        "run_id": "run-decision-equivalence",
+        "task_id": "task-eq",
+        "configuration_id": "baseline",
+        "configuration_name": "Baseline",
+        "repetition": 3,
+        "status": "fail",
+        "score": 0.0,
+        "pass_fail": "fail",
+        "output_summary": "fail",
+        "stdout_summary": "fail",
+        "stderr_summary": "",
+        "exit_code": 0,
+        "latency_s": 0.3,
+        "failure_mode": null,
+        "artifact_refs": [],
+        "evidence_refs": [
+          "cell-b3::evidence::process"
+        ],
+        "evaluation_refs": [
+          "cell-b3::validator::eq"
+        ],
+        "trace_refs": [
+          "process:cell-b3"
+        ],
+        "cell_snapshot": null,
+        "snapshot_gate_result": null
+      },
+      {
+        "schema_version": "1.0",
+        "cell_id": "cell-c1",
+        "run_id": "run-decision-equivalence",
+        "task_id": "task-eq",
+        "configuration_id": "candidate",
+        "configuration_name": "Candidate",
+        "repetition": 1,
+        "status": "fail",
+        "score": 0.0,
+        "pass_fail": "fail",
+        "output_summary": "fail",
+        "stdout_summary": "fail",
+        "stderr_summary": "",
+        "exit_code": 0,
+        "latency_s": 0.15,
+        "failure_mode": null,
+        "artifact_refs": [],
+        "evidence_refs": [
+          "cell-c1::evidence::process"
+        ],
+        "evaluation_refs": [
+          "cell-c1::validator::eq"
+        ],
+        "trace_refs": [
+          "process:cell-c1"
+        ],
+        "cell_snapshot": null,
+        "snapshot_gate_result": null
+      },
+      {
+        "schema_version": "1.0",
+        "cell_id": "cell-c2",
+        "run_id": "run-decision-equivalence",
+        "task_id": "task-eq",
+        "configuration_id": "candidate",
+        "configuration_name": "Candidate",
+        "repetition": 2,
+        "status": "error",
+        "score": 0.0,
+        "pass_fail": null,
+        "output_summary": "error",
+        "stdout_summary": "error",
+        "stderr_summary": "",
+        "exit_code": 0,
+        "latency_s": 0.0,
+        "failure_mode": null,
+        "artifact_refs": [],
+        "evidence_refs": [
+          "cell-c2::evidence::process"
+        ],
+        "evaluation_refs": [
+          "cell-c2::validator::eq"
+        ],
+        "trace_refs": [
+          "process:cell-c2"
+        ],
+        "cell_snapshot": null,
+        "snapshot_gate_result": null
+      }
+    ],
+    "migration_warnings": [],
+    "same_start_snapshot": {
+      "schema_version": "1.0",
+      "workspace_type": "blank",
+      "git_commit": null,
+      "dirty": null,
+      "config_hash": "config-hash-eq",
+      "configuration_digests": {
+        "baseline": "digest-b",
+        "candidate": "digest-c"
+      },
+      "task_revisions": {
+        "task-eq": "revision-eq"
+      },
+      "python_version": "3.11.0",
+      "setup_commands_digest": null,
+      "guardrails_digest": "guardrails-eq",
+      "sandbox_resource_limits": null,
+      "workspace_map": null,
+      "timestamp": "2026-06-14T00:00:00+00:00",
+      "caveats": [
+        "example same-start caveat"
+      ]
+    },
+    "replay_canonical": null,
+    "artifacts": [],
+    "evidence": [],
+    "traces": [
+      {
+        "schema_version": "1.0",
+        "trace_id": "cell-b1",
+        "provider": "langfuse",
+        "external_url": null,
+        "cost": {
+          "schema_version": "1.0",
+          "amount": 0.01,
+          "currency": "USD",
+          "source": "langfuse"
+        },
+        "summary": {}
+      },
+      {
+        "schema_version": "1.0",
+        "trace_id": "cell-b2",
+        "provider": "langfuse",
+        "external_url": null,
+        "cost": {
+          "schema_version": "1.0",
+          "amount": 0.02,
+          "currency": "USD",
+          "source": "langfuse"
+        },
+        "summary": {}
+      },
+      {
+        "schema_version": "1.0",
+        "trace_id": "cell-b3",
+        "provider": "langfuse",
+        "external_url": null,
+        "cost": {
+          "schema_version": "1.0",
+          "amount": null,
+          "currency": "USD",
+          "source": "unavailable"
+        },
+        "summary": {}
+      },
+      {
+        "schema_version": "1.0",
+        "trace_id": "cell-c1",
+        "provider": "langfuse",
+        "external_url": null,
+        "cost": {
+          "schema_version": "1.0",
+          "amount": 0.05,
+          "currency": "USD",
+          "source": "langfuse"
+        },
+        "summary": {}
+      }
+    ],
+    "evaluations": [],
+    "decision": null,
+    "denominator_policy": "include_failed"
+  },
+  "expected_decision": {
+    "schema_version": "1.0",
+    "verdict": "inconclusive",
+    "confidence": "low",
+    "evaluation_refs": [
+      "cell-b1::validator::eq",
+      "cell-b2::validator::eq",
+      "cell-b3::validator::eq",
+      "cell-c1::validator::eq",
+      "cell-c2::validator::eq"
+    ],
+    "evidence_refs": [
+      "cell-b1::evidence::process",
+      "cell-b2::evidence::process",
+      "cell-b3::evidence::process",
+      "cell-c1::evidence::process",
+      "cell-c2::evidence::process"
+    ],
+    "caveats": [
+      "example same-start caveat",
+      "low_sample",
+      "low sample size for candidate: repetitions < 3"
+    ],
+    "aggregation": {
+      "schema_version": "1.0",
+      "per_configuration": {
+        "baseline": {
+          "schema_version": "1.0",
+          "n_cells": 3,
+          "n_successful": 3,
+          "pass_rate": 0.666666666667,
+          "pass_at_k": {
+            "1": 0.666666666667,
+            "2": 1.0,
+            "3": 1.0
+          },
+          "pass_hat_k": {
+            "1": 0.666666666667,
+            "2": 0.444444444444,
+            "3": 0.296296296296
+          },
+          "mean_latency_ms": 200.0,
+          "median_latency_ms": 200.0,
+          "total_cost": {
+            "schema_version": "1.0",
+            "amount": 0.03,
+            "currency": "USD",
+            "source": "langfuse"
+          },
+          "denominator_policy": "include_failed",
+          "caveats": []
+        },
+        "candidate": {
+          "schema_version": "1.0",
+          "n_cells": 2,
+          "n_successful": 1,
+          "pass_rate": 0.0,
+          "pass_at_k": {
+            "1": 0.0,
+            "2": 0.0
+          },
+          "pass_hat_k": {
+            "1": 0.0,
+            "2": 0.0
+          },
+          "mean_latency_ms": 75.0,
+          "median_latency_ms": 75.0,
+          "total_cost": {
+            "schema_version": "1.0",
+            "amount": 0.05,
+            "currency": "USD",
+            "source": "langfuse"
+          },
+          "denominator_policy": "include_failed",
+          "caveats": [
+            "low_sample"
+          ]
+        }
+      }
+    },
+    "recommended_action": "review evidence and complete P0-b comparability gate"
+  }
+}

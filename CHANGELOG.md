@@ -2,6 +2,16 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.4 - 2026-06-14
+
+### Fixed
+
+- `recomputeDecision` (UI) now aggregates per-configuration trace cost from `run.traces` instead of hard-coding `total_cost` to `unavailable` (#1). Previously, appending a human evaluation recomputed the decision and silently wiped any cost that the Python `build_decision` had produced.
+
+### Added
+
+- Add a cross-language decision-algorithm equivalence contract (#1): `scripts/generate-golden.py` pins a canonical input run together with the decision the Python `build_decision` produces for it (`tests/contract/golden/decision-equivalence.json`). A pytest check asserts the fixture stays in sync with `build_decision`, and a vitest check feeds the same input to `recomputeDecision` and asserts an identical (time-stripped, tolerance-compared) decision — so algorithmic drift between the Python and UI implementations now fails CI, not just schema-shape drift.
+
 ## 0.2.3 - 2026-06-14
 
 ### Fixed

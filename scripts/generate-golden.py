@@ -16,6 +16,9 @@ import json
 import sys
 from pathlib import Path
 
+from micro_eval.decision.summary import build_decision
+from micro_eval.models.run import RunRecord
+
 # Resolve repo root relative to this file.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = REPO_ROOT / "tests" / "contract" / "golden"
@@ -700,6 +703,159 @@ RUN_LEGACY_V01X: dict = {  # type: ignore[type-arg]
 }
 
 
+# ---------------------------------------------------------------------------
+# Decision algorithm equivalence fixture (issue #1)
+#
+# The UI `recomputeDecision` (ui/src/lib/evaluation.ts) hand-mirrors the Python
+# `build_decision` algorithm. The schema golden only protects shape, not
+# algorithmic equivalence. This fixture pins one canonical input run together
+# with the decision the *Python* algorithm produces for it, so the vitest
+# contract can feed the same input to `recomputeDecision` and assert an
+# identical (normalised) decision. Time-dependent fields are stripped and all
+# floats are rounded so the comparison is deterministic across languages.
+# ---------------------------------------------------------------------------
+
+FLOAT_ROUND_DIGITS = 12
+
+
+def _round_floats(value):  # type: ignore[no-untyped-def]
+    """Recursively round floats so cross-language float noise does not break equality."""
+    if isinstance(value, float):
+        return round(value, FLOAT_ROUND_DIGITS)
+    if isinstance(value, dict):
+        return {key: _round_floats(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_round_floats(item) for item in value]
+    return value
+
+
+def normalize_decision(decision: dict) -> dict:  # type: ignore[type-arg]
+    """Strip time-dependent fields and round floats for equivalence comparison."""
+    normalized = dict(decision)
+    normalized.pop("decision_report_id", None)
+    normalized.pop("timestamp", None)
+    normalized.pop("created_at", None)
+    return _round_floats(normalized)
+
+
+def _equiv_result(
+    *,
+    cell_id: str,
+    configuration_id: str,
+    configuration_name: str,
+    repetition: int,
+    status: str,
+    pass_fail: str | None,
+    latency_s: float,
+) -> dict:  # type: ignore[type-arg]
+    """Build a minimal CellResult dict carrying evaluation/evidence refs."""
+    return {
+        "schema_version": "1.0",
+        "cell_id": cell_id,
+        "run_id": "run-decision-equivalence",
+        "task_id": "task-eq",
+        "configuration_id": configuration_id,
+        "configuration_name": configuration_name,
+        "repetition": repetition,
+        "status": status,
+        "score": 1.0 if pass_fail == "pass" else 0.0,
+        "pass_fail": pass_fail,
+        "output_summary": status,
+        "stdout_summary": status,
+        "stderr_summary": "",
+        "exit_code": 0,
+        "latency_s": latency_s,
+        "failure_mode": None,
+        "artifact_refs": [],
+        "evidence_refs": [f"{cell_id}::evidence::process"],
+        "evaluation_refs": [f"{cell_id}::validator::eq"],
+        "trace_refs": [f"process:{cell_id}"],
+        "cell_snapshot": None,
+        "snapshot_gate_result": None,
+    }
+
+
+def _equiv_trace(cell_id: str, amount: float | None, source: str) -> dict:  # type: ignore[type-arg]
+    """Build a TraceRef dict matched to a cell by trace_id == cell_id."""
+    return {
+        "schema_version": "1.0",
+        "trace_id": cell_id,
+        "provider": "langfuse",
+        "external_url": None,
+        "cost": {"schema_version": "1.0", "amount": amount, "currency": "USD", "source": source},
+        "summary": {},
+    }
+
+
+# Two configurations: `baseline` (3 successful cells, real trace costs, not
+# low_sample) and `candidate` (1 fail + 1 error, low_sample, one null-cost
+# trace) — exercises cost aggregation, denominator/pass_rate, pass@k/pass^k,
+# low_sample caveats, and same-start caveat merging in a single input.
+DECISION_EQUIVALENCE_RUN: dict = {  # type: ignore[type-arg]
+    "schema_version": "1.0",
+    "id": "run-decision-equivalence",
+    "project_name": "decision-equivalence",
+    "status": "completed",
+    "created_at": "2026-06-14T00:00:00+00:00",
+    "completed_at": "2026-06-14T00:01:00+00:00",
+    "output_dir": ".micro-eval/runs",
+    "config_hash": "config-hash-eq",
+    "tasks": ["task-eq"],
+    "configurations": ["baseline", "candidate"],
+    "cells": ["cell-b1", "cell-b2", "cell-b3", "cell-c1", "cell-c2"],
+    "results": [
+        _equiv_result(cell_id="cell-b1", configuration_id="baseline", configuration_name="Baseline", repetition=1, status="pass", pass_fail="pass", latency_s=0.1),
+        _equiv_result(cell_id="cell-b2", configuration_id="baseline", configuration_name="Baseline", repetition=2, status="pass", pass_fail="pass", latency_s=0.2),
+        _equiv_result(cell_id="cell-b3", configuration_id="baseline", configuration_name="Baseline", repetition=3, status="fail", pass_fail="fail", latency_s=0.3),
+        _equiv_result(cell_id="cell-c1", configuration_id="candidate", configuration_name="Candidate", repetition=1, status="fail", pass_fail="fail", latency_s=0.15),
+        _equiv_result(cell_id="cell-c2", configuration_id="candidate", configuration_name="Candidate", repetition=2, status="error", pass_fail=None, latency_s=0.0),
+    ],
+    "migration_warnings": [],
+    "same_start_snapshot": {
+        "schema_version": "1.0",
+        "workspace_type": "blank",
+        "git_commit": None,
+        "dirty": None,
+        "config_hash": "config-hash-eq",
+        "configuration_digests": {"baseline": "digest-b", "candidate": "digest-c"},
+        "task_revisions": {"task-eq": "revision-eq"},
+        "python_version": "3.11.0",
+        "setup_commands_digest": None,
+        "guardrails_digest": "guardrails-eq",
+        "sandbox_resource_limits": None,
+        "workspace_map": None,
+        "timestamp": "2026-06-14T00:00:00+00:00",
+        "caveats": ["example same-start caveat"],
+    },
+    "replay_canonical": None,
+    "artifacts": [],
+    "evidence": [],
+    "traces": [
+        _equiv_trace("cell-b1", 0.01, "langfuse"),
+        _equiv_trace("cell-b2", 0.02, "langfuse"),
+        _equiv_trace("cell-b3", None, "unavailable"),
+        _equiv_trace("cell-c1", 0.05, "langfuse"),
+    ],
+    "evaluations": [],
+    "denominator_policy": "include_failed",
+    "decision": None,
+}
+
+
+def _write_decision_equivalence_fixture() -> None:
+    """Pin the Python decision output for the canonical equivalence input run."""
+    record = RunRecord.model_validate(DECISION_EQUIVALENCE_RUN)
+    decision = build_decision(record)
+    expected = normalize_decision(decision.model_dump(mode="json"))
+    # Store the canonical (model_dump) form of the run so the zod schema accepts
+    # it verbatim, alongside the normalised Python decision.
+    payload = {
+        "run": _round_floats(record.model_dump(mode="json")),
+        "expected_decision": expected,
+    }
+    _write("decision-equivalence.json", payload)
+
+
 def generate_all() -> None:
     """Write all golden fixtures."""
     print("Generating golden fixtures...")
@@ -711,6 +867,7 @@ def generate_all() -> None:
     _write("evaluation-result.json", EVALUATION_RESULT)
     _write("run-plan.json", RUN_PLAN)
     _write("run-legacy-v01x.json", RUN_LEGACY_V01X)
+    _write_decision_equivalence_fixture()
 
     # Write canonical-run-p0.json to its original path for check-version-consistency.py.
     # This is the P0 fixture that the release preflight script reads tool_version from.
