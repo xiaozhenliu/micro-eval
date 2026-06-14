@@ -7,7 +7,7 @@
 > - **无 issue 的事项必须展开**：待做事项 + 关联文件，信息密度达到"新会话不靠考古就能动手"。
 > - 完成项一行留档进 Done，定期清入 CHANGELOG 后删除。
 >
-> 最近整理：2026-06-14（v0.2.8 发布后；#13、#14、#10、#1、#6、#12、#5、#8、#2、#3、#4 + report 渲染契约测试 已交付并移入 Done）。仅剩 #9（spec 先行）、Phase 3 设计文档、P3。
+> 最近整理：2026-06-14（v0.2.10 发布后）。所有 GitHub issue #1–#14 已解决或明确延后（#9 仅剩错误分类重构）；Phase 3 设计文档已交付；P3 已清空。剩余仅 Phase 3 **实施**（未来里程碑，按 plan）与若干 Blocked 项（解除条件未到）。
 
 ## Ready
 
@@ -23,8 +23,7 @@
 - **#9**（接近完成）已交付：v0.2.9 concurrency=4 + artifact cap 50MB + truncation flag 持久化；spec 对齐 trace_id 格式（`::`=cell_id，注明 cost 聚合承重）、redactor 命名（SecretRedactor→Redactor + MICRO_EVAL_SECRET_* 通道）、EvidenceItem/Artifact schema 字段对齐权威模型。**仅剩**错误分类命名 + crash 区分（enum 重构，低价值/有回归风险，后续视需要再做）。
 
 ### P3
-- **本地残留分支清理**（无 issue）
-  - **待做:** 确认无用后删除 `codex/bench-*` 与 `worktree-wf_*` 本地分支。
+- *(P3 已清空)*
 
 ## Blocked
 
@@ -57,6 +56,7 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **本地残留分支清理**（无 issue）—— 移除 4 个陈旧 `worktree-wf_*`（Workflow 隔离孤立残留，指向废弃的 5/30 提交，锁定进程已死）+ 其 worktree。`codex/bench-*` 与 `/private/tmp/micro-eval-agent-bench-*` 的 detached worktree 是 agent 能力评估用、与项目开发无关，**保留**。
 - **Run ordering 随机化**（v0.2.10，无 issue）—— RunRecord 始终记 `execution_order`；opt-in `Guardrails.randomize_execution_order` 用 seeded RNG 打乱并记 `execution_seed`（可复现）；默认关保持确定性。
 - **#9 spec 对齐**（v0.2.9 + docs）—— concurrency=4、artifact cap 50MB、truncation flag 持久化（代码）；trace_id/redactor/evidence schema 对齐权威 spec（docs）。仅剩错误分类重构未做。
 - **#3 + #4**（v0.2.8）—— 退役 legacy 执行/评分栈：删 engine/runner.py(AgentRunner)、engine/scorer.py(Scorer)、models/schema.py、legacy_agent_config、ProjectConfigV2 的 baseline/candidate/parallel 视图属性；report.py 经 RunRecord 读 legacy run（去掉最后一个 models/schema 生产依赖）；契约测试断言 adapter 为 engine 唯一 async spawner。覆盖率 78%→80%。
