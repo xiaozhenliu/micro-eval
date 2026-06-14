@@ -48,6 +48,8 @@ RUN_PHASE2_FULL: dict = {  # type: ignore[type-arg]
     "tasks": ["task-p2"],
     "configurations": ["baseline", "candidate"],
     "cells": ["cell-b1", "cell-b2", "cell-b3", "cell-c1", "cell-c2", "cell-c3"],
+    "execution_order": ["cell-b1", "cell-b2", "cell-b3", "cell-c1", "cell-c2", "cell-c3"],
+    "execution_seed": None,
     "results": [
         {
             "schema_version": "1.0",
@@ -402,6 +404,8 @@ RUN_MINIMAL: dict = {  # type: ignore[type-arg]
     "tasks": [],
     "configurations": [],
     "cells": [],
+    "execution_order": [],
+    "execution_seed": None,
     "results": [],
     "migration_warnings": [],
     "same_start_snapshot": None,

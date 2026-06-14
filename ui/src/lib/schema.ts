@@ -235,6 +235,8 @@ export const RunSchema = z.object({
   configurations: z.array(z.string()).default([]),
   cells: z.array(z.string()).default([]),
   results: z.array(CellResultSchema).default([]),
+  execution_order: z.array(z.string()).default([]),
+  execution_seed: z.number().int().nullable().default(null),
   migration_warnings: z.array(z.string()).default([]),
   same_start_snapshot: SameStartSnapshotSchema.nullable().default(null),
   replay_canonical: ReplayCanonicalSchema.nullable().default(null),

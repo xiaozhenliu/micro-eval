@@ -189,6 +189,8 @@
         "snapshot_gate_result": null
       }
     ],
+    "execution_order": [],
+    "execution_seed": null,
     "migration_warnings": [],
     "same_start_snapshot": {
       "schema_version": "1.0",

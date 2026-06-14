@@ -2,6 +2,12 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.10 - 2026-06-14
+
+### Added
+
+- Record per-run execution order: `RunRecord.execution_order` always captures the order cells were dispatched (order-effect provenance), and an opt-in `Guardrails.randomize_execution_order` shuffles the dispatch order with a recorded `execution_seed` so a randomized run stays reproducible. Default off keeps deterministic plan order. (P3, from the 2026-05-31 engineering review.)
+
 ## 0.2.9 - 2026-06-14
 
 ### Changed

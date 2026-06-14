@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from pathlib import Path
 
 from micro_eval.decision.summary import build_decision
@@ -43,11 +44,21 @@ class ExecutionKernel:
         judge_client = resolve_judge_client(plan.judge)
         semaphore = asyncio.Semaphore(plan.guardrails.max_concurrency)
 
+        # Determine dispatch order. Randomization (opt-in) avoids order-effect bias
+        # in serial / >2-way comparisons; the order (and seed) are recorded so the
+        # run stays reproducible. Default off keeps deterministic plan order.
+        cells = list(plan.cells)
+        if plan.guardrails.randomize_execution_order:
+            seed = random.randrange(2**32)
+            random.Random(seed).shuffle(cells)
+            record.execution_seed = seed
+        record.execution_order = [cell.cell_id for cell in cells]
+
         async def run_cell(cell):
             async with semaphore:
                 return await self._run_cell(cell, adapter, artifact_store, workspace_manager, record, trace_providers, judge_client, plan)
 
-        tasks = [asyncio.create_task(run_cell(cell)) for cell in plan.cells]
+        tasks = [asyncio.create_task(run_cell(cell)) for cell in cells]
         for completed in asyncio.as_completed(tasks):
             result = await completed
             record = self.run_store.append_cell_result(record, result)

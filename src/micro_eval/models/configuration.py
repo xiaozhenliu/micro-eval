@@ -118,6 +118,7 @@ class Guardrails(BaseModel):
     output_cap_bytes: int = 10 * 1024 * 1024
     artifact_cap_bytes: int = 50 * 1024 * 1024
     stop_on_cell_error: bool = False
+    randomize_execution_order: bool = False
 
     @field_validator("max_concurrency")
     @classmethod

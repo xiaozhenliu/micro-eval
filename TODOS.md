@@ -25,10 +25,6 @@
 ### P3
 - **本地残留分支清理**（无 issue）
   - **待做:** 确认无用后删除 `codex/bench-*` 与 `worktree-wf_*` 本地分支。
-- **Run ordering 随机化**（无 issue，来自 2026-05-31 工程评审）
-  - **待做:** 随机化 baseline/candidate 的执行顺序，并把 ordering 记录到 Run JSON。
-  - **关联文件:** `src/micro_eval/engine/kernel.py`、`src/micro_eval/models/run.py`。
-  - **Why:** 避免顺序效应偏差；并行执行已缓解大部分问题，串行模式或 >2 agent 对比时才重要。
 
 ## Blocked
 
@@ -61,6 +57,8 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **Run ordering 随机化**（v0.2.10，无 issue）—— RunRecord 始终记 `execution_order`；opt-in `Guardrails.randomize_execution_order` 用 seeded RNG 打乱并记 `execution_seed`（可复现）；默认关保持确定性。
+- **#9 spec 对齐**（v0.2.9 + docs）—— concurrency=4、artifact cap 50MB、truncation flag 持久化（代码）；trace_id/redactor/evidence schema 对齐权威 spec（docs）。仅剩错误分类重构未做。
 - **#3 + #4**（v0.2.8）—— 退役 legacy 执行/评分栈：删 engine/runner.py(AgentRunner)、engine/scorer.py(Scorer)、models/schema.py、legacy_agent_config、ProjectConfigV2 的 baseline/candidate/parallel 视图属性；report.py 经 RunRecord 读 legacy run（去掉最后一个 models/schema 生产依赖）；契约测试断言 adapter 为 engine 唯一 async spawner。覆盖率 78%→80%。
 - **#2**（v0.2.7）—— 跨 run 可比性警告：config id 复用但内容（digest）变化时，决策 caveat 提示不可比；检测在 kernel（有 run 历史访问），经 same_start_snapshot.caveats 流入。`RunStore.configuration_drift_caveats`。
 - **cli/report.py 渲染契约测试**（v0.2.7，无 issue）—— 文本/HTML 渲染分支契约测试（pass@k 列、caveat、HTML autoescape），覆盖率 32%→69%。
