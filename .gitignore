@@ -25,7 +25,8 @@ examples/**/report.html
 # Plan files (local only)
 .plan/
 
-# Dev-only docs (tracked on dev branch)
+# Dev-only docs (tracked on dev branch; never published to main)
+CLAUDE.md
 micro-eval-brd.md
 micro-eval-prd.md
 
