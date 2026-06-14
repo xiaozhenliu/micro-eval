@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from micro_eval.decision.summary import build_decision
@@ -18,6 +19,8 @@ from micro_eval.store.artifact_store import ArtifactStore
 from micro_eval.store.run_store import RunStore
 from micro_eval.trace.process_provider import ProcessTraceProvider
 from micro_eval.trace.provider import TraceProvider, collect_trace_with_fallback
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionKernel:
@@ -65,6 +68,47 @@ class ExecutionKernel:
         return record
 
     async def _run_cell(
+        self,
+        cell: RunCell,
+        adapter: AgentAdapter,
+        artifact_store: ArtifactStore,
+        workspace_manager: WorkspaceManager,
+        record: RunRecord,
+        trace_providers: list[TraceProvider],
+        judge_client: JudgeClient | None,
+        plan: RunPlan,
+    ) -> CellResult:
+        """Isolate one cell so an unexpected error cannot abort sibling cells."""
+        try:
+            return await self._execute_cell(
+                cell, adapter, artifact_store, workspace_manager, record, trace_providers, judge_client, plan
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - per-cell isolation boundary; the run must still finalize.
+            # Keep the full traceback observable for debugging while the run continues.
+            logger.exception("Unexpected error in cell %s; isolating as error result", cell.cell_id)
+            return self._isolated_failure_result(cell, record, exc)
+
+    def _isolated_failure_result(self, cell: RunCell, record: RunRecord, exc: Exception) -> CellResult:
+        """Build an error CellResult for an unexpected per-cell failure."""
+        # str(exc) may carry secrets (paths, args); redact before persisting/exposing.
+        redactor = Redactor.from_env()
+        return CellResult(
+            cell_id=cell.cell_id,
+            run_id=record.id,
+            task_id=cell.task.id,
+            configuration_id=cell.configuration.id,
+            configuration_name=cell.configuration.name,
+            repetition=cell.repetition,
+            status=CellStatus.error,
+            score=0.0,
+            pass_fail="fail",
+            stderr_summary=redactor.redact(str(exc))[: self.SUMMARY_LIMIT],
+            failure_mode=f"kernel_error:{exc.__class__.__name__}",
+        )
+
+    async def _execute_cell(
         self,
         cell: RunCell,
         adapter: AgentAdapter,
@@ -175,6 +219,7 @@ class ExecutionKernel:
             cell_dir=cell_dir,
             evidence_prefix=evidence_prefix,
             redactor=redactor,
+            workspace_dir=prepared.path,
         )
         for evidence in validation_evidence:
             artifact_store.add_evidence(evidence)

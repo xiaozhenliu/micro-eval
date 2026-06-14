@@ -83,7 +83,7 @@ async def test_command_cwd_escape_is_rejected(tmp_path: Path) -> None:
     expectation = ExpectationSpec(type="command", command=[sys.executable, "-c", "pass"], cwd="../..")
     evaluation, _ = await _validate([expectation], AdapterResult(status=CellStatus.passed), tmp_path)
     assert evaluation.pass_fail == "fail"
-    assert "escapes cell directory" in evaluation.comment
+    assert "escapes workspace directory" in evaluation.comment
 
 
 async def test_command_not_found(tmp_path: Path) -> None:
@@ -113,3 +113,51 @@ async def test_unsupported_expectation_type_fails(tmp_path: Path) -> None:
     )
     assert evaluation.pass_fail == "fail"
     assert "unsupported expectation type" in evaluation.comment
+
+
+async def test_file_exists_observes_workspace_by_default(tmp_path: Path) -> None:
+    # #13: file_exists must observe the workspace the agent ran in, not the
+    # artifact output directory.
+    workspace = tmp_path / "workspace"
+    output = tmp_path / "output"
+    workspace.mkdir()
+    output.mkdir()
+    (workspace / "created.txt").write_text("written by agent")
+    (output / "artifact.txt").write_text("collected output")
+
+    evaluation, _ = await validate_cell(
+        cell=_cell([ExpectationSpec(type="file_exists", value="created.txt")]),
+        adapter_result=AdapterResult(status=CellStatus.passed),
+        cell_dir=output,
+        evidence_prefix="cell::evidence",
+        workspace_dir=workspace,
+    )
+    assert evaluation.pass_fail == "pass"
+
+    # An output-dir file is not in workspace scope by default.
+    evaluation, _ = await validate_cell(
+        cell=_cell([ExpectationSpec(type="file_exists", value="artifact.txt")]),
+        adapter_result=AdapterResult(status=CellStatus.passed),
+        cell_dir=output,
+        evidence_prefix="cell::evidence",
+        workspace_dir=workspace,
+    )
+    assert evaluation.pass_fail == "fail"
+
+
+async def test_file_exists_output_dir_placeholder(tmp_path: Path) -> None:
+    # #13: the {output_dir} placeholder opts into the artifact output directory.
+    workspace = tmp_path / "workspace"
+    output = tmp_path / "output"
+    workspace.mkdir()
+    output.mkdir()
+    (output / "artifact.txt").write_text("collected output")
+
+    evaluation, _ = await validate_cell(
+        cell=_cell([ExpectationSpec(type="file_exists", value="{output_dir}/artifact.txt")]),
+        adapter_result=AdapterResult(status=CellStatus.passed),
+        cell_dir=output,
+        evidence_prefix="cell::evidence",
+        workspace_dir=workspace,
+    )
+    assert evaluation.pass_fail == "pass"

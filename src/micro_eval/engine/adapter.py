@@ -20,8 +20,17 @@ class AdapterError(Exception):
 class Redactor:
     """Named text redactor for declared environment values."""
 
+    SECRET_ENV_PREFIX = "MICRO_EVAL_SECRET_"
+
     def __init__(self, values: dict[str, str]):
         self.values = {name: value for name, value in values.items() if value}
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> "Redactor":
+        """Build a redactor from declared MICRO_EVAL_SECRET_* environment values."""
+        source = env if env is not None else dict(os.environ)
+        values = {key: value for key, value in source.items() if key.startswith(cls.SECRET_ENV_PREFIX)}
+        return cls(values)
 
     def redact(self, text: str) -> str:
         redacted = text
