@@ -19,6 +19,24 @@ class WorkspaceError(Exception):
     """Raised when workspace operations fail."""
 
 
+def _assert_within_root(source: Path, root: Path) -> None:
+    """Reject a resolved source path that escapes the project root.
+
+    Mirrors the containment guard applied in RunStore and ArtifactStore so that
+    no workspace entry point can read or copy files from outside the project.
+    Callers must pass already-resolved (``Path.resolve()``) paths; ``resolve``
+    also expands symlinks, so an in-project symlink pointing outside the root is
+    normalised to its target and rejected here.
+    """
+    try:
+        source.relative_to(root)
+    except ValueError:
+        raise WorkspaceError(
+            f"Workspace source path escapes the project root: {source} "
+            f"(project root: {root})"
+        )
+
+
 @dataclass
 class PreparedWorkspace:
     """Workspace facts for one RunCell."""
@@ -155,6 +173,8 @@ class WorkspaceManager:
         if not source.is_absolute():
             source = self.project_root / source
         source = source.resolve()
+        # Containment guard: reject sources that escape the project root.
+        _assert_within_root(source, self.project_root)
         if not source.exists():
             raise WorkspaceError(f"Workspace source does not exist: {source}")
         if _git_commit(source) is None:
@@ -191,6 +211,9 @@ class WorkspaceManager:
             if not source.is_absolute():
                 source = self.project_root / source
             source = source.resolve()
+            # Containment guard: a `files` workspace source is also a workspace
+            # source path, so it must stay inside the project root (issue #10).
+            _assert_within_root(source, self.project_root)
             if not source.exists():
                 raise WorkspaceError(f"Workspace file source does not exist: {source}")
             destination = workspace_path / source.name
@@ -248,12 +271,17 @@ def build_same_start_snapshot(
                 source = root / source
             source = source.resolve()
             try:
+                # Containment guard: reject sources that escape the project root,
+                # consistent with _resolve_source_path and the store-layer guards.
+                _assert_within_root(source, root)
                 commit = resolve_git_commit(source, task.workspace.ref)
                 dirty = _git_dirty(source)
             except WorkspaceError as exc:
                 commit = None
                 dirty = None
-                caveats.append(str(exc))
+                # Tag the caveat with the task id so multi-task runs can locate
+                # which workspace configuration was rejected (fail-soft here).
+                caveats.append(f"[task={task.id}] {exc}")
             workspace_commits[task.id] = commit
             workspace_dirty[task.id] = dirty
         else:

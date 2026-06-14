@@ -7,7 +7,7 @@
 > - **无 issue 的事项必须展开**：待做事项 + 关联文件，信息密度达到"新会话不靠考古就能动手"。
 > - 完成项一行留档进 Done，定期清入 CHANGELOG 后删除。
 >
-> 最近整理：2026-06-12（v0.2.2 发布后；issue 状态已代码级核实，#7、#11 已关闭）。
+> 最近整理：2026-06-14（v0.2.3 发布后；#13、#14、#10 已交付并移入 Done）。
 
 ## Ready
 
@@ -15,11 +15,8 @@
 - **Phase 3 设计文档**（里程碑，下一个动手项）
   - **待做:** Docker sandbox + 更复杂 workspace 类型 + 趋势分析的实施计划，沿用 Phase 2 计划格式（`docs/superpowers/plans/`）。
   - **注意:** 执行链路改动安全敏感度高（网络边界、容器逃逸面、凭证传递），动工前过 `docs/engineering/security-guidelines.md` 评审。两个 P0 测试防线（跨语言契约、黄金路径 e2e）已就位作为回归保障。
-- **#13** `file_exists`/`command` expectations 验证的是 artifact 目录而非 agent 实际执行的 workspace（bug，`kernel.py` 传 `artifact_store.cell_dir` 给 `validate_cell`）
-- **#14** kernel 只捕获 `WorkspaceError`/`AdapterError`，其他异常会中止整个 run，应扩大 per-cell 隔离（bug）
 
 ### P1
-- **#10** `git_repo` workspace 的 source path 未限制在 project root 内（安全）
 - **#1** UI `recomputeDecision` 手工镜像 Python `build_decision` 算法，golden 契约只保护 schema 形状不保护算法等价（一致性）
 - **#6** zod `EvaluationResult` 缺 Python 端强制的 pass_fail → evidence_refs 校验（一致性）
 - **#12** 二进制内容检测阈值不统一：adapter 检查全文 `\x00`，artifact store 只看前 1024 字节（一致性）
@@ -75,5 +72,8 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **#13**（v0.2.3）—— `file_exists`/`command` expectations 验证作用域从 artifact 目录改为 agent 实际 workspace；`{output_dir}` 占位符显式引用产物目录（`validator.py` + `kernel.py`）。
+- **#14**（v0.2.3）—— kernel per-cell 异常隔离：未预期异常降级为隔离失败结果（stderr 脱敏），`CancelledError` 仍向上传播；不再因单 cell 异常中止整个 run。
+- **#10**（v0.2.3）—— `git_repo`/`files` workspace source path 约束在 project root 内；共享 `_assert_within_root` guard 覆盖三处入口（`_resolve_source_path`/`_copy_files`/`build_same_start_snapshot`），越界在准备期拒绝、在 same-start 快照期降级为带 task id 的 caveat。
 - **Secret redaction**（2026-05-31 评审项）——`Redactor` + `MICRO_EVAL_SECRET_*` 通道覆盖 artifact/evidence/judge prompt/trace summary/validator 输出，含否定测试（v0.1.x–v0.2.1）。
 - **output_mode: directory 评分机制**（2026-05-31 评审项）——adapter 支持 directory 输出收集，评分经 task-specific expectations 实现（v0.1.x–v0.2.x）。

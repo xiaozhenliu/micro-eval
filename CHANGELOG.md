@@ -2,6 +2,17 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.2.3 - 2026-06-14
+
+### Fixed
+
+- Validate `file_exists` and `command` expectations against the agent's actual workspace directory instead of the artifact output directory (#13). Expectations may still opt into the artifact directory with the `{output_dir}` placeholder.
+- Isolate per-cell failures in the run kernel: a cell that raises an unexpected exception now degrades to an isolated failure result (with redacted stderr) instead of aborting the whole run (#14). `CancelledError` still propagates so cancellation is not swallowed.
+
+### Security
+
+- Constrain `git_repo` and `files` workspace source paths to the project root, consistent with the existing RunStore/ArtifactStore containment guards (#10). A new shared `_assert_within_root` guard covers all three workspace entry points (`_resolve_source_path`, `_copy_files`, `build_same_start_snapshot`); out-of-root sources are rejected during preparation and recorded as a task-tagged caveat during same-start snapshotting.
+
 ## 0.2.2 - 2026-06-12
 
 ### Added
