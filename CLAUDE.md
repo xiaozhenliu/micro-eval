@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
-v0.3.0 已完成：Phase 3 全部五个里程碑交付。P3-a WorkspaceProvider Protocol + ProviderRegistry + GitWorktreeProvider 重构（零行为变化）。P3-b Seatbelt(macOS)/Bubblewrap(Linux) Level 1 OS 策略 provider（不可用时降级 Level 0 + caveat）。P3-c E2B/Modal 远程 provider（可选，无凭证时 fail-hard 不降级）。P3-d 多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot 可比性维度。P3-e SQLite 索引（JSON 仍为 source of truth）+ 趋势分析（drift breakpoint 标注不可比断点）+ 趋势 API route。Phase 2 全部四个里程碑此前已交付。所有 GitHub issue #1–#14 已解决或明确延后。Python CLI + Next.js 本地 Web UI 均可运行。224 个 pytest 测试 + 48 个 vitest 测试通过。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制。执行层通过 provider registry 选择隔离后端，由 `tests/unit/test_provider_protocol.py` + `tests/contract/test_execution_contract.py` 守护。
+v0.3.2 已完成：测试覆盖率从 ~78%（224 tests）大幅提升至 91%（455 tests），关闭 CLI、engine、evaluation、store、trace 各层覆盖缺口。v0.3.1 新增两个 example（multi-task-matrix + git-workspace-isolation），example 能力覆盖从 ~50% 提升到 ~85%。v0.3.0 已完成：Phase 3 全部五个里程碑交付。P3-a WorkspaceProvider Protocol + ProviderRegistry + GitWorktreeProvider 重构（零行为变化）。P3-b Seatbelt(macOS)/Bubblewrap(Linux) Level 1 OS 策略 provider（不可用时降级 Level 0 + caveat）。P3-c E2B/Modal 远程 provider（可选，无凭证时 fail-hard 不降级）。P3-d 多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot 可比性维度。P3-e SQLite 索引（JSON 仍为 source of truth）+ 趋势分析（drift breakpoint 标注不可比断点）+ 趋势 API route。Phase 2 全部四个里程碑此前已交付。所有 GitHub issue #1–#14 已解决或明确延后。Python CLI + Next.js 本地 Web UI 均可运行。455 个 pytest 测试 + 48 个 vitest 测试通过。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制。执行层通过 provider registry 选择隔离后端，由 `tests/unit/test_provider_protocol.py` + `tests/contract/test_execution_contract.py` 守护。
 
 ## 开发方法硬规则
 

@@ -2,6 +2,19 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.2 - 2026-06-15
+
+### Added
+
+- **Test coverage expansion**: overall line coverage rises from ~78% (224 tests) to 91% (455 tests), closing gaps across CLI, engine, evaluation, store, and trace layers.
+  - New test files targeting previously uncovered paths in `cli/init.py`, `cli/list.py`, `cli/run.py`, `cli/validate.py`, `cli/report.py`, `engine/adapter.py`, `engine/kernel.py`, `engine/providers/git_worktree.py`, `engine/providers/remote.py`, `evaluation/llm_judge.py`, `store/artifact_store.py`, `store/run_store.py`, `store/sqlite_store.py`, `trace/langfuse_provider.py`, `decision/trend.py`, and model validators.
+  - Key coverage improvements: `cli/init.py` 0%→100%, `cli/list.py` 0%→97%, `cli/main.py` 0%→58%, `engine/providers/os_policy.py` →100%, `decision/trend.py` 71%→100%, `models/configuration.py` 85%→100%, `models/run.py` →100%, `engine/workspace.py` →99%.
+  - Coverage spec: `docs/superpowers/specs/2026-06-15-test-coverage-plan.md`.
+
+### Changed
+
+- Version bump to 0.3.2 (Python `__init__.py`, UI `package.json`).
+
 ## 0.3.1 - 2026-06-15
 
 ### Added

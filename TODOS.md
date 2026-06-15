@@ -7,7 +7,7 @@
 > - **无 issue 的事项必须展开**：待做事项 + 关联文件，信息密度达到"新会话不靠考古就能动手"。
 > - 完成项一行留档进 Done，定期清入 CHANGELOG 后删除。
 >
-> 最近整理：2026-06-15（v0.3.1 发布后）。v0.3.1 新增两个 example（multi-task-matrix + git-workspace-isolation），example 能力覆盖从 ~50% 提升到 ~85%。P0/P1 已清空。
+> 最近整理：2026-06-15（v0.3.2 发布后）。v0.3.2 测试覆盖率从 ~78%（224 tests）提升到 91%（455 tests），关闭 CLI、engine、evaluation、store、trace 各层缺口。P0/P1 已清空。
 
 ---
 
@@ -42,27 +42,22 @@
 - **仅剩:** `AdapterResult.status` 用字符串 `"pass"/"fail"/"error"/"timeout"` 区分，应改为 enum 并区分 crash vs timeout vs user error。低价值，有回归风险。
 - **关联文件:** `engine/adapter.py`（`AdapterResult`）、`engine/kernel.py`（消费 status）、`models/run.py`（`CellResult`）。
 
-#### 测试覆盖率缺口
+#### 测试覆盖率（已大幅提升，v0.3.2）
 
-- **整体覆盖率:** 78%（224 tests）。
-- **主要缺口文件及根因:**
+- **整体覆盖率:** 91%（455 tests）。前版本 ~78%（224 tests）。
+- **当前剩余缺口（<100% 文件）:**
 
-| 文件 | 覆盖率 | 缺口原因 |
+| 文件 | 覆盖率 | 缺口说明 |
 |------|--------|----------|
-| `cli/init.py` | 0% | CLI 入口，无单元测试（仅通过 e2e 间接覆盖） |
-| `cli/list.py` | 0% | 同上 |
-| `cli/main.py` | 0% | 同上 |
-| `cli/run.py` | 0% | 同上 |
-| `cli/validate.py` | 0% | 同上 |
-| `cli/report.py` | 69% | 有契约测试，仍缺渲染分支 |
-| `evaluation/llm_judge.py` | 65% | DeepEval client 封装路径未 mock（Blocked，见下） |
-| `decision/trend.py` | 71% | `compute_all_trends` 未覆盖完整路径 |
-| `models/configuration.py` | 85% | validator 分支覆盖 |
-| `store/artifact_store.py` | 86% | 边界分支 |
-| `trace/langfuse_provider.py` | 80% | SDK 降级路径 |
+| `cli/main.py` | 58% | Typer app 入口分支（`main()` 调用路径），需 subprocess 级 e2e |
+| `cli/run.py` | 79% | 部分 error-path 分支（--config 解析失败、run abort） |
+| `cli/validate.py` | 82% | 部分错误分支 |
+| `evaluation/llm_judge.py` | 65% | DeepEval client 封装路径（Blocked，见下） |
+| `engine/providers/remote.py` | 44% | E2B/Modal 远程执行路径（需真实凭证或重 mock） |
+| `engine/providers/git_worktree.py` | 85% | worktree 创建/清理异常路径 |
+| `trace/langfuse_provider.py` | 80% | SDK 降级路径（Blocked，见下） |
 
-- **待做:** ① CLI 命令加 subprocess 集成测试（类似现有 e2e 但直接 `invoke` CLI 函数）；② `trend.py` 补 `compute_all_trends` 路径；③ 其他文件针对性补 <90% 分支。
-- **优先级:** 先补 `trend.py`（71%）和 CLI 集成测试（0%→基本覆盖），再处理其余。
+- **待做（低优先级，已超 CI 门槛 75%）:** `cli/main.py` 补 subprocess 级 e2e；`remote.py` 补完整 mock 路径。其余缺口受外部依赖限制（Blocked）。
 
 ### P3
 
@@ -148,6 +143,7 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **Test coverage expansion**（v0.3.2）—— 整体覆盖率从 ~78%（224 tests）提升到 91%（455 tests）。CLI 层（init/list/run/validate/report）从 0% 提升至 82%+；decision/trend 达到 100%；engine/workspace 达到 99%；models/configuration、models/run 达到 100%。455 pytest 全绿。
 - **Example coverage expansion**（v0.3.1）—— 新增 `multi-task-matrix`（12-cell 矩阵，4 种 expectation，setup commands）+ `git-workspace-isolation`（git_repo worktree、OS sandbox、fixture digest、toolchain fingerprint、趋势分析 drift breakpoint）。`run-example.py` 加 `--example` 统一入口。examples/README.md 加能力覆盖矩阵 + Advanced 外部集成文档。覆盖度 ~50% → ~85%。独立 opus 评审 → 修复 6 项反馈后 commit。224 pytest + 48 vitest 全绿。
 - **Phase 3 实施**（v0.3.0）—— P3-a→P3-e 五个里程碑全部交付。详见 CHANGELOG 0.3.0。
 - **v0.2.2–v0.2.10** —— 所有 GitHub issue #1–#14 解决。详见 CHANGELOG 各版本条目。
