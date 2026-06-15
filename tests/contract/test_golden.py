@@ -159,8 +159,10 @@ def test_decision_equivalence_golden_matches_python_algorithm() -> None:
 
     Guards the equivalence golden against staleness: if build_decision changes
     without regenerating the fixture, this fails (and so does the idempotency
-    test). The vitest counterpart asserts recomputeDecision produces the same
-    decision from the same input, closing the cross-language contract.
+    test). Previously a vitest counterpart consumed this fixture to assert
+    cross-language equivalence; that test was removed when recomputeDecision
+    was deleted (issue #1) — the UI now delegates to Python build_decision
+    via subprocess.
     """
     from micro_eval.decision.summary import build_decision
 

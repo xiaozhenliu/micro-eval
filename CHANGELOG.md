@@ -2,6 +2,21 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.4 - 2026-06-15
+
+### Changed
+
+- The UI evaluate endpoint now delegates to Python `build_decision` via subprocess instead of maintaining a separate TypeScript reimplementation (#1). The `micro-eval apply-evaluation` CLI command accepts a JSON payload on stdin, constructs the human evaluation via `build_human_evaluation`, appends it through `RunStore.append_evaluation`, and returns the recomputed decision on stdout. This makes Python the single source of truth for the decision algorithm.
+
+### Removed
+
+- Delete `ui/src/lib/evaluation.ts` (226 lines): `recomputeDecision`, `appendEvaluationToRun`, `buildHumanEvaluation`, `appendEvaluationFile`, and all helper functions (`aggregateCost`, `passAtK`, `passHatK`, `combination`, `dedupe`, `median`, `redactSecrets`, `safePathSegment`). The decision algorithm, evaluation construction, and file persistence are now handled exclusively by the Python engine.
+- Delete `ui/src/lib/__tests__/decision-equivalence.test.ts` and `ui/src/lib/__tests__/evaluation.test.ts` — the cross-language equivalence contract is no longer needed since only one implementation exists. The Python golden test (`test_golden.py::test_decision_equivalence_golden_matches_python_algorithm`) continues to guard `build_decision` against regression.
+
+### Added
+
+- New CLI command `micro-eval apply-evaluation --run-id <id> --cell-id <id>` that reads evaluation input from stdin JSON and outputs `{evaluation, evidence, decision}` to stdout. Supports `MICRO_EVAL_UV_PATH` environment variable for custom `uv` binary path.
+
 ## 0.3.3 - 2026-06-15
 
 ### Added
