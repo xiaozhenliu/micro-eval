@@ -33,8 +33,8 @@ configurations:
   - id: sonnet-skill-v1
   - id: sonnet-skill-v2
 
-run:
-  repetitions: 2        # each (task, config) pair runs twice
+# repetitions is set per configuration:
+# configurations[].repetitions: 2
 ```
 
 Each cell carries a stable identity — `(task_id, config_id, rep_index)` — recorded in `plan.json` before execution begins. This means partial results from an interrupted run are always traceable.
@@ -45,11 +45,10 @@ By default, cells execute in **deterministic order**: tasks iterate in declarati
 
 When you need to eliminate ordering effects — for example, suspecting that sequential workspace writes influence later cells — enable randomization:
 
-```yaml{3,4}
-run:
-  guardrails:
-    randomize_execution_order: true
-    # execution_seed is auto-generated and recorded in plan.json
+```yaml{2}
+guardrails:
+  randomize_execution_order: true
+  # execution_seed is auto-generated and recorded in plan.json
 ```
 
 The generated `execution_seed` is always written to `plan.json` and embedded in `RunResult.metadata`, so the exact order can be replayed.
@@ -59,7 +58,7 @@ The generated `execution_seed` is always written to `plan.json` and embedded in 
 Cells run concurrently via `asyncio`, with a bounded semaphore:
 
 ```yaml
-run:
+guardrails:
   max_concurrency: 4    # default; adjust based on available CPU/memory
 ```
 
@@ -86,9 +85,9 @@ The engine provisions an isolated workspace for each cell based on `workspace.ty
 ```yaml
 workspace:
   type: git_repo
-  repo: .
-  commit: HEAD        # pinned for reproducibility
-  setup_commands:
+  path: .
+  ref: HEAD           # pinned for reproducibility
+  setup:
     - ["uv", "sync"]
 ```
 
@@ -96,11 +95,11 @@ The worktree path is unique per cell — parallel cells never share a filesystem
 
 ### Step 2 — Setup Commands
 
-`setup_commands` run sequentially inside the workspace before the agent is invoked. Every command must be an **argv list** (no shell strings):
+`setup` commands run sequentially inside the workspace before the agent is invoked. Every command must be an **argv list** (no shell strings):
 
 ```yaml{3,4,5}
 workspace:
-  setup_commands:
+  setup:
     - ["uv", "sync", "--frozen"]
     - ["npm", "ci"]
     - ["python", "scripts/seed_db.py"]
@@ -132,16 +131,15 @@ micro-eval refuses to execute agent commands passed as shell strings. If your `c
 stdout, stderr, and declared artifact paths are captured with size caps to prevent runaway output from exhausting disk:
 
 ```yaml
-run:
-  guardrails:
-    max_output_bytes: 1048576     # 1 MB per stream (default)
-    max_artifact_bytes: 10485760  # 10 MB per artifact (default)
+guardrails:
+  output_cap_bytes: 10485760    # 10 MB per cell (default)
+  artifact_cap_bytes: 52428800  # 50 MB per artifact (default)
 ```
 
 When a stream exceeds its cap, capture stops and `stdout_truncated: true` (or `stderr_truncated: true`) is set on the `CellResult`. The agent process is not killed — only the capture buffer is capped.
 
 ::: warning Truncated output affects validation
-If `stdout_truncated` is `true`, `contains` expectations that match against the end of stdout may produce false negatives. Check `cell_result.stdout_truncated` when debugging unexpected validation failures. Increase `max_output_bytes` if your agent produces large structured output.
+If `stdout_truncated` is `true`, `contains` expectations that match against the end of stdout may produce false negatives. Check `cell_result.stdout_truncated` when debugging unexpected validation failures. Increase `output_cap_bytes` in `guardrails` if your agent produces large structured output.
 :::
 
 ### Step 5 — Deterministic Validation
@@ -174,8 +172,8 @@ expectations:
 ```yaml [command]
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
-    expect_exit_code: 0
+    command: ["python", "-m", "pytest", "tests/", "-q"]
+    cwd: "{output_dir}"
 ```
 
 :::
@@ -246,7 +244,7 @@ The `CellResult` records `exit_reason: timeout` and the actual wall-clock durati
 By default, a cell error (setup failure, agent crash, timeout) is recorded as a `CellResult` with `status: error` and the run continues:
 
 ```yaml
-run:
+guardrails:
   stop_on_cell_error: false   # default — continue on error
 ```
 
@@ -268,26 +266,23 @@ The workspace provider determines how cells are isolated from each other and fro
 | `vm` | E2B / Modal | Remote ephemeral VM; strongest isolation |
 
 ```yaml{3}
-run:
-  workspace_provider:
-    isolation_level: os_policy    # falls back to logical with a caveat if unavailable
+workspace:
+  isolation_level: os_policy    # falls back to logical with a caveat if unavailable
 ```
 
 When `os_policy` is requested but Seatbelt/Bubblewrap is unavailable (e.g., wrong OS or missing permissions), micro-eval downgrades to `logical` and records a `SandboxCaveat` in the run metadata. Remote providers (`E2B`, `Modal`) **never downgrade** — they fail hard if credentials are absent.
 
 ## Guardrails Reference
 
-All safety limits live under `run.guardrails`:
+All safety limits live under `guardrails`:
 
 ```yaml
-run:
-  guardrails:
-    max_concurrency: 4
-    max_output_bytes: 1048576
-    max_artifact_bytes: 10485760
-    randomize_execution_order: false
-    stop_on_cell_error: false
-    allowed_exit_codes: [0]       # cells with other exit codes are flagged
+guardrails:
+  max_concurrency: 4
+  output_cap_bytes: 10485760
+  artifact_cap_bytes: 52428800
+  randomize_execution_order: false
+  stop_on_cell_error: false
 ```
 
 ## Secrets Handling

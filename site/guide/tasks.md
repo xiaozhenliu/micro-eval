@@ -46,7 +46,7 @@ expectations:
   - type: file_exists
     path: "{output_dir}/src/utils.py"
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
+    command: ["python", "-m", "pytest", "tests/", "-q"]
     cwd: "{output_dir}"
 
 workspace:
@@ -54,19 +54,18 @@ workspace:
   path: /path/to/your/project
   ref: main
   isolation_level: logical
-  trust_level: project
+  trust_level: semi_trusted
   network_policy: none
   setup:
     - ["pip", "install", "-e", "."]
   fixtures:
-    - source: testdata/utils_original.py
-      dest: src/utils.py
+    - path: testdata/utils_original.py
       digest: sha256:abc123...
   toolchain:
-    python: "3.11"
-    pip: "23.3"
+    runtime: python3
+    lockfile: requirements.txt
 
-business_impact_tier: p1
+business_impact_tier: 2
 tags: [refactor, python, extract-function]
 revision_id: "2026-06-15-v1"
 ```
@@ -83,7 +82,7 @@ revision_id: "2026-06-15-v1"
 | `rubric` | no | Scoring criteria. Can be a plain string or a structured object with named dimensions and weights. |
 | `expectations` | no | Deterministic validation rules run before the LLM judge. Failures short-circuit scoring. |
 | `workspace` | no | Execution environment spec. Defaults to `type: blank` with `isolation_level: logical`. |
-| `business_impact_tier` | no | `p0`–`p3`. Surfaced in reports for prioritisation. |
+| `business_impact_tier` | no | `1`–`3` (integer). Surfaced in reports for prioritisation. `1` is highest priority. |
 | `tags` | no | Free-form list. Used for filtering with `micro-eval list` and `--tag`. |
 | `revision_id` | no | Opaque string for tracking task definition changes over time. |
 
@@ -167,30 +166,30 @@ Run an arbitrary command as a validator. The command must exit with code `0` for
 ```yaml
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
+    command: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["npx", "tsc", "--noEmit"]
+    command: ["npx", "tsc", "--noEmit"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["git", "diff", "--exit-code"]
+    command: ["git", "diff", "--exit-code"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["bash", "scripts/validate_output.sh"]
+    command: ["bash", "scripts/validate_output.sh"]
     cwd: "{output_dir}"
 ```
 
 **Important constraints on `command` expectations:**
 
-- `argv` must be a list — never a shell string. micro-eval passes arguments directly to the subprocess without a shell, which prevents injection attacks and quoting surprises.
+- `command` must be a list — never a shell string. micro-eval passes arguments directly to the subprocess without a shell, which prevents injection attacks and quoting surprises.
 - `cwd` defaults to `{output_dir}` if omitted.
 - Stdout and stderr from the command are captured and attached to the run result for debugging, but they do not affect the pass/fail determination — only the exit code matters.
 
 ::: warning
-Do not use `argv: ["sh", "-c", "some command string"]`. If you need shell features, write a script file, commit it to your fixture, and invoke it with `argv: ["bash", "scripts/my-check.sh"]`.
+Do not use `command: ["sh", "-c", "some command string"]`. If you need shell features, write a script file, commit it to your fixture, and invoke it with `command: ["bash", "scripts/my-check.sh"]`.
 :::
 
 ## Workspace Types
@@ -236,11 +235,11 @@ workspace:
   setup:
     - ["pip", "install", "-e", ".[dev]"]
   fixtures:
-    - source: testdata/seed_data.sql
-      dest: testdata/seed_data.sql
+    - path: testdata/seed_data.sql
       digest: sha256:deadbeef...
   toolchain:
-    python: "3.11"
+    runtime: python3
+    lockfile: requirements.txt
 ```
 
 ::: tip
@@ -289,7 +288,7 @@ Setup commands run inside the workspace, not in your project root. The working d
 
 ## Fixtures
 
-Fixtures let you inject specific file versions into a `git_repo` workspace, overriding what is in the repository at `ref`. Each fixture entry specifies a source path (relative to your project) and a destination path (relative to the workspace root).
+Fixtures let you inject specific file versions into a `git_repo` workspace, overriding what is in the repository at `ref`. Each fixture entry specifies a path (relative to your project) and an optional digest for integrity verification.
 
 ```yaml
 workspace:
@@ -297,11 +296,9 @@ workspace:
   path: /path/to/repo
   ref: main
   fixtures:
-    - source: testdata/initial_state.py
-      dest: src/module.py
+    - path: testdata/initial_state.py
       digest: sha256:abc123...
-    - source: testdata/config_v2.yaml
-      dest: config/settings.yaml
+    - path: testdata/config_v2.yaml
       digest: sha256:def456...
 ```
 

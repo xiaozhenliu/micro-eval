@@ -10,24 +10,14 @@ micro-eval 会将你配置的命令作为子进程在你的机器上执行。一
 
 ## argv-Only 子进程执行
 
-micro-eval 中的每个 agent 命令和验证命令都以 **argv 列表**形式执行，而非 shell 字符串。
-
-```python
-# 内部实现，micro-eval 使用：
-await asyncio.create_subprocess_exec(*argv, cwd=workspace_dir, env=cell_env)
-
-# 而非：
-subprocess.run(command_string, shell=True)  # 受信路径中从不使用
-```
-
-这意味着任务提示词或 agent 输出中的 shell 元字符——反引号、分号、管道、`$()` 展开——都会作为字面数据传递给进程，永远不会被 shell 解释。
+micro-eval 中的每个 agent 命令和验证命令都以 **argv 列表**形式执行，而非 shell 字符串。任务提示词或 agent 输出中的 shell 元字符——反引号、分号、管道、`$()` 展开——都会作为字面数据传递给进程，永远不会被 shell 解释。
 
 **实际意义：** 即使提示词中包含 shell 注入尝试，以下任务定义也是安全的：
 
 ```yaml
 # tasks/untrusted-prompt.yaml
 id: injection-attempt
-prompt: "Summarize this: $(rm -rf /tmp/important)"  # 安全 — 不会被 shell 展开
+input_payload: "Summarize this: $(rm -rf /tmp/important)"  # 安全 — 不会被 shell 展开
 workspace:
   type: blank
 
@@ -80,13 +70,7 @@ configurations:
       - MICRO_EVAL_SECRET_OPENAI_API_KEY
 ```
 
-密钥以全名注入子进程环境，agent 进程以环境变量的形式接收它们：
-
-```python
-# 在你的 agent 内部
-import os
-api_key = os.environ["MICRO_EVAL_SECRET_OPENAI_API_KEY"]
-```
+密钥以全名注入子进程环境，agent 进程以标准环境变量的形式接收它们——例如，`MICRO_EVAL_SECRET_OPENAI_API_KEY` 可直接从环境中读取。
 
 ### 自动脱敏
 
@@ -166,33 +150,33 @@ micro-eval 支持四种 workspace 隔离级别，可按 configuration 选择。�
 | `container` | Docker（未来） | 是 | 是 | CI 环境 |
 | `vm` | E2B / Modal | 是 | 是 | 不可信 agent，生产环境评测 |
 
-在 `eval.yaml` 中配置隔离级别：
+在 task 的 `workspace` 块中配置隔离级别：
 
 ::: code-group
 
 ```yaml [Logical（默认）]
-configurations:
-  - name: baseline
-    command: ["my-agent"]
-    workspace_provider: logical
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: logical
 ```
 
 ```yaml [OS Policy — macOS Seatbelt]
-configurations:
-  - name: sandboxed
-    command: ["my-agent"]
-    workspace_provider: os_policy
-    sandbox:
-      network_policy: none   # 阻断出站网络
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: os_policy
+  network_policy: none
 ```
 
 ```yaml [Remote VM — E2B]
-configurations:
-  - name: remote
-    command: ["my-agent"]
-    workspace_provider: e2b
-    required_secrets:
-      - MICRO_EVAL_SECRET_E2B_API_KEY
+workspace:
+  type: blank
+  isolation_level: vm
+  trust_level: untrusted
+  network_policy: none
 ```
 
 :::
@@ -234,14 +218,7 @@ configurations:
 
 ## 报告安全
 
-HTML 报告使用 Jinja2 生成，并**启用了自动转义**。嵌入报告中的 agent 输出、任务提示词和标注文本在渲染前均经过 HTML 转义。
-
-```python
-# 内部实现
-env = jinja2.Environment(autoescape=True, loader=...)
-```
-
-这可以防止报告在浏览器中打开时，因 agent 输出包含 HTML 或 JavaScript 而导致存储型 XSS。
+HTML 报告使用**启用了自动转义**的模板引擎生成。嵌入报告中的 agent 输出、任务提示词和标注文本在渲染前均经过 HTML 转义。这可以防止报告在浏览器中打开时，因 agent 输出包含 HTML 或 JavaScript 而导致存储型 XSS。
 
 ::: tip 自包含报告
 HTML 报告内联嵌入所有数据，打开时不发起任何外部请求。共享或归档时无需暴露任何 `.micro-eval/` 内部内容，可以放心分享。

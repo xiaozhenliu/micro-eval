@@ -39,19 +39,22 @@ The validator runs automatically on every cell in the result matrix. It evaluate
 ```yaml{6-17}
 tasks:
   - id: refactor-sort
-    prompt: "Refactor the sort function in utils.py to use Timsort."
+    input_payload: "Refactor the sort function in utils.py to use Timsort."
     workspace:
       type: git_repo
+      path: ./fixtures/repo
+      ref: main
     expectations:
       - type: exit_code
         value: 0
       - type: contains
-        target: stdout
+        stream: stdout
         value: "timsort"
       - type: file_exists
         path: utils.py
       - type: command
-        run: "python -c 'import utils; assert utils.sort([3,1,2]) == [1,2,3]'"
+        command: ["python", "-c", "import utils; assert utils.sort([3,1,2]) == [1,2,3]"]
+        cwd: "{output_dir}"
 ```
 
 ### What the Validator Produces

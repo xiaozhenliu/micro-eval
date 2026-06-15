@@ -69,11 +69,12 @@ required_secrets: [API_KEY]
 
 ```yaml
 tasks:
-  - name: add-docstrings
-    prompt: "Add Google-style docstrings to all public functions in src/"
+  - id: add-docstrings
+    name: Add docstrings
+    input_payload: "Add Google-style docstrings to all public functions in src/"
     workspace:
       type: git_repo
-      repo: https://github.com/example/project
+      path: ./fixtures/project
       ref: abc1234
     expectations:
       - type: exit_code
@@ -130,7 +131,7 @@ tasks:
 
 ```yaml [contains]
 - type: contains
-  in: stdout
+  stream: stdout
   value: "def process("
 ```
 
@@ -141,8 +142,8 @@ tasks:
 
 ```yaml [command]
 - type: command
-  run: ["python", "-m", "pytest", "tests/", "-q"]
-  expect_exit: 0
+  command: ["python", "-m", "pytest", "tests/", "-q"]
+  cwd: "{output_dir}"
 ```
 
 :::

@@ -46,7 +46,7 @@ expectations:
   - type: file_exists
     path: "{output_dir}/src/utils.py"
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
+    command: ["python", "-m", "pytest", "tests/", "-q"]
     cwd: "{output_dir}"
 
 workspace:
@@ -54,19 +54,18 @@ workspace:
   path: /path/to/your/project
   ref: main
   isolation_level: logical
-  trust_level: project
+  trust_level: semi_trusted
   network_policy: none
   setup:
     - ["pip", "install", "-e", "."]
   fixtures:
-    - source: testdata/utils_original.py
-      dest: src/utils.py
+    - path: testdata/utils_original.py
       digest: sha256:abc123...
   toolchain:
-    python: "3.11"
-    pip: "23.3"
+    runtime: python3
+    lockfile: requirements.txt
 
-business_impact_tier: p1
+business_impact_tier: 2
 tags: [refactor, python, extract-function]
 revision_id: "2026-06-15-v1"
 ```
@@ -83,7 +82,7 @@ revision_id: "2026-06-15-v1"
 | `rubric` | 否 | 评分标准，可以是普通字符串，也可以是包含命名维度和权重的结构化对象。 |
 | `expectations` | 否 | 在 LLM judge 运行前执行的确定性验证规则，验证失败会短路评分流程。 |
 | `workspace` | 否 | 执行环境规格，默认为 `type: blank` 且 `isolation_level: logical`。 |
-| `business_impact_tier` | 否 | `p0`–`p3`，在报告中显示以辅助优先级排序。 |
+| `business_impact_tier` | 否 | `1`–`3`（整数），在报告中显示以辅助优先级排序，`1` 为最高优先级。 |
 | `tags` | 否 | 自由格式列表，用于 `micro-eval list` 和 `--tag` 筛选。 |
 | `revision_id` | 否 | 不透明字符串，用于追踪 task 定义随时间的变化。 |
 
@@ -167,30 +166,30 @@ Agent 的工作目录是工作区根目录，与 `{output_dir}` 解析的路径�
 ```yaml
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
+    command: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["npx", "tsc", "--noEmit"]
+    command: ["npx", "tsc", "--noEmit"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["git", "diff", "--exit-code"]
+    command: ["git", "diff", "--exit-code"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["bash", "scripts/validate_output.sh"]
+    command: ["bash", "scripts/validate_output.sh"]
     cwd: "{output_dir}"
 ```
 
 **`command` expectations 的重要约束：**
 
-- `argv` 必须是列表——绝不能是 shell 字符串。micro-eval 直接将参数传递给子进程，不经过 shell，从而防止注入攻击和引号问题。
+- `command` 必须是列表——绝不能是 shell 字符串。micro-eval 直接将参数传递给子进程，不经过 shell，从而防止注入攻击和引号问题。
 - 省略 `cwd` 时默认为 `{output_dir}`。
 - 命令的 stdout 和 stderr 会被捕获并附加到 run 结果中以便调试，但不影响通过/失败的判定——只有退出码才有效。
 
 ::: warning
-不要使用 `argv: ["sh", "-c", "some command string"]`。如果需要 shell 特性，请写一个脚本文件，将其提交到 fixture，然后用 `argv: ["bash", "scripts/my-check.sh"]` 调用。
+不要使用 `command: ["sh", "-c", "some command string"]`。如果需要 shell 特性，请写一个脚本文件，将其提交到 fixture，然后用 `command: ["bash", "scripts/my-check.sh"]` 调用。
 :::
 
 ## Workspace 类型
@@ -236,11 +235,11 @@ workspace:
   setup:
     - ["pip", "install", "-e", ".[dev]"]
   fixtures:
-    - source: testdata/seed_data.sql
-      dest: testdata/seed_data.sql
+    - path: testdata/seed_data.sql
       digest: sha256:deadbeef...
   toolchain:
-    python: "3.11"
+    runtime: python3
+    lockfile: requirements.txt
 ```
 
 ::: tip
@@ -289,7 +288,7 @@ Setup 命令在 workspace 内运行，而非你的项目根目录。每条 setup
 
 ## Fixtures
 
-Fixtures 允许你将特定文件版本注入 `git_repo` workspace，覆盖仓库在 `ref` 处的内容。每个 fixture 条目指定一个源路径（相对于你的项目）和一个目标路径（相对于 workspace 根目录）。
+Fixtures 允许你将特定文件版本注入 `git_repo` workspace，覆盖仓库在 `ref` 处的内容。每个 fixture 条目指定文件路径（相对于你的项目）和可选的摘要用于完整性校验。
 
 ```yaml
 workspace:
@@ -297,11 +296,9 @@ workspace:
   path: /path/to/repo
   ref: main
   fixtures:
-    - source: testdata/initial_state.py
-      dest: src/module.py
+    - path: testdata/initial_state.py
       digest: sha256:abc123...
-    - source: testdata/config_v2.yaml
-      dest: config/settings.yaml
+    - path: testdata/config_v2.yaml
       digest: sha256:def456...
 ```
 

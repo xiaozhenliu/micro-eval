@@ -33,8 +33,8 @@ configurations:
   - id: sonnet-skill-v1
   - id: sonnet-skill-v2
 
-run:
-  repetitions: 2        # each (task, config) pair runs twice
+# repetitions is set per configuration:
+# configurations[].repetitions: 2
 ```
 
 每个单元格携带一个稳定的标识——`(task_id, config_id, rep_index)`——在执行开始前记录在 `plan.json` 中。这意味着中断运行的部分结果始终可追溯。
@@ -45,11 +45,10 @@ run:
 
 当你需要消除排序效应时——例如，怀疑顺序写入工作区会影响后续单元格——可启用随机化：
 
-```yaml{3,4}
-run:
-  guardrails:
-    randomize_execution_order: true
-    # execution_seed is auto-generated and recorded in plan.json
+```yaml{2}
+guardrails:
+  randomize_execution_order: true
+  # execution_seed is auto-generated and recorded in plan.json
 ```
 
 生成的 `execution_seed` 始终写入 `plan.json` 并嵌入 `RunResult.metadata`，因此可以精确回放执行顺序。
@@ -59,7 +58,7 @@ run:
 单元格通过 `asyncio` 并发运行，使用有界信号量：
 
 ```yaml
-run:
+guardrails:
   max_concurrency: 4    # default; adjust based on available CPU/memory
 ```
 
@@ -86,9 +85,9 @@ run:
 ```yaml
 workspace:
   type: git_repo
-  repo: .
-  commit: HEAD        # pinned for reproducibility
-  setup_commands:
+  path: .
+  ref: HEAD           # pinned for reproducibility
+  setup:
     - ["uv", "sync"]
 ```
 
@@ -96,11 +95,11 @@ workspace:
 
 ### 第 2 步 — 设置命令
 
-`setup_commands` 在 agent 被调用之前，在工作区内顺序运行。每条命令必须是 **argv 列表**（不使用 shell 字符串）：
+`setup` 命令在 agent 被调用之前，在工作区内顺序运行。每条命令必须是 **argv 列表**（不使用 shell 字符串）：
 
 ```yaml{3,4,5}
 workspace:
-  setup_commands:
+  setup:
     - ["uv", "sync", "--frozen"]
     - ["npm", "ci"]
     - ["python", "scripts/seed_db.py"]
@@ -132,16 +131,15 @@ micro-eval 拒绝执行以 shell 字符串形式传递的 agent 命令。如果�
 stdout、stderr 和声明的 artifact 路径在大小上限内捕获，以防止失控输出耗尽磁盘：
 
 ```yaml
-run:
-  guardrails:
-    max_output_bytes: 1048576     # 1 MB per stream (default)
-    max_artifact_bytes: 10485760  # 10 MB per artifact (default)
+guardrails:
+  output_cap_bytes: 10485760    # 10 MB per cell (default)
+  artifact_cap_bytes: 52428800  # 50 MB per artifact (default)
 ```
 
 当某个流超过其上限时，捕获停止，并在 `CellResult` 上设置 `stdout_truncated: true`（或 `stderr_truncated: true`）。agent 进程不会被终止——只有捕获缓冲区会受到限制。
 
 ::: warning 输出截断会影响验证
-如果 `stdout_truncated` 为 `true`，针对 stdout 末尾匹配的 `contains` 期望可能产生假阴性。调试意外的验证失败时请检查 `cell_result.stdout_truncated`。如果你的 agent 产生大量结构化输出，请增大 `max_output_bytes`。
+如果 `stdout_truncated` 为 `true`，针对 stdout 末尾匹配的 `contains` 期望可能产生假阴性。调试意外的验证失败时请检查 `cell_result.stdout_truncated`。如果你的 agent 产生大量结构化输出，请在 `guardrails` 中增大 `output_cap_bytes`。
 :::
 
 ### 第 5 步 — 确定性验证
@@ -174,8 +172,8 @@ expectations:
 ```yaml [command]
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
-    expect_exit_code: 0
+    command: ["python", "-m", "pytest", "tests/", "-q"]
+    cwd: "{output_dir}"
 ```
 
 :::
@@ -246,7 +244,7 @@ configurations:
 默认情况下，单元格错误（设置失败、agent 崩溃、超时）记录为状态为 `status: error` 的 `CellResult`，运行继续进行：
 
 ```yaml
-run:
+guardrails:
   stop_on_cell_error: false   # default — continue on error
 ```
 
@@ -267,27 +265,24 @@ run:
 | `container` | Docker（计划中） | 完整容器命名空间隔离 |
 | `vm` | E2B / Modal | 远程临时虚拟机；最强隔离 |
 
-```yaml{3}
-run:
-  workspace_provider:
-    isolation_level: os_policy    # falls back to logical with a caveat if unavailable
+```yaml{2}
+workspace:
+  isolation_level: os_policy    # falls back to logical with a caveat if unavailable
 ```
 
 当请求 `os_policy` 但 Seatbelt/Bubblewrap 不可用时（例如，操作系统不匹配或缺少权限），micro-eval 降级为 `logical` 并在运行元数据中记录一条 `SandboxCaveat`。远程 provider（`E2B`、`Modal`）**永不降级**——如果凭证缺失，它们会直接失败。
 
 ## Guardrails 参考
 
-所有安全限制位于 `run.guardrails` 下：
+所有安全限制位于 `guardrails` 下：
 
 ```yaml
-run:
-  guardrails:
-    max_concurrency: 4
-    max_output_bytes: 1048576
-    max_artifact_bytes: 10485760
-    randomize_execution_order: false
-    stop_on_cell_error: false
-    allowed_exit_codes: [0]       # cells with other exit codes are flagged
+guardrails:
+  max_concurrency: 4
+  output_cap_bytes: 10485760
+  artifact_cap_bytes: 52428800
+  randomize_execution_order: false
+  stop_on_cell_error: false
 ```
 
 ## Secrets 处理

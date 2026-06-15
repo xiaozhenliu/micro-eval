@@ -10,24 +10,14 @@ micro-eval executes the commands you configure as subprocesses on your machine. 
 
 ## argv-Only Subprocess Execution
 
-Every agent command and validation command in micro-eval is executed as an **argv list**, not a shell string.
-
-```python
-# Internally, micro-eval uses:
-await asyncio.create_subprocess_exec(*argv, cwd=workspace_dir, env=cell_env)
-
-# NOT:
-subprocess.run(command_string, shell=True)  # never used in the trusted path
-```
-
-This means shell metacharacters in task prompts or agent output — backticks, semicolons, pipes, `$()` expansions — are passed as literal data to the process and never interpreted by a shell.
+Every agent command and validation command in micro-eval is executed as an **argv list**, not a shell string. Shell metacharacters in task prompts or agent output — backticks, semicolons, pipes, `$()` expansions — are passed as literal data to the process and never interpreted by a shell.
 
 **Practical implication:** the following task definition is safe even though the prompt contains a shell injection attempt:
 
 ```yaml
 # tasks/untrusted-prompt.yaml
 id: injection-attempt
-prompt: "Summarize this: $(rm -rf /tmp/important)"  # safe — never shell-expanded
+input_payload: "Summarize this: $(rm -rf /tmp/important)"  # safe — never shell-expanded
 workspace:
   type: blank
 
@@ -80,13 +70,7 @@ configurations:
       - MICRO_EVAL_SECRET_OPENAI_API_KEY
 ```
 
-Secrets are injected into the subprocess environment under their full name. The agent process receives them as environment variables:
-
-```python
-# Inside your agent
-import os
-api_key = os.environ["MICRO_EVAL_SECRET_OPENAI_API_KEY"]
-```
+Secrets are injected into the subprocess environment under their full name. The agent process receives them as standard environment variables — for example, `MICRO_EVAL_SECRET_OPENAI_API_KEY` is available directly from the environment.
 
 ### Auto-Redaction
 
@@ -166,33 +150,33 @@ micro-eval supports four workspace isolation levels, selected per configuration.
 | `container` | Docker (future) | Yes | Yes | CI environments |
 | `vm` | E2B / Modal | Yes | Yes | Untrusted agents, production evaluation |
 
-Configure isolation in `eval.yaml`:
+Configure isolation in your task's `workspace` block:
 
 ::: code-group
 
 ```yaml [Logical (default)]
-configurations:
-  - name: baseline
-    command: ["my-agent"]
-    workspace_provider: logical
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: logical
 ```
 
 ```yaml [OS Policy — macOS Seatbelt]
-configurations:
-  - name: sandboxed
-    command: ["my-agent"]
-    workspace_provider: os_policy
-    sandbox:
-      network_policy: none   # block outbound network
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: os_policy
+  network_policy: none
 ```
 
 ```yaml [Remote VM — E2B]
-configurations:
-  - name: remote
-    command: ["my-agent"]
-    workspace_provider: e2b
-    required_secrets:
-      - MICRO_EVAL_SECRET_E2B_API_KEY
+workspace:
+  type: blank
+  isolation_level: vm
+  trust_level: untrusted
+  network_policy: none
 ```
 
 :::
@@ -234,14 +218,7 @@ Artifacts collected from agent runs pass through several safety checks before be
 
 ## Report Safety
 
-HTML reports are generated with Jinja2 with **autoescaping enabled**. Agent output, task prompts, and annotation text embedded in a report are HTML-escaped before rendering.
-
-```python
-# Internally
-env = jinja2.Environment(autoescape=True, loader=...)
-```
-
-This prevents stored XSS if a report is opened in a browser and the agent output contained HTML or JavaScript.
+HTML reports are generated with **autoescaping enabled**. Agent output, task prompts, and annotation text embedded in a report are HTML-escaped before rendering. This prevents stored XSS if a report is opened in a browser and the agent output contained HTML or JavaScript.
 
 ::: tip Self-contained reports
 HTML reports embed all data inline and make no external requests when opened. They are safe to share or archive without exposing any `.micro-eval/` internals.
