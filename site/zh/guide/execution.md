@@ -1,5 +1,10 @@
 # 执行
 
+::: tip 你在决策循环中的位置  
+**Run** 将 Tasks × Configurations × Repetitions 展开为 **Cell** 矩阵，执行后产出 **ResultMatrix**。
+参见[设计系统](/zh/guide/design-system#the-decision-loop)了解完整流水线。
+:::
+
 micro-eval 通过将声明式配置展开为隔离运行的矩阵、并发执行每个单元格并收集结构化结果来评测 agent。本页详细说明该流水线的工作原理——从 YAML 到 `ResultMatrix`。
 
 ## 执行流水线概览

@@ -1,5 +1,10 @@
 # Decision & Caveats
 
+::: tip Where you are in the decision loop
+The **Decision** is the final output of the loop — a guarded, evidence-backed conclusion.
+See [Design System](./design-system#three-design-tensions) for why "inconclusive" is a valid answer.
+:::
+
 After a run completes, micro-eval synthesizes all task results into a single **DecisionReport**. This report answers the core question: *does the candidate configuration outperform the baseline?* The key philosophy guiding this process is conservative by design — micro-eval would rather say **inconclusive** than manufacture a false winner.
 
 ## Philosophy: Honest Over Confident

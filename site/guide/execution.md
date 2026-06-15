@@ -1,5 +1,10 @@
 # Execution
 
+::: tip Where you are in the decision loop  
+A **Run** expands Tasks × Configurations × Repetitions into a matrix of **Cells**, executes them, and produces a **ResultMatrix**.
+See [Design System](./design-system#the-decision-loop) for the full pipeline.
+:::
+
 micro-eval evaluates agents by expanding a declarative configuration into a matrix of isolated runs, executing each cell concurrently, and collecting structured results. This page explains exactly how that pipeline works — from YAML to `ResultMatrix`.
 
 ## Execution Pipeline Overview

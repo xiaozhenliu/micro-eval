@@ -1,5 +1,10 @@
 # 任务与期望
 
+::: tip 你在决策循环中的位置
+**Task** 是结果矩阵中的一行——它定义了*测什么*。
+参见[设计系统](/zh/guide/design-system#core-objects)了解 Task 与其他核心对象的关系。
+:::
+
 **task** 是 micro-eval 中评测的基本单元。每个 task 描述一个场景：交给 agent 的输入、agent 运行的环境，以及判断 agent 是否成功的规则。
 
 Task 在 YAML 文件中定义，并由 `Run` 引用。执行 run 时，micro-eval 将 `Tasks × Configurations × Repetitions` 展开为结果矩阵，对每个 configuration 执行每个 task，次数由 `repetitions` 指定。

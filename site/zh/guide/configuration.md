@@ -1,5 +1,10 @@
 # 配置
 
+::: tip 你在决策循环中的位置
+**Configuration** 是结果矩阵中的一列——它定义了*在测什么*。
+参见[设计系统](/zh/guide/design-system#core-objects)了解 Configuration 与其他核心对象的关系。
+:::
+
 `eval.yaml` 是每个 micro-eval 实验的核心配置文件。它回答一个问题：**你究竟在比较什么，在什么条件下比较？** 所有内容——被测 agent、要运行的任务、隔离策略、评分规则——都在这里定义或引用相关文件。
 
 ## 完整示例

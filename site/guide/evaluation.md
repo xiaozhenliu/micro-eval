@@ -1,5 +1,10 @@
 # Evaluation & Scoring
 
+::: tip Where you are in the decision loop
+**Evaluation** turns raw cell output into scores and judgments — the bridge between evidence and decisions.
+See [Design System](./design-system#three-design-tensions) for why deterministic checks run before LLM judgment.
+:::
+
 micro-eval uses a **three-layer evaluation pipeline** to turn raw task output into trustworthy, actionable scores. Each layer builds on the previous one — deterministic checks first, optional LLM judgment second, human annotation last.
 
 ```

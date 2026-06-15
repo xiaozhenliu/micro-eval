@@ -1,5 +1,10 @@
 # 决策与注意事项
 
+::: tip 你在决策循环中的位置
+**Decision** 是循环的最终输出——一个有据可查、受防护机制保护的结论。
+参见[设计系统](/zh/guide/design-system#three-design-tensions)了解为什么"无法判定"也是合法答案。
+:::
+
 Run 完成后，micro-eval 会将所有任务结果综合为一份 **DecisionReport**。该报告回答核心问题：*候选配置是否优于基线？* 贯穿这一过程的关键理念是**保守设计**——micro-eval 宁愿给出 **inconclusive（无法判定）**，也不会制造一个虚假的赢家。
 
 ## 理念：诚实优先于自信

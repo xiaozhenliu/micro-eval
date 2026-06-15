@@ -1,5 +1,10 @@
 # Tasks & Expectations
 
+::: tip Where you are in the decision loop
+A **Task** is one row in the result matrix — it defines *what to test*.
+See [Design System](./design-system#core-objects) for how tasks relate to the other core objects.
+:::
+
 A **task** is the fundamental unit of evaluation in micro-eval. Each task describes a single scenario: the input given to the agent, the environment the agent runs in, and the rules for judging whether the agent succeeded.
 
 Tasks are defined in YAML files and referenced by a `Run`. During a run, micro-eval expands `Tasks × Configurations × Repetitions` into a result matrix, executing each task against every configuration the number of times specified by `repetitions`.

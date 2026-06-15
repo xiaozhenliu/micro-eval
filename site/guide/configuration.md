@@ -1,5 +1,11 @@
 # Configuration
 
+::: tip Where you are in the decision loop
+A **Configuration** is one column in the result matrix — it defines
+*what you are testing*. See [Design System](./design-system#core-objects)
+for how configurations relate to the other core objects.
+:::
+
 `eval.yaml` is the central configuration file for every micro-eval experiment. It answers one question: **what exactly are you comparing, and under what conditions?** Everything — the agents under test, the tasks to run, the isolation policy, the scoring rules — lives here or references files that do.
 
 ## Complete Example
