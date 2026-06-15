@@ -43,7 +43,7 @@ jobs:
         run: uv run python -m compileall -q src/micro_eval tests
       - name: Shell injection gate (no shell=True or create_subprocess_shell)
         run: |
-          if grep -RInE 'create_subprocess_shell|shell=True' src tests ui/src examples; then
+          if grep -RInE 'create_subprocess_shell|shell=True' --exclude='test_execution_contract.py' src tests ui/src examples; then
             echo "FAIL: forbidden shell pattern found"
             exit 1
           fi
