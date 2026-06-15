@@ -53,3 +53,4 @@ micro-eval 完全在你的笔记本上运行，唯一的外部依赖就是你正
 准备好运行第一次评测了吗？
 
 - [快速上手](/zh/guide/getting-started) — 安装 micro-eval，在 10 分钟内完成第一次对比
+- [设计系统](/zh/guide/design-system) — 在深入配置之前，先了解核心原则

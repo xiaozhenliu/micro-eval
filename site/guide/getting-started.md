@@ -277,3 +277,4 @@ micro-eval maintains a SQLite index at `.micro-eval/index.db` for fast trend que
 ## Next Steps
 
 - **[Core Concepts](/guide/core-concepts)** — understand Tasks, Configurations, Runs, and the result matrix in depth
+- **[Design System](/guide/design-system)** — understand the decision loop and core objects

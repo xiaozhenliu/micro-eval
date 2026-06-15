@@ -277,3 +277,4 @@ micro-eval 在 `.micro-eval/index.db` 维护一个 SQLite 索引，用于快速�
 ## 下一步
 
 - **[核心概念](/zh/guide/core-concepts)** — 深入理解 Task、Configuration、Run 以及结果矩阵
+- **[设计系统](/zh/guide/design-system)** — 了解决策循环与核心对象
