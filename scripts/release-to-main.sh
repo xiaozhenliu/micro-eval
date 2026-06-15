@@ -152,10 +152,11 @@ done
 info "Verifying no dev-only files are staged..."
 leaked=""
 for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
-  matches="$(git diff --cached --name-only -- "$pattern" 2>/dev/null || true)"
-  staged="$(git ls-files --cached -- "$pattern" 2>/dev/null || true)"
-  if [[ -n "$matches" || -n "$staged" ]]; then
-    leaked="$leaked  $pattern\n"
+  # Only flag files that would be ADDED or MODIFIED (not deleted).
+  # After git rm --cached, deleted files in diff are expected and safe.
+  staged="$(git diff --cached --name-only --diff-filter=ACMR -- "$pattern" 2>/dev/null || true)"
+  if [[ -n "$staged" ]]; then
+    leaked="$leaked  $pattern ($staged)\n"
   fi
 done
 
