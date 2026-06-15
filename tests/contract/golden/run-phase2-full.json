@@ -22,6 +22,15 @@
     "cell-c2",
     "cell-c3"
   ],
+  "execution_order": [
+    "cell-b1",
+    "cell-b2",
+    "cell-b3",
+    "cell-c1",
+    "cell-c2",
+    "cell-c3"
+  ],
+  "execution_seed": null,
   "results": [
     {
       "schema_version": "1.0",

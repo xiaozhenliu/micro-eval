@@ -113,11 +113,12 @@ class Guardrails(BaseModel):
     """Execution guardrails for a run."""
 
     schema_version: str = SCHEMA_VERSION
-    max_concurrency: int = 2
+    max_concurrency: int = 4
     timeout_s: float = 300.0
     output_cap_bytes: int = 10 * 1024 * 1024
-    artifact_cap_bytes: int = 10 * 1024 * 1024
+    artifact_cap_bytes: int = 50 * 1024 * 1024
     stop_on_cell_error: bool = False
+    randomize_execution_order: bool = False
 
     @field_validator("max_concurrency")
     @classmethod
@@ -213,28 +214,6 @@ class ProjectConfigV2(BaseModel):
     judge: JudgeConfig = Field(default_factory=JudgeConfig)
     migration_warnings: list[str] = Field(default_factory=list)
     config_hash: str = ""
-
-
-    @property
-    def baseline(self):
-        """Legacy baseline AgentConfig view when available."""
-        from micro_eval.config.loader import legacy_agent_config
-
-        cfg = next((item for item in self.configurations if item.role == "baseline"), self.configurations[0])
-        return legacy_agent_config(cfg)
-
-    @property
-    def candidate(self):
-        """Legacy candidate AgentConfig view when available."""
-        from micro_eval.config.loader import legacy_agent_config
-
-        cfg = next((item for item in self.configurations if item.role == "candidate"), self.configurations[-1])
-        return legacy_agent_config(cfg)
-
-    @property
-    def parallel(self) -> bool:
-        """Legacy parallel flag view."""
-        return self.guardrails.max_concurrency > 1
 
     @field_validator("output_dir")
     @classmethod

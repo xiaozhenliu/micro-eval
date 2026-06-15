@@ -1,0 +1,76 @@
+# Multi-task matrix smoke: 2 configs × 3 tasks × 2 reps = 12 cells.
+# checker-alpha (baseline) passes all tasks.
+# checker-beta (candidate) passes task 1 and 2 but fails task 3 (report generation),
+# producing a mixed decision and triggering caveats.
+project_name: multi-task-matrix-mock
+description: Offline smoke showing multi-task matrices, all 4 expectation types, setup commands, and caveats.
+
+configurations:
+  - id: checker-alpha
+    name: Style Checker Alpha
+    role: baseline
+    repetitions: 2
+    agent:
+      name: Style Checker Alpha
+      command: ["{python}", "workspace/scripts/mock-good-checker.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 30
+      env: {}
+      required_secrets: []
+
+  - id: checker-beta
+    name: Style Checker Beta
+    role: candidate
+    repetitions: 2
+    agent:
+      name: Style Checker Beta
+      command: ["{python}", "workspace/scripts/mock-flaky-checker.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 30
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/check-style.yaml
+  - tasks/find-bugs.yaml
+  - tasks/generate-report.yaml
+
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 2
+  timeout_s: 60
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 1048576
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "code quality checkers on a multi-task matrix"
+  task_set_version: "multi-task-matrix.v1"
+  success_criteria:
+    - The baseline checker (alpha) completes all three tasks successfully.
+    - The candidate checker (beta) fails on generate-report, producing a mixed decision.
+    - All four expectation types (exit_code, contains, file_exists, command) are exercised.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+
+# Process-level trace (wall clock, exit code, trace_id).
+# Switch provider to "langfuse" after exporting LANGFUSE_* credentials.
+trace:
+  enabled: true
+  provider: process
+
+# LLM judge disabled to keep this smoke path offline.
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

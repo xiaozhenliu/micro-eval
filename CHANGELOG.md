@@ -2,6 +2,158 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.3 - 2026-06-15
+
+### Added
+
+- **Project documentation website** built with VitePress, deployed to GitHub Pages at `https://xiaozhenliu.github.io/micro-eval/`.
+  - 10 English guide pages covering introduction, getting started, core concepts, configuration, tasks, execution, evaluation, decision/caveats, workspace isolation, trend analysis, and security model.
+  - 6 English reference pages: CLI commands, eval.yaml schema, task.yaml schema, data model, API routes, and Web UI.
+  - 4 English example pages: overview with capability coverage matrix, agent codefix showdown, multi-task matrix, and git workspace isolation.
+  - Complete Simplified Chinese translation (21 pages) with native i18n routing (`/zh/` prefix).
+  - Custom theme with brand colors (#6f42c1 purple), dark mode support, and Mermaid diagram rendering.
+  - GitHub Actions workflow for automatic deployment on push to `main` (path-scoped to `site/**`).
+  - Built-in local search via VitePress MiniSearch.
+- Documentation site link added to both README.md and README.zh-CN.md.
+
+### Changed
+
+- Version bump to 0.3.3 (Python `__init__.py`, UI `package.json`, VERSION, READMEs).
+
+## 0.3.2 - 2026-06-15
+
+### Added
+
+- **Test coverage expansion**: overall line coverage rises from ~78% (224 tests) to 91% (455 tests), closing gaps across CLI, engine, evaluation, store, and trace layers.
+  - New test files targeting previously uncovered paths in `cli/init.py`, `cli/list.py`, `cli/run.py`, `cli/validate.py`, `cli/report.py`, `engine/adapter.py`, `engine/kernel.py`, `engine/providers/git_worktree.py`, `engine/providers/remote.py`, `evaluation/llm_judge.py`, `store/artifact_store.py`, `store/run_store.py`, `store/sqlite_store.py`, `trace/langfuse_provider.py`, `decision/trend.py`, and model validators.
+  - Key coverage improvements: `cli/init.py` 0%→100%, `cli/list.py` 0%→97%, `cli/main.py` 0%→58%, `engine/providers/os_policy.py` →100%, `decision/trend.py` 71%→100%, `models/configuration.py` 85%→100%, `models/run.py` →100%, `engine/workspace.py` →99%.
+  - Coverage spec: `docs/superpowers/specs/2026-06-15-test-coverage-plan.md`.
+
+### Changed
+
+- Version bump to 0.3.2 (Python `__init__.py`, UI `package.json`).
+
+## 0.3.1 - 2026-06-15
+
+### Added
+
+- **Example coverage expansion**: two new examples demonstrate the remaining ~50% of project capabilities.
+  - `examples/multi-task-matrix/` — 2 configs × 3 tasks × 2 reps (12 cells) exercising all four expectation types (`exit_code`, `contains`, `file_exists`, `command`), workspace `setup` commands, and a deliberately partial-failing candidate that produces an `inconclusive` decision.
+  - `examples/git-workspace-isolation/` — `git_repo` workspace with per-cell git worktree isolation, OS policy sandbox configuration (Seatbelt/Bubblewrap), fixture digest + toolchain fingerprint in `SameStartSnapshot`, and two-run trend analysis with a drift breakpoint.
+- `examples/run-example.py` now supports `--example <name>` to run individual examples or `--example all` to run all sequentially; `--skip-run` and `--max-concurrency` are forwarded to delegated examples.
+- `examples/README.md` adds a capability coverage matrix across all three examples and an "Advanced: Optional External Integrations" section with YAML snippets for LLM Judge, Langfuse, secrets channel, and E2B/Modal remote VM.
+- Overall example capability coverage rises from ~50% to ~85%.
+
+### Changed
+
+- Version bump to 0.3.1 (Python, UI, VERSION file, READMEs).
+
+## 0.3.0 - 2026-06-14
+
+### Added
+
+- **P3-a: WorkspaceProvider abstraction** — introduce `WorkspaceProvider` Protocol, `ProviderRegistry`, and `IsolationLevel`/`TrustLevel`/`NetworkPolicy` enums (spec §3.4.4). Refactor the existing worktree logic into `GitWorktreeProvider` (Level 0, logical isolation). `WorkspaceManager` becomes a registry facade; all existing behavior is preserved (zero behavior change).
+- **P3-b: OS policy sandbox** — add `SeatbeltProvider` (macOS `sandbox-exec`) and `BubblewrapProvider` (Linux `bwrap`) for Level 1 semi-trusted isolation. Filesystem writes restricted to workspace directory; network policy configurable (full/allowlist/none). Platform unavailability degrades gracefully to Level 0 with a caveat; higher levels (container/vm) never degrade locally.
+- **P3-c: Remote providers** — add `E2BProvider` (VM, Level 4 adversarial) and `ModalProvider` (container, Level 3 untrusted) for remote sandbox execution. Credentials required via `MICRO_EVAL_SECRET_*` env vars; missing credentials → fail hard with clear error (no silent local degradation). Artifact/stdout/stderr handling follows existing redaction and cap boundaries.
+- **P3-d: Complex workspace types** — add `FixtureSource` (per-source sha256 digest) and `ToolchainSpec` (runtime/lockfile declaration) to `WorkspaceSpec`. Fixture digests and toolchain fingerprint flow into `SameStartSnapshot` as comparability dimensions; mismatches produce caveats through the existing P0-b gate.
+- **P3-e: Trend analysis + SQLite** — add `SqliteStore` as a derived index over JSON run data (JSON remains source of truth). `run_store.finalize_run` auto-indexes to SQLite; existing JSON runs importable via `import_json_runs`. Add `compute_trend`/`compute_all_trends` with drift-aware breakpoints (reusing #2 configuration drift logic). Add Next.js `/api/trends` route backed by `better-sqlite3`.
+- New fields on `SameStartSnapshot`: `sandbox_policy`, `network_policy`, `toolchain_fingerprint`, `fixture_digests` — all with backward-compatible defaults.
+- 52 new tests: provider protocol (16), OS policy provider (15), remote provider (14), SQLite/trends (7).
+- Zod schema and contract golden fixtures updated for all new fields.
+
+### Security
+
+- `exec_command` enforces argv-only execution across all providers (negative tests for empty argv and empty-string elements).
+- Remote providers use `MICRO_EVAL_SECRET_*` naming convention for automatic redaction compatibility.
+- Seatbelt profile verified: workspace-external writes are denied (negative test on macOS).
+- Container/VM isolation levels fail hard when no provider is available — untrusted code never silently falls back to local execution.
+- Shell interpolation zero-match gate: `grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples` — clean.
+
+### Changed
+
+- `WorkspaceManager` now uses provider registry internally; public API unchanged.
+- `build_same_start_snapshot` collects isolation levels, network policies, fixture digests, and toolchain fingerprints as comparability dimensions; mixed isolation/network in a single run produces a caveat.
+- `kernel._execute_cell` flows workspace-level caveats (e.g., os_policy degradation) into the snapshot gate result.
+
+## 0.2.10 - 2026-06-14
+
+### Added
+
+- Record per-run execution order: `RunRecord.execution_order` always captures the order cells were dispatched (order-effect provenance), and an opt-in `Guardrails.randomize_execution_order` shuffles the dispatch order with a recorded `execution_seed` so a randomized run stays reproducible. Default off keeps deterministic plan order. (P3, from the 2026-05-31 engineering review.)
+
+## 0.2.9 - 2026-06-14
+
+### Changed
+
+- Default `max_concurrency` is now 4 (was 2) to match the spec; `Guardrails`, the `micro-eval init` template, and the run fallback all align (#9).
+- The default artifact size cap is now a distinct 50MB (output cap stays 10MB), in both `Guardrails` and `ArtifactStore`, so large artifacts are not capped at the smaller output limit (#9).
+
+### Added
+
+- Persist the per-cell truncation flags (`stdout_truncated`/`stderr_truncated`/`output_truncated`) on `CellResult` (Python + zod) so a truncated output is no longer silently dropped before the report/UI (#9).
+
+### Notes
+
+- Remaining #9 items are deliberate keeps: trace_id stays `trace_id == cell_id` because cost aggregation matches on it (the spec format would break matching — spec to be updated, not code); the error-classification rename and redactor-naming/spec-field alignment are cosmetic/spec-only and deferred.
+
+## 0.2.8 - 2026-06-14
+
+### Removed
+
+- Retire the unreachable legacy execution/scoring stack (#3, #4): `engine/runner.py` (the v0.1 `AgentRunner`), `engine/scorer.py` (`Scorer`), `models/schema.py` (legacy `AgentConfig`/`Run`/`Task`/…), the `legacy_agent_config` converter, and the `ProjectConfigV2.baseline`/`candidate`/`parallel` legacy view properties. These were reachable only from tests; agent execution runs through `AgentAdapter`/`ExecutionKernel` and decisions through `build_decision`.
+
+### Changed
+
+- The report CLI reads legacy run.json directly through `RunRecord` (which absorbs the v0.1.x shape) instead of a separate legacy `Run` model (#4), removing the last production dependency on `models/schema.py`. The execution contract test now asserts `AgentAdapter` is the *only* async agent spawner in the engine.
+
+## 0.2.7 - 2026-06-14
+
+### Added
+
+- Emit a cross-run comparability caveat when a configuration id is reused but its content changed since the most recent prior run with that id (#2). The decision now warns that the same matrix "column" no longer means the same thing instead of comparing silently. Detection lives in the kernel (which has run-history access) and is surfaced through the same-start snapshot caveats.
+- Add rendering contract tests for the report CLI (text + HTML branches), covering the pass@k column, caveat rendering, and HTML autoescaping; `cli/report.py` line coverage rises from 32% to 69%.
+
+## 0.2.6 - 2026-06-14
+
+### Changed
+
+- The deterministic validator now records `rubric_hash` on its `EvaluationResult`, like the LLM judge already did (#8). Both evaluator paths share a single `rubric_digest` helper, so a given rubric yields one identical hash regardless of which evaluator recorded the result, keeping evaluation provenance comparable across evaluator types.
+
+### Added
+
+- Add execution-layer contract tests (#5): the run kernel must delegate agent process spawning to `AgentAdapter` (no direct subprocess spawning), and a timed-out agent must escalate SIGTERM → SIGKILL only after the grace window. These cover the two remaining #5 contracts; the shell-injection gate already runs in CI.
+
+## 0.2.5 - 2026-06-14
+
+### Fixed
+
+- Unify binary-content detection across the adapter and the artifact store (#12). The artifact store previously inspected only the first 1024 bytes, so a binary file whose first NUL byte appeared later was mislabelled `text/plain` and marked `redacted=true`. Both call sites now use a shared `looks_binary` helper that scans the whole buffer, matching the adapter.
+
+### Changed
+
+- The zod `EvaluationResult` schema now enforces, like the Python model, that a `pass_fail` verdict must carry at least one `evidence_refs` entry (#6). Previously the UI silently accepted an evidence-less pass/fail evaluation that the Python side rejects.
+
+## 0.2.4 - 2026-06-14
+
+### Fixed
+
+- `recomputeDecision` (UI) now aggregates per-configuration trace cost from `run.traces` instead of hard-coding `total_cost` to `unavailable` (#1). Previously, appending a human evaluation recomputed the decision and silently wiped any cost that the Python `build_decision` had produced.
+
+### Added
+
+- Add a cross-language decision-algorithm equivalence contract (#1): `scripts/generate-golden.py` pins a canonical input run together with the decision the Python `build_decision` produces for it (`tests/contract/golden/decision-equivalence.json`). A pytest check asserts the fixture stays in sync with `build_decision`, and a vitest check feeds the same input to `recomputeDecision` and asserts an identical (time-stripped, tolerance-compared) decision — so algorithmic drift between the Python and UI implementations now fails CI, not just schema-shape drift.
+
+## 0.2.3 - 2026-06-14
+
+### Fixed
+
+- Validate `file_exists` and `command` expectations against the agent's actual workspace directory instead of the artifact output directory (#13). Expectations may still opt into the artifact directory with the `{output_dir}` placeholder.
+- Isolate per-cell failures in the run kernel: a cell that raises an unexpected exception now degrades to an isolated failure result (with redacted stderr) instead of aborting the whole run (#14). `CancelledError` still propagates so cancellation is not swallowed.
+
+### Security
+
+- Constrain `git_repo` and `files` workspace source paths to the project root, consistent with the existing RunStore/ArtifactStore containment guards (#10). A new shared `_assert_within_root` guard covers all three workspace entry points (`_resolve_source_path`, `_copy_files`, `build_same_start_snapshot`); out-of-root sources are rejected during preparation and recorded as a task-tagged caveat during same-start snapshotting.
+
 ## 0.2.2 - 2026-06-12
 
 ### Added

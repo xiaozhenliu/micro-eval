@@ -39,6 +39,10 @@ export const SameStartSnapshotSchema = z.object({
   guardrails_digest: z.string().default(""),
   sandbox_resource_limits: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).nullable().default(null),
   workspace_map: z.record(z.string(), z.string().nullable()).nullable().default(null),
+  sandbox_policy: z.string().nullable().default(null),
+  network_policy: z.string().nullable().default(null),
+  toolchain_fingerprint: z.string().nullable().default(null),
+  fixture_digests: z.record(z.string(), z.string()).default({}),
   timestamp: z.string(),
   caveats: z.array(z.string()).default([]),
 });
@@ -94,6 +98,16 @@ export const EvaluationResultSchema = z.object({
   comment: z.string().default(""),
   evidence_refs: z.array(z.string()).default([]),
   created_at: z.string().default(""),
+}).superRefine((value, ctx) => {
+  // Mirror Python EvaluationResult.pass_fail_requires_evidence: a pass/fail
+  // verdict must be backed by at least one evidence reference (#6).
+  if (value.pass_fail !== null && value.evidence_refs.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["evidence_refs"],
+      message: "pass_fail evaluation requires evidence_refs",
+    });
+  }
 });
 
 export const CostMetricSchema = z.object({
@@ -201,6 +215,9 @@ export const CellResultSchema = z.object({
   exit_code: z.number().int().nullable().default(null),
   latency_s: z.number().default(0),
   failure_mode: z.string().nullable().default(null),
+  stdout_truncated: z.boolean().default(false),
+  stderr_truncated: z.boolean().default(false),
+  output_truncated: z.boolean().default(false),
   artifact_refs: z.array(z.string()).default([]),
   evidence_refs: z.array(z.string()).default([]),
   evaluation_refs: z.array(z.string()).default([]),
@@ -222,6 +239,8 @@ export const RunSchema = z.object({
   configurations: z.array(z.string()).default([]),
   cells: z.array(z.string()).default([]),
   results: z.array(CellResultSchema).default([]),
+  execution_order: z.array(z.string()).default([]),
+  execution_seed: z.number().int().nullable().default(null),
   migration_warnings: z.array(z.string()).default([]),
   same_start_snapshot: SameStartSnapshotSchema.nullable().default(null),
   replay_canonical: ReplayCanonicalSchema.nullable().default(null),

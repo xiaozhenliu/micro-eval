@@ -1,0 +1,58 @@
+# Variant configuration for drift detection demo.
+# Key change from eval.mock.yaml: timeout_s is 120 (was 60).
+# This changes the configuration digest, which triggers a drift breakpoint in trend analysis.
+project_name: git-workspace-isolation-mock
+description: >
+  Second run for trend analysis demo. timeout_s change triggers config drift caveat,
+  producing a drift breakpoint in the trend chart.
+
+configurations:
+  - id: refactor-agent-v1
+    name: Refactor Agent v1
+    role: baseline
+    repetitions: 2
+    agent:
+      name: Refactor Agent v1
+      command: ["{python}", "scripts/mock-refactor-agent.py"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 120
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/refactor-extract-function.yaml
+  - tasks/add-type-hints.yaml
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 120
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 1048576
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "mock refactor agent smoke for git_repo workspace (v2 - drift demo)"
+  task_set_version: "git-workspace-isolation.v1"
+  success_criteria:
+    - The agent reads the task prompt and outputs the required completion marker.
+    - Config digest differs from v1 (timeout_s changed) — triggers drift breakpoint.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+
+trace:
+  enabled: true
+  provider: process
+
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

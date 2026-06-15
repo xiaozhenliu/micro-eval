@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-6f42c1)](VERSION)
+[![Version: 0.3.3](https://img.shields.io/badge/version-0.3.3-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.2.2`
+Current version: `0.3.3`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-Version 0.2.0 extends the local MVP into Phase 2: reproducible matrix execution now produces pass@k / pass^k aggregation, explicit `decision.json`, optional trace capture, cost-source reporting, a review UI, and a default-off LLM judge adapter. Langfuse and DeepEval remain optional extras; local subprocess execution, artifacts, and deterministic validation still work without external services.
+Version 0.3.3 adds a bilingual (English/Chinese) [project documentation website](https://xiaozhenliu.github.io/micro-eval/) built with VitePress, covering guides, reference, and examples. Phase 3 provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints remain fully available. Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
 
 ## Why micro-eval?
 
@@ -31,14 +31,16 @@ Small AI engineering teams often compare prompt, skill, agent, or tool changes w
 - **Self-owned execution layer**: asyncio bounded concurrency, per-cell timeout, and non-blocking cell failures.
 - **Safe subprocess contract**: canonical `agent.command` is an argv list; legacy string commands only pass through a migration bridge with warnings.
 - **Same-start evidence**: `SameStartSnapshot`, `CellSnapshot`, `SnapshotGateResult`, and `ReplayCanonical` are persisted with the run.
-- **Workspace isolation**: `blank`, `files`, and `git_repo` workspaces run each cell in an assigned workspace.
+- **Multi-level workspace isolation**: Level 0 git worktree (default), Level 1 OS policy sandbox (Seatbelt macOS / Bubblewrap Linux), Level 3-4 remote container/VM (E2B / Modal, optional).
+- **Provider registry**: pluggable `WorkspaceProvider` Protocol selects isolation backend by level; unavailable OS policy degrades gracefully with a caveat; remote levels fail hard.
 - **Artifact / evidence / trace chain**: `manifest.json` indexes `ArtifactRef`, `EvidenceItem`, and optional `TraceRef` records.
 - **Deterministic validation**: supports `exit_code`, `contains`, `file_exists`, and argv-only `command` expectations.
 - **Pass@k / pass^k aggregation**: repeated cells produce per-configuration pass rates, latency summaries, low-sample caveats, and `CostMetric` source metadata.
 - **Human evaluation persistence**: the UI appends human `EvaluationResult` records through the local API; `localStorage` is not treated as trusted evaluation state.
 - **Default-off LLM judge**: an optional DeepEval adapter can append supplemental judge evaluations without overriding deterministic pass/fail results.
 - **Guarded decisions**: snapshot mismatch, missing evidence, or insufficient repetitions produce caveats instead of fake winner claims.
-- **Local review UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, trace, cost, and decision data through zod schemas.
+- **Cross-run trend analysis**: SQLite-indexed run data enables time-series trend queries per configuration, with drift-aware breakpoints when configuration content changes across runs.
+- **Local review UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, trace, cost, trend, and decision data through zod schemas.
 
 ## Quick Start
 
@@ -88,7 +90,15 @@ For the real-agent matrix, run:
 python examples/run-example.py --real
 ```
 
-The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. The example index is in [`examples/`](examples/).
+The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. Additional examples cover multi-task matrices, git workspace isolation, and trend analysis:
+
+```bash
+python examples/run-example.py --example multi-task-matrix
+python examples/run-example.py --example git-workspace-isolation
+python examples/run-example.py --example all
+```
+
+The example index and capability coverage matrix are in [`examples/`](examples/).
 
 ## CLI Commands
 
@@ -238,8 +248,11 @@ flowchart LR
 
 ## Documentation
 
+**Project website**: [https://xiaozhenliu.github.io/micro-eval/](https://xiaozhenliu.github.io/micro-eval/) — user-facing guides, reference, and examples in English and Chinese.
+
 | Document | Purpose |
 | --- | --- |
+| [Project Website](https://xiaozhenliu.github.io/micro-eval/) | User-facing documentation site (VitePress, bilingual EN/ZH). |
 | [`docs/README.md`](docs/README.md) | Documentation directory map and source-of-truth hierarchy. |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Local setup, commands, module map, smoke flow, and release readiness checklist. |
 | [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md) | Security routing for development, user runs, service/API/report boundaries. |

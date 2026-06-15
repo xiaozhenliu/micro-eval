@@ -59,6 +59,34 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def looks_binary(data: bytes) -> bool:
+    """Return True if *data* should be treated as binary (a NUL byte anywhere).
+
+    Single source of truth for the binary heuristic so the adapter (which
+    decides whether to skip text redaction) and the artifact store (which
+    decides media type and the ``redacted`` flag) classify the same bytes
+    identically. The whole buffer is scanned — a prefix-only check could
+    misclassify a binary file as text and attempt (or claim) text redaction on
+    it (#12).
+    """
+    return b"\x00" in data
+
+
 def canonical_digest(value: Any) -> str:
     """Hash canonical JSON data."""
     return sha256_text(canonical_json(value))
+
+
+def rubric_digest(rubric: Any) -> str | None:
+    """Stable short digest of a task rubric, or None when no rubric is set.
+
+    Shared by every evaluator path (validator + LLM judge) so a single rubric
+    definition produces one identical ``rubric_hash`` regardless of which
+    evaluator recorded the result — keeping evaluation provenance comparable
+    across evaluator types (#8). Accepts a RubricSpec (any pydantic model) or a
+    raw mapping.
+    """
+    if rubric is None:
+        return None
+    material = rubric.model_dump(mode="json") if isinstance(rubric, BaseModel) else rubric
+    return canonical_digest(material)[:16]

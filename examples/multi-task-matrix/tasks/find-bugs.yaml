@@ -1,0 +1,37 @@
+id: find-bugs
+name: Find bugs in sample project
+description: Locate bugs in the sample project code. Demonstrates contains + file_exists expectations.
+input_payload: |
+  You are a bug finder running inside a disposable copied workspace named `workspace/`.
+  The workspace contains a sample-project/ directory with Python source files.
+
+  Goal:
+  - Analyze the Python files in sample-project/ for bugs and logic errors.
+  - Write the string "BUG_FOUND" in your output for every confirmed bug.
+  - Save a detailed bug report to bugs-report.txt in the artifact output directory
+    (available as the MICRO_EVAL_OUTPUT_DIR environment variable).
+
+  Keyword: bug
+
+  Constraints:
+  - Edit only files inside this copied workspace.
+  - Do not write secrets or credentials into files or output.
+
+  Done means:
+  - Your output contains at least one "BUG_FOUND" entry.
+  - A file named bugs-report.txt exists in the artifact output directory (MICRO_EVAL_OUTPUT_DIR).
+expectations:
+  - type: contains
+    stream: output
+    value: "BUG_FOUND"
+  - type: file_exists
+    path: "{output_dir}/bugs-report.txt"
+workspace:
+  type: files
+  files:
+    - workspace
+rubric: |
+  Bug finder: the mock agent should identify the off-by-one error in process_data
+  and write a bugs-report.txt. Both alpha and beta pass this task.
+business_impact_tier: 3
+tags: [example, multi-task-matrix, smoke, contains, file-exists]

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
-import type { EvidenceItem, EvaluationResult, Run } from "./schema";
+import type { EvidenceItem, EvaluationResult, Run, TraceRef, CostMetric } from "./schema";
 
 export interface HumanEvaluationInput {
   pass_fail: "pass" | "fail" | null;
@@ -95,9 +95,14 @@ export function appendEvaluationFile(runDir: string, cellId: string, evaluation:
 export function recomputeDecision(run: Run): Run["decision"] {
   const policy = run.denominator_policy ?? "include_failed";
   const perConfiguration: NonNullable<Run["decision"]>["aggregation"]["per_configuration"] = {};
+  // Mirror Python build_aggregation: traces are matched to cells by trace_id == cell_id.
+  const traceByCellId = new Map((run.traces ?? []).map((trace) => [trace.trace_id, trace]));
   const configurationIds = Array.from(new Set(run.results.map((result) => result.configuration_id)));
   for (const configurationId of configurationIds) {
     const results = run.results.filter((result) => result.configuration_id === configurationId);
+    const configTraces = results
+      .map((result) => traceByCellId.get(result.cell_id))
+      .filter((trace): trace is TraceRef => trace !== undefined);
     const nCells = results.length;
     // Successful cells: those with a binary outcome (pass or fail, not error/timeout)
     const successfulResults = results.filter((result) => result.status === "pass" || result.status === "fail");
@@ -120,7 +125,7 @@ export function recomputeDecision(run: Run): Run["decision"] {
       pass_hat_k: passRate == null ? null : passHatK(denominator, passRate),
       mean_latency_ms: latenciesMs.length ? latenciesMs.reduce((sum, value) => sum + value, 0) / latenciesMs.length : null,
       median_latency_ms: median(latenciesMs),
-      total_cost: { schema_version: "1.0", amount: null, currency: "USD", source: "unavailable" },
+      total_cost: aggregateCost(configTraces),
       denominator_policy: policy,
       caveats: nSuccessful < 3 ? ["low_sample"] : [],
     };
@@ -162,6 +167,24 @@ export function recomputeDecision(run: Run): Run["decision"] {
     timestamp,
     created_at: timestamp,
   };
+}
+
+// Mirror of Python micro_eval.decision.aggregation._aggregate_cost. Keep the
+// two implementations behaviourally identical; the cross-language decision
+// equivalence contract (tests/contract/golden/decision-equivalence.json) guards
+// against drift.
+function aggregateCost(traces: TraceRef[]): CostMetric {
+  if (!traces.length) {
+    return { schema_version: "1.0", amount: null, currency: "USD", source: "unavailable" };
+  }
+  const withAmount = traces.filter((trace) => trace.cost != null && trace.cost.amount != null);
+  if (!withAmount.length) {
+    const firstSource = traces.find((trace) => trace.cost != null)?.cost?.source;
+    return { schema_version: "1.0", amount: null, currency: "USD", source: firstSource || "unavailable" };
+  }
+  const amount = withAmount.reduce((sum, trace) => sum + (trace.cost!.amount as number), 0);
+  const sources = Array.from(new Set(withAmount.map((trace) => trace.cost!.source))).sort();
+  return { schema_version: "1.0", amount, currency: "USD", source: sources.length ? sources.join(" + ") : "trace" };
 }
 
 function passAtK(n: number, c: number): Record<string, number> {

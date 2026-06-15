@@ -1,0 +1,40 @@
+id: refactor-extract-function
+name: Refactor — Extract Function
+description: >
+  Extract a large monolithic function in app.py into smaller helper functions.
+  Demonstrates git_repo workspace with OS policy sandbox config and fixture digest.
+input_payload: |
+  You are a refactoring assistant running inside an isolated git worktree.
+  The repository contains app.py with a large process_sales_data() function.
+
+  Goal: refactor the code by extracting logical sub-steps into helper functions.
+  When you have completed the refactoring, print "REFACTOR_COMPLETE" to stdout.
+
+  Constraints:
+  - The worktree is an isolated copy of the repository — your changes do not affect the source.
+  - Do not write secrets or credentials to files or stdout.
+
+  Done means:
+  - You have printed "REFACTOR_COMPLETE" to stdout.
+expectations:
+  - type: contains
+    stream: output
+    value: "REFACTOR_COMPLETE"
+workspace:
+  type: git_repo
+  path: fixture-repo
+  ref: HEAD
+  fixtures:
+    - path: fixture-repo/app.py
+  toolchain:
+    runtime: python3
+    lockfile: requirements.txt
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: none
+rubric: |
+  Smoke validation for git_repo workspace isolation.
+  A useful result confirms the agent ran inside an isolated git worktree
+  and the REFACTOR_COMPLETE marker was emitted to stdout.
+business_impact_tier: 3
+tags: [example, git-workspace, refactor, smoke]

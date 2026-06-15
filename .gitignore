@@ -37,15 +37,12 @@ TODOS.md
 # Local analysis/tool caches
 .understand-anything/
 .coverage
-
 .codex/
+.rtk/
 
+# Dev-only internal docs
 docs/dev/
-
 docs/superpowers/
-
 docs/_archive/
-
 docs/references/
-
 docs/bug_reports/

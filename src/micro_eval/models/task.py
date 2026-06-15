@@ -20,6 +20,46 @@ class WorkspaceType(str, Enum):
     files = "files"
 
 
+class IsolationLevel(str, Enum):
+    """Workspace isolation level (spec §3.4.5)."""
+
+    logical = "logical"
+    os_policy = "os_policy"
+    container = "container"
+    vm = "vm"
+
+
+class TrustLevel(str, Enum):
+    """Agent trust boundary (spec §3.4.3)."""
+
+    trusted = "trusted"
+    semi_trusted = "semi_trusted"
+    untrusted = "untrusted"
+    adversarial = "adversarial"
+
+
+class NetworkPolicy(str, Enum):
+    """Network access policy for sandboxed execution."""
+
+    full = "full"
+    allowlist = "allowlist"
+    none = "none"
+
+
+class FixtureSource(BaseModel):
+    """A single fixture source with optional digest for reproducibility."""
+
+    path: str
+    digest: str | None = None
+
+
+class ToolchainSpec(BaseModel):
+    """Declared toolchain for fingerprinting (comparability dimension)."""
+
+    runtime: str | None = None
+    lockfile: str | None = None
+
+
 class WorkspaceSpec(BaseModel):
     """Task workspace requirements."""
 
@@ -29,6 +69,11 @@ class WorkspaceSpec(BaseModel):
     ref: str | None = None
     files: list[str] = Field(default_factory=list)
     setup: list[list[str]] = Field(default_factory=list)
+    isolation_level: IsolationLevel = IsolationLevel.logical
+    trust_level: TrustLevel = TrustLevel.trusted
+    network_policy: NetworkPolicy | None = None
+    fixtures: list[FixtureSource] = Field(default_factory=list)
+    toolchain: ToolchainSpec | None = None
 
 
 class ExpectationSpec(BaseModel):

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import random
 from pathlib import Path
 
 from micro_eval.decision.summary import build_decision
@@ -18,6 +20,8 @@ from micro_eval.store.artifact_store import ArtifactStore
 from micro_eval.store.run_store import RunStore
 from micro_eval.trace.process_provider import ProcessTraceProvider
 from micro_eval.trace.provider import TraceProvider, collect_trace_with_fallback
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionKernel:
@@ -40,11 +44,21 @@ class ExecutionKernel:
         judge_client = resolve_judge_client(plan.judge)
         semaphore = asyncio.Semaphore(plan.guardrails.max_concurrency)
 
+        # Determine dispatch order. Randomization (opt-in) avoids order-effect bias
+        # in serial / >2-way comparisons; the order (and seed) are recorded so the
+        # run stays reproducible. Default off keeps deterministic plan order.
+        cells = list(plan.cells)
+        if plan.guardrails.randomize_execution_order:
+            seed = random.randrange(2**32)
+            random.Random(seed).shuffle(cells)
+            record.execution_seed = seed
+        record.execution_order = [cell.cell_id for cell in cells]
+
         async def run_cell(cell):
             async with semaphore:
                 return await self._run_cell(cell, adapter, artifact_store, workspace_manager, record, trace_providers, judge_client, plan)
 
-        tasks = [asyncio.create_task(run_cell(cell)) for cell in plan.cells]
+        tasks = [asyncio.create_task(run_cell(cell)) for cell in cells]
         for completed in asyncio.as_completed(tasks):
             result = await completed
             record = self.run_store.append_cell_result(record, result)
@@ -60,6 +74,13 @@ class ExecutionKernel:
                 record.evaluations.extend(
                     EvaluationResult.model_validate(item) for item in json.loads(eval_path.read_text())
                 )
+        # Cross-run comparability: warn when a configuration id was reused with
+        # changed content vs a prior run (#2). Surfaced via the snapshot caveats
+        # so build_decision folds it into the decision's comparability caveats.
+        if record.same_start_snapshot is not None:
+            record.same_start_snapshot.caveats.extend(
+                self.run_store.configuration_drift_caveats(record)
+            )
         record.decision = build_decision(record)
         record = self.run_store.finalize_run(record)
         return record
@@ -75,11 +96,57 @@ class ExecutionKernel:
         judge_client: JudgeClient | None,
         plan: RunPlan,
     ) -> CellResult:
+        """Isolate one cell so an unexpected error cannot abort sibling cells."""
+        try:
+            return await self._execute_cell(
+                cell, adapter, artifact_store, workspace_manager, record, trace_providers, judge_client, plan
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - per-cell isolation boundary; the run must still finalize.
+            # Keep the full traceback observable for debugging while the run continues.
+            logger.exception("Unexpected error in cell %s; isolating as error result", cell.cell_id)
+            return self._isolated_failure_result(cell, record, exc)
+
+    def _isolated_failure_result(self, cell: RunCell, record: RunRecord, exc: Exception) -> CellResult:
+        """Build an error CellResult for an unexpected per-cell failure."""
+        # str(exc) may carry secrets (paths, args); redact before persisting/exposing.
+        redactor = Redactor.from_env()
+        return CellResult(
+            cell_id=cell.cell_id,
+            run_id=record.id,
+            task_id=cell.task.id,
+            configuration_id=cell.configuration.id,
+            configuration_name=cell.configuration.name,
+            repetition=cell.repetition,
+            status=CellStatus.error,
+            score=0.0,
+            pass_fail="fail",
+            stderr_summary=redactor.redact(str(exc))[: self.SUMMARY_LIMIT],
+            failure_mode=f"kernel_error:{exc.__class__.__name__}",
+        )
+
+    async def _execute_cell(
+        self,
+        cell: RunCell,
+        adapter: AgentAdapter,
+        artifact_store: ArtifactStore,
+        workspace_manager: WorkspaceManager,
+        record: RunRecord,
+        trace_providers: list[TraceProvider],
+        judge_client: JudgeClient | None,
+        plan: RunPlan,
+    ) -> CellResult:
         cell_dir = artifact_store.cell_dir(cell.cell_id)
         prepared: PreparedWorkspace | None = None
         redactor = Redactor({})
+        workspace_caveats: list[str] = []
         try:
-            prepared = workspace_manager.prepare(cell_id=cell.cell_id, workspace=cell.task.workspace)
+            prepared = workspace_manager.prepare(
+                cell_id=cell.cell_id,
+                workspace=cell.task.workspace,
+                caveats=workspace_caveats,
+            )
             adapter_result, redactor = await adapter.invoke(
                 agent=cell.configuration.agent,
                 input_payload=cell.task.input_payload,
@@ -111,6 +178,10 @@ class ExecutionKernel:
 
         assert prepared is not None
         snapshot_gate = evaluate_snapshot_gate(record.same_start_snapshot, prepared.snapshot, task_id=cell.task.id)
+        if workspace_caveats:
+            snapshot_gate.caveats.extend(workspace_caveats)
+            if snapshot_gate.status == "pass":
+                snapshot_gate.status = "warn"
         artifacts = [
             artifact_store.write_text(cell.cell_id, "stdout", "stdout.txt", adapter_result.stdout),
             artifact_store.write_text(cell.cell_id, "stderr", "stderr.txt", adapter_result.stderr),
@@ -175,6 +246,7 @@ class ExecutionKernel:
             cell_dir=cell_dir,
             evidence_prefix=evidence_prefix,
             redactor=redactor,
+            workspace_dir=prepared.path,
         )
         for evidence in validation_evidence:
             artifact_store.add_evidence(evidence)
@@ -224,6 +296,9 @@ class ExecutionKernel:
             exit_code=adapter_result.exit_code,
             latency_s=adapter_result.latency_s,
             failure_mode=adapter_result.failure_mode,
+            stdout_truncated=adapter_result.stdout_truncated,
+            stderr_truncated=adapter_result.stderr_truncated,
+            output_truncated=adapter_result.output_truncated,
             artifact_refs=[artifact.artifact_id for artifact in artifacts],
             evidence_refs=evidence_refs,
             evaluation_refs=[item.evaluation_id for item in evaluations],

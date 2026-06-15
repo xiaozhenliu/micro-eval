@@ -12,7 +12,6 @@ from rich.console import Console
 from rich.table import Table
 
 from micro_eval.models.run import RunRecord
-from micro_eval.models.schema import Run
 from micro_eval.store.run_store import RunStore
 
 console = Console()
@@ -123,17 +122,17 @@ def _render_html_report(data: dict[str, Any]) -> str:
 
 
 def _normalize_run_data(raw: dict[str, Any], run_file: Path | None = None) -> dict[str, Any]:
-    if "cells" in raw and "project_name" in raw:
-        record = RunRecord.model_validate(raw)
-        if run_file is not None:
-            decision_path = run_file.parent / "decision.json"
-            if decision_path.exists():
-                from micro_eval.models.decision import DecisionReport
+    # RunRecord reads both canonical and v0.1.x run.json directly (lenient
+    # parsing + field defaults absorb the legacy shape), so no separate legacy
+    # model is needed.
+    record = RunRecord.model_validate(raw)
+    if run_file is not None:
+        decision_path = run_file.parent / "decision.json"
+        if decision_path.exists():
+            from micro_eval.models.decision import DecisionReport
 
-                record.decision = DecisionReport.model_validate_json(decision_path.read_text())
-        return record.model_dump(mode="json")
-    legacy = Run(**raw)
-    return legacy.model_dump(mode="json")
+            record.decision = DecisionReport.model_validate_json(decision_path.read_text())
+    return record.model_dump(mode="json")
 
 
 def _print_text_report(data: dict[str, Any]) -> None:

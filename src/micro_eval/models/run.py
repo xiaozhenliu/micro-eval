@@ -103,6 +103,9 @@ class CellResult(BaseModel):
     exit_code: int | None = None
     latency_s: float = 0.0
     failure_mode: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    output_truncated: bool = False
     artifact_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     evaluation_refs: list[str] = Field(default_factory=list)
@@ -126,6 +129,10 @@ class RunRecord(BaseModel):
     configurations: list[str] = Field(default_factory=list)
     cells: list[str] = Field(default_factory=list)
     results: list[CellResult] = Field(default_factory=list)
+    # Order cells were actually dispatched in, plus the seed when randomized, so a
+    # run records its own execution order (order-effect provenance / replayable).
+    execution_order: list[str] = Field(default_factory=list)
+    execution_seed: int | None = None
     migration_warnings: list[str] = Field(default_factory=list)
     same_start_snapshot: SameStartSnapshot | None = None
     replay_canonical: ReplayCanonical | None = None

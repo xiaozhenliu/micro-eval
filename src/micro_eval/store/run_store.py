@@ -144,7 +144,21 @@ class RunStore:
         record.completed_at = datetime.now(timezone.utc).isoformat()
         record.status = RunStatus.completed if len(record.results) == len(record.cells) else RunStatus.partial
         self.write_run(record)
+        self._index_to_sqlite(record)
         return record
+
+    def _index_to_sqlite(self, record: RunRecord) -> None:
+        """Best-effort index to SQLite for trend queries."""
+        try:
+            from micro_eval.store.sqlite_store import SqliteStore
+
+            store = SqliteStore(self.project_root)
+            try:
+                store.index_run(record)
+            finally:
+                store.close()
+        except Exception:
+            pass
 
     def list_runs(self, output_dir: str = ".micro-eval/runs") -> list[RunRecord | dict[str, Any]]:
         """List canonical runs, with legacy flat JSON fallback."""
@@ -168,6 +182,45 @@ class RunStore:
                 continue
         runs.sort(key=lambda item: _run_sort_key(item), reverse=True)
         return runs
+
+    def configuration_drift_caveats(
+        self, record: RunRecord, output_dir: str = ".micro-eval/runs"
+    ) -> list[str]:
+        """Caveats for configurations whose content changed under a reused id (#2).
+
+        A configuration id is the identity used to compare runs. If its content
+        (its recorded digest) differs from the most recent prior run that used
+        the same id, results across those runs are not directly comparable —
+        the same "column" no longer means the same thing. We surface this as a
+        cross-run comparability caveat rather than silently comparing.
+        """
+        current = (
+            record.same_start_snapshot.configuration_digests
+            if record.same_start_snapshot
+            else {}
+        )
+        if not current:
+            return []
+        # list_runs returns newest-first; the current (unwritten) run is excluded.
+        priors = [
+            run
+            for run in self.list_runs(output_dir)
+            if isinstance(run, RunRecord) and run.id != record.id and run.same_start_snapshot
+        ]
+        caveats: list[str] = []
+        for config_id, digest in current.items():
+            for prior in priors:
+                prior_digests = prior.same_start_snapshot.configuration_digests
+                if config_id not in prior_digests:
+                    continue
+                if prior_digests[config_id] != digest:
+                    caveats.append(
+                        f"configuration '{config_id}' content changed since run {prior.id} "
+                        f"(digest {prior_digests[config_id][:8]}→{digest[:8]}); "
+                        "results may not be comparable across runs"
+                    )
+                break  # only compare against the most recent prior run with this id
+        return caveats
 
     def latest_run_id(self, output_dir: str = ".micro-eval/runs") -> str | None:
         """Return newest run id if any."""

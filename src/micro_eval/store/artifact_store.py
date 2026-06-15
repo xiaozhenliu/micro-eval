@@ -7,13 +7,13 @@ import uuid
 from pathlib import Path
 
 from micro_eval.models.artifact import ArtifactRef, EvidenceItem, Manifest, TraceRef
-from micro_eval.models.ids import safe_path_segment, sha256_bytes
+from micro_eval.models.ids import looks_binary, safe_path_segment, sha256_bytes
 
 
 class ArtifactStore:
     """Write artifacts under one canonical run directory."""
 
-    def __init__(self, run_dir: Path, *, artifact_cap_bytes: int = 10 * 1024 * 1024):
+    def __init__(self, run_dir: Path, *, artifact_cap_bytes: int = 50 * 1024 * 1024):
         self.run_dir = run_dir
         self.artifact_cap_bytes = artifact_cap_bytes
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -67,7 +67,7 @@ class ArtifactStore:
         data = path.read_bytes()
         digest = sha256_bytes(data)
         warnings: list[str] = []
-        is_binary = b"\x00" in data[:1024]
+        is_binary = looks_binary(data)
         if is_binary:
             warnings.append("binary_redaction_skipped")
         artifact = ArtifactRef(
