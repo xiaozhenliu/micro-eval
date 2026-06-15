@@ -1,17 +1,10 @@
 #!/usr/bin/env bash
-# release-to-main.sh — Merge dev into main with dev-only file filtering.
+# release-to-main.sh — Safely publish dev to main with dev-only file filtering.
 #
 # Usage:  scripts/release-to-main.sh [--dry-run]
 #
-# What it does:
-#   1. Verifies preconditions (on dev, clean tree, tests pass)
-#   2. Merges dev → main
-#   3. Restores main's .gitignore (appends dev-only exclusions)
-#   4. Removes dev-only files from main's index
-#   5. Commits the cleanup
-#   6. Pushes main (never dev)
-#   7. Switches back to dev
-#
+# Strategy: merge --no-commit (never auto-commit), strip dev-only files from
+# the index, VERIFY nothing dev-only survives, then commit and push.
 # The script never pushes dev. Dev stays local-only.
 
 set -euo pipefail
@@ -22,23 +15,25 @@ cd "$REPO_ROOT"
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
-# ─── Dev-only paths: tracked on dev, excluded from main ───────────────
+# ─── Dev-only paths: tracked on dev, MUST NOT appear on main ─────────
 # Update this list when adding new dev-only directories or files.
 DEV_ONLY_PATTERNS=(
   "CLAUDE.md"
   "TODOS.md"
   "micro-eval-brd.md"
   "micro-eval-prd.md"
-  "docs/dev/"
-  "docs/superpowers/"
-  "docs/_archive/"
-  "docs/references/"
-  "docs/bug_reports/"
-  "docs/analysis/"
+  "docs/dev"
+  "docs/superpowers"
+  "docs/_archive"
+  "docs/references"
+  "docs/bug_reports"
+  "docs/analysis"
+  ".codex"
 )
 
-# ─── Gitignore block appended to main's .gitignore after merge ────────
-MAIN_GITIGNORE_BLOCK="
+# ─── Gitignore block that main needs but dev doesn't ─────────────────
+read -r -d '' MAIN_GITIGNORE_EXTRAS << 'GITIGNORE_EOF' || true
+
 # Dev-only docs (tracked on dev branch; never published to main)
 CLAUDE.md
 micro-eval-brd.md
@@ -52,102 +47,152 @@ docs/_archive/
 docs/references/
 docs/bug_reports/
 docs/analysis/
-"
+.codex/
+GITIGNORE_EOF
 
 # ─── Helpers ──────────────────────────────────────────────────────────
 
-die()  { echo "ERROR: $*" >&2; exit 1; }
+die() {
+  echo "FATAL: $*" >&2
+  exit 1
+}
 info() { echo "==> $*"; }
+warn() { echo "WARNING: $*" >&2; }
+
+abort_merge() {
+  warn "Aborting merge on main..."
+  git merge --abort 2>/dev/null || true
+  git checkout dev 2>/dev/null || true
+  die "$1"
+}
 
 # ─── Precondition checks ─────────────────────────────────────────────
 
 current_branch="$(git branch --show-current)"
 [[ "$current_branch" == "dev" ]] || die "Must be on dev branch (currently on $current_branch)"
-
-[[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash changes first."
+[[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash first."
 
 info "Running Python tests..."
-if ! uv run pytest -q --timeout=60 2>&1 | tail -3; then
+pytest_out="$(uv run pytest -q --timeout=60 2>&1)"
+if ! echo "$pytest_out" | grep -qE "^[0-9]+ passed"; then
+  echo "$pytest_out" | tail -5
   die "Python tests failed"
 fi
+echo "$pytest_out" | tail -1
 
 info "Running UI tests..."
-if ! (cd ui && npx vitest run 2>&1 | tail -3); then
+vitest_out="$(cd ui && npx vitest run 2>&1)"
+if echo "$vitest_out" | grep -q "FAIL"; then
+  echo "$vitest_out" | tail -5
   die "UI tests failed"
 fi
+echo "$vitest_out" | grep -E "PASS|Tests"
 
 info "Verifying UI build..."
-if ! (cd ui && npm run build 2>&1 | grep -q "Compiled successfully"); then
+build_out="$(cd ui && npm run build 2>&1)"
+if ! echo "$build_out" | grep -q "Compiled successfully"; then
+  echo "$build_out" | tail -10
   die "UI build failed"
 fi
+echo "$build_out" | grep "Compiled successfully"
 
-# ─── Version consistency check ────────────────────────────────────────
+# ─── Version consistency ──────────────────────────────────────────────
 
-version_file="$(cat VERSION)"
-version_py="$(python3 -c "import re; print(re.search(r'__version__\s*=\s*\"(.+?)\"', open('src/micro_eval/__init__.py').read()).group(1))")"
+version_file="$(cat VERSION | tr -d '[:space:]')"
+version_py="$(grep '__version__' src/micro_eval/__init__.py | sed 's/.*"\(.*\)".*/\1/')"
+version_pkg="$(node -p "require('./ui/package.json').version")"
 [[ "$version_file" == "$version_py" ]] || die "VERSION ($version_file) != __init__.py ($version_py)"
+[[ "$version_file" == "$version_pkg" ]] || die "VERSION ($version_file) != package.json ($version_pkg)"
 info "Version: $version_file"
 
 # ─── Dry-run gate ─────────────────────────────────────────────────────
 
 if $DRY_RUN; then
-  info "[DRY RUN] All checks passed. Would merge dev → main, filter dev-only files, push main."
+  info "[DRY RUN] All preconditions passed. Would merge dev → main, filter dev-only files, push main."
   exit 0
 fi
 
-# ─── Merge dev → main ────────────────────────────────────────────────
+# ─── Merge dev → main (--no-commit: never auto-commit) ───────────────
 
 dev_sha="$(git rev-parse HEAD)"
 info "Switching to main..."
 git checkout main
 
-info "Merging dev ($dev_sha) into main..."
-git merge dev --no-edit
+info "Merging dev ($dev_sha) into main (--no-commit)..."
+# --no-commit prevents auto-commit so we can strip dev-only files first.
+# --no-ff ensures a merge commit even for fast-forward cases.
+git merge dev --no-commit --no-ff || true
+# "|| true" because --no-commit makes git exit 0 on success but the merge
+# may report conflicts. Check for conflicts explicitly:
+if git ls-files -u | grep -q .; then
+  abort_merge "Merge conflicts detected. Resolve manually."
+fi
 
 # ─── Restore main .gitignore ─────────────────────────────────────────
-# The merge may have overwritten main's .gitignore with dev's version.
-# We re-append the dev-only exclusion block if it's missing.
 
 if ! grep -q "Dev-only internal docs" .gitignore 2>/dev/null; then
-  info "Restoring dev-only exclusions in .gitignore..."
-  echo "$MAIN_GITIGNORE_BLOCK" >> .gitignore
+  info "Appending dev-only exclusions to .gitignore..."
+  echo "$MAIN_GITIGNORE_EXTRAS" >> .gitignore
   git add .gitignore
 fi
 
-# ─── Remove dev-only files from main index ────────────────────────────
+# ─── Strip dev-only files from the index ──────────────────────────────
 
-removed=0
 for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
-  if git ls-files --error-unmatch "$pattern" &>/dev/null; then
-    git rm --cached -r "$pattern" 2>/dev/null
-    ((removed++)) || true
+  if git ls-files "$pattern" | grep -q .; then
+    info "Stripping dev-only: $pattern"
+    git rm --cached -r "$pattern" 2>/dev/null || true
+    # Restore to main's version if it existed (e.g. .gitignore itself)
+    git checkout HEAD -- "$pattern" 2>/dev/null || true
   fi
 done
 
-if (( removed > 0 )); then
-  info "Removed $removed dev-only path(s) from main index."
-  git commit -m "chore: remove dev-only files from main tracking
+# ─── HARD VERIFICATION: no dev-only file may be staged ────────────────
 
-Automated by scripts/release-to-main.sh."
-else
-  info "No dev-only files to remove (already clean)."
+info "Verifying no dev-only files are staged..."
+leaked=""
+for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
+  matches="$(git diff --cached --name-only -- "$pattern" 2>/dev/null || true)"
+  staged="$(git ls-files --cached -- "$pattern" 2>/dev/null || true)"
+  if [[ -n "$matches" || -n "$staged" ]]; then
+    leaked="$leaked  $pattern\n"
+  fi
+done
+
+if [[ -n "$leaked" ]]; then
+  echo ""
+  echo "!!! DEV-ONLY FILES LEAKED INTO MAIN STAGING AREA !!!"
+  echo -e "$leaked"
+  abort_merge "Dev-only files detected in staging. Release aborted."
 fi
+info "Verification passed: no dev-only files in staging."
 
-# ─── Final verification on main ──────────────────────────────────────
+# ─── Commit the merge ────────────────────────────────────────────────
 
-info "Verifying tests on main..."
-if ! uv run pytest -q --timeout=60 2>&1 | tail -3; then
-  die "Tests failed on main! Aborting push. Fix manually."
+git commit -m "release: merge dev v$version_file into main
+
+Source: dev @ $dev_sha
+Automated by scripts/release-to-main.sh — dev-only files stripped."
+
+# ─── Final test on main ──────────────────────────────────────────────
+
+info "Running tests on main..."
+pytest_main="$(uv run pytest -q --timeout=60 2>&1)"
+if ! echo "$pytest_main" | grep -qE "^[0-9]+ passed"; then
+  echo "$pytest_main" | tail -5
+  die "Tests failed on main after merge! NOT pushing. Fix manually."
 fi
+echo "$pytest_main" | tail -1
 
 # ─── Push main only ──────────────────────────────────────────────────
 
 info "Pushing main to origin..."
 git push origin main
 
-# ─── Switch back to dev ───────────────────────────────────────────────
+# ─── Return to dev ────────────────────────────────────────────────────
 
 info "Switching back to dev..."
 git checkout dev
 
-info "Done. main pushed with v$version_file. Dev branch is local-only."
+echo ""
+info "Release complete: main @ v$version_file pushed. Dev is local-only."
