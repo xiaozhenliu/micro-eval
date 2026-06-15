@@ -28,14 +28,24 @@ examples/**/report.html
 # Plan files (local only)
 .plan/
 
-# Dev-only docs (tracked on dev branch)
+# Dev-only docs (tracked on dev branch; never published to main)
 CLAUDE.md
 micro-eval-brd.md
 micro-eval-prd.md
+TODOS.md
+
+# Dev-only internal docs
+docs/dev/
+docs/superpowers/
+docs/_archive/
+docs/references/
+docs/bug_reports/
+docs/analysis/
 
 # Local analysis/tool caches
 .understand-anything/
 .coverage
+.codex/
 
 # rtk (Rust Token Killer) local cache/filters — not project content
 .rtk/
