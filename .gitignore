@@ -9,6 +9,9 @@ dist/
 # Node
 ui/node_modules/
 ui/.next/
+site/node_modules/
+site/.vitepress/dist/
+site/.vitepress/cache/
 
 # micro-eval runtime
 .micro-eval/
@@ -29,6 +32,7 @@ examples/**/report.html
 CLAUDE.md
 micro-eval-brd.md
 micro-eval-prd.md
+TODOS.md
 
 # Local analysis/tool caches
 .understand-anything/
