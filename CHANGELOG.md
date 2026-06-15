@@ -16,9 +16,15 @@ All notable changes to `micro-eval` are documented here.
   - Built-in local search via VitePress MiniSearch.
 - Documentation site link added to both README.md and README.zh-CN.md.
 
+### Fixed
+
+- **Python 3.12 CI deadlock**: the `test_cancelled_error_propagates_not_isolated` test hung indefinitely on Python 3.12 due to `asyncio.run()` cleanup behavior change — 3.12's `_cancel_all_tasks()` gathers orphaned subprocess tasks stuck in `selector.select()` (a C-level blocking call immune to `task.cancel()`), causing an infinite deadlock. Fixed by using a dedicated event loop with `loop.close()` which tears down the selector without waiting.
+- **CI shell-injection grep gate**: the grep gate falsely matched `create_subprocess_shell` string literals inside `test_execution_contract.py` (the test that asserts production code does NOT contain those patterns). Fixed with `--exclude='test_execution_contract.py'`.
+
 ### Changed
 
 - Version bump to 0.3.3 (Python `__init__.py`, UI `package.json`, VERSION, READMEs).
+- Add `pytest-timeout>=2.0` to dev dependencies and `--timeout=60` / `timeout-minutes: 10` to CI as defense-in-depth against future test hangs.
 
 ## 0.3.2 - 2026-06-15
 
