@@ -160,7 +160,7 @@ All `MICRO_EVAL_SECRET_*` variables are automatically redacted from logs, traces
 
 ## Layer 3: Human Annotation
 
-Human annotation is the final layer and the **only layer that can express nuanced judgment** beyond what automated systems capture. Annotations are added through the Web UI's AnnotationPanel.
+Human annotation is the final layer and the **only layer that can express nuanced judgment** beyond what automated systems capture. Annotations are added through the Web UI.
 
 ::: tip Start the Web UI
 ```bash
@@ -171,7 +171,7 @@ micro-eval ui
 
 ### Adding an Annotation
 
-Navigate to any cell in the result matrix and open the AnnotationPanel. You can assign:
+Navigate to any cell in the result matrix. You can assign:
 
 - **Score** (0.0 – 1.0) — your numeric judgment
 - **Comment** — free-text reasoning, caveats, or follow-up notes

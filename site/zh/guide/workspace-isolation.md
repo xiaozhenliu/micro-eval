@@ -93,12 +93,7 @@ workspace:
 
 ### 级别 1 — `os_policy`
 
-在 agent 进程周围添加 OS 级别的沙箱策略：
-
-- **macOS**：Apple Seatbelt（`sandbox-exec`）将文件系统写入限制在工作区目录
-- **Linux**：Bubblewrap（`bwrap`）创建具有私有文件系统视图的用户命名空间
-
-此级别可防止 agent 意外（或故意）读取 `~/.ssh` 中的密钥、向工作区外的路径写入，或修改你的全局配置文件。
+在 agent 进程周围添加 OS 级别的沙箱策略。此级别可防止 agent 意外（或故意）读取 `~/.ssh` 中的密钥、向工作区外的路径写入，或修改你的全局配置文件。
 
 ```yaml
 workspace:
@@ -143,18 +138,6 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 ```
 
 以 `MICRO_EVAL_SECRET_` 为前缀的密钥会自动从日志、运行产物和 LLM judge 提示词中脱敏。
-
-## Provider 注册表
-
-micro-eval 在运行时通过 `WorkspaceProvider` 协议和 provider 注册表选择合适的后端。你无需直接配置——注册表会检查 `isolation_level` 字段和宿主环境来选择正确的后端。
-
-| Provider | 级别 | 平台 |
-|----------|-------|----------|
-| `GitWorktreeProvider` | 0 — logical | 所有平台 |
-| `SeatbeltProvider` | 1 — os_policy | macOS |
-| `BubblewrapProvider` | 1 — os_policy | Linux |
-| `E2BProvider` | 4 — vm | 任意（远程） |
-| `ModalProvider` | 4 — vm | 任意（远程） |
 
 ## 信任级别
 

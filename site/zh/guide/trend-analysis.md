@@ -4,7 +4,7 @@
 
 ## 工作原理
 
-micro-eval 以 JSON run 文件作为**权威数据源**。在 JSON store 旁边还有一个派生的 SQLite 索引，它支持快速的时间序列查询，而无需重复存储数据。
+micro-eval 以 JSON run 文件作为**权威数据源**。在 JSON store 旁边还有一个派生索引，它支持快速的时间序列查询，而无需重复存储数据。
 
 ```
 .micro-eval/
@@ -15,15 +15,11 @@ micro-eval 以 JSON run 文件作为**权威数据源**。在 JSON store 旁边�
 └── index.db                       ← 派生索引，可从 JSON 重建
 ```
 
-每当 `run_store.finalize_run` 写入新的 run 时，索引会自动更新。v0.3.0 之前已有的 JSON run 可以通过一条命令导入：
+每次 run 完成后，索引会自动更新。v0.3.0 之前已有的 JSON run 可以通过一条命令导入：
 
 ```bash
 uv run micro-eval index import-json
 ```
-
-::: tip 索引存储的内容
-SQLite 索引为每个 run 存储轻量级元数据——config digest、task id 列表、通过计数、延迟百分位数、总费用以及时间戳。原始 artifacts 和 trace 仅保留在 JSON 中。
-:::
 
 ## 漂移感知断点
 

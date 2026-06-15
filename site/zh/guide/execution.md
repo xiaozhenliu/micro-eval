@@ -11,12 +11,12 @@ micro-eval 通过将声明式配置展开为隔离运行的矩阵、并发执行
 
 当你运行 `micro-eval run` 时，引擎按顺序执行以下阶段：
 
-1. **解析与验证** — 加载 `eval.yaml`，应用 Pydantic schema 验证
-2. **矩阵展开** — 将 `Tasks × Configurations × Repetitions` 分解为 `RunCell` 对象
-3. **计划记录** — 在任何单元格执行之前，将 `RunPlan` 写入 `.micro-eval/runs/<run-id>/plan.json`
-4. **有界并发执行** — 通过 asyncio 调度单元格，可配置并发上限
+1. **解析与验证** — 加载 `eval.yaml` 并验证其 schema
+2. **矩阵展开** — 将 `Tasks × Configurations × Repetitions` 分解为独立的单元格
+3. **计划记录** — 在任何单元格执行之前，将运行计划写入 `.micro-eval/runs/<run-id>/plan.json`
+4. **并发执行** — 并行运行单元格，最多同时执行 `guardrails.max_concurrency` 个
 5. **单元格生命周期** — 准备工作区 → 运行 agent → 捕获输出 → 验证 → 评分 → 清理
-6. **结果聚合** — 写入 `ResultMatrix`，计算决策，更新 SQLite 趋势索引
+6. **结果聚合** — 写入 `ResultMatrix` 并计算决策
 
 ## 矩阵展开
 
@@ -60,7 +60,7 @@ guardrails:
 
 ## 并发控制
 
-单元格通过 `asyncio` 并发运行，使用有界信号量：
+micro-eval 并发运行单元格。通过 `guardrails.max_concurrency` 控制并行度：
 
 ```yaml
 guardrails:
@@ -71,11 +71,9 @@ guardrails:
 对于 CPU 密集型 agent 工作负载，将 `max_concurrency` 设置为可用核心数。对于 API 密集型 agent（LLM 调用），较高的值（8–16）是安全的。注意内存——每个单元格可能克隆一个 git worktree 并生成一个子进程。
 :::
 
-信号量确保最多 `max_concurrency` 个单元格同时处于子进程阶段。工作区准备和清理在信号量之外进行，以避免阻塞其他单元格。
-
 ## 单元格生命周期
 
-每个 `RunCell` 经历相同的八步生命周期。任意步骤的失败都会产生一个结构化的 `CellError`，并跳过该单元格的后续步骤——但不影响其他单元格。
+每个单元格经历相同的生命周期。任意步骤的失败都会被记录并跳过该单元格的后续步骤——但不影响其他单元格。
 
 ### 第 1 步 — 工作区准备
 
@@ -114,7 +112,7 @@ workspace:
 
 ### 第 3 步 — Agent 子进程调用
 
-agent 通过 Python 的 `asyncio.create_subprocess_exec` 启动——**绝不**使用 `shell=True`。完整命令构造为 argv 列表：
+agent 以子进程的形式启动，使用 `agent.command` 中指定的 argv 列表。任务提示通过临时文件或 stdin 传递——绝不插值到 shell 字符串中：
 
 ```yaml
 configurations:
@@ -124,8 +122,6 @@ configurations:
       args: ["--task-file", "{task_file}"]   # placeholder expanded safely
       timeout: 120
 ```
-
-任务提示通过临时文件或 stdin 传递——绝不插值到 shell 字符串中。这消除了整类注入漏洞。
 
 ::: warning 仅限 argv 的安全性
 micro-eval 拒绝执行以 shell 字符串形式传递的 agent 命令。如果你的 `command` 值是包含空格或 shell 元字符的单个字符串，CLI 将在验证时拒绝该配置并给出明确的错误提示。始终使用列表：`["my-agent", "--flag", "value"]`。
@@ -214,12 +210,7 @@ LLM 评判失败（API 错误、JSON 响应格式错误）会在 `CellResult` �
 
 ### 第 8 步 — 工作区清理
 
-输出捕获和评分完成后，工作区被移除：
-
-- `blank` / `files` 工作区：临时目录被删除
-- `git_repo` 工作区：调用 `git worktree remove --force <path>`
-
-即使 agent 以错误退出，清理也会运行。在 `run.preserve_artifacts` 下声明的 artifact 会在工作区移除之前复制到 `.micro-eval/runs/<run-id>/artifacts/`。
+输出捕获和评分完成后，工作区被移除。即使 agent 以错误退出，清理也会运行。在 `run.preserve_artifacts` 下声明的 artifact 会在工作区移除之前复制到 `.micro-eval/runs/<run-id>/artifacts/`。
 
 ## 超时与信号升级
 
@@ -261,21 +252,20 @@ guardrails:
 
 ## 隔离级别
 
-工作区 provider 决定单元格之间以及与宿主之间的隔离程度：
+`isolation_level` 设置控制 agent 进程被约束的严格程度：
 
-| 级别 | Provider | 保证 |
+| 级别 | 名称 | 可用性 |
 |---|---|---|
-| `logical` | git worktree | 独立的文件系统树；共享宿主 OS 资源 |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | OS 强制执行的系统调用/文件系统策略 |
-| `container` | Docker（计划中） | 完整容器命名空间隔离 |
-| `vm` | E2B / Modal | 远程临时虚拟机；最强隔离 |
+| 0 | `logical` | 始终可用 |
+| 1 | `os_policy` | 取决于宿主 OS |
+| 4 | `vm` | 需要凭证 |
 
 ```yaml{2}
 workspace:
   isolation_level: os_policy    # falls back to logical with a caveat if unavailable
 ```
 
-当请求 `os_policy` 但 Seatbelt/Bubblewrap 不可用时（例如，操作系统不匹配或缺少权限），micro-eval 降级为 `logical` 并在运行元数据中记录一条 `SandboxCaveat`。远程 provider（`E2B`、`Modal`）**永不降级**——如果凭证缺失，它们会直接失败。
+当请求 `os_policy` 但宿主机上不可用时，micro-eval 降级为 `logical` 并在运行元数据中记录一条告警。远程 provider（`E2B`、`Modal`）**永不降级**——如果凭证缺失，它们会直接失败。完整的级别说明请参阅 [Workspace 隔离](/zh/guide/workspace-isolation)。
 
 ## Guardrails 参考
 

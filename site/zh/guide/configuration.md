@@ -193,7 +193,7 @@ command: "python -m myagent.cli --mode transform"
 command: ["python", "-m", "myagent.cli", "--mode", "transform"]
 ```
 
-micro-eval 将列表直接传给 `asyncio.create_subprocess_exec`，完全绕过 shell。这可以防止 shell 注入，并确保参数边界精确无误。
+micro-eval 将列表直接传给子进程，完全绕过 shell。这可以防止 shell 注入，并确保参数边界精确无误。
 :::
 
 **`input_mode`**

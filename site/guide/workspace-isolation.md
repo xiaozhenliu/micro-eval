@@ -93,12 +93,7 @@ workspace:
 
 ### Level 1 — `os_policy`
 
-Adds an OS-level sandbox policy around the agent process:
-
-- **macOS**: Apple Seatbelt (`sandbox-exec`) restricts filesystem writes to the workspace directory
-- **Linux**: Bubblewrap (`bwrap`) creates a user namespace with a private filesystem view
-
-This level prevents an agent from accidentally (or intentionally) reading secrets from `~/.ssh`, writing to paths outside the workspace, or modifying your global config files.
+Adds an OS-level sandbox policy around the agent process. This level prevents an agent from accidentally (or intentionally) reading secrets from `~/.ssh`, writing to paths outside the workspace, or modifying your global config files.
 
 ```yaml
 workspace:
@@ -143,18 +138,6 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 ```
 
 Secrets prefixed with `MICRO_EVAL_SECRET_` are automatically redacted from logs, run artifacts, and LLM judge prompts.
-
-## Provider Registry
-
-micro-eval selects the appropriate backend at run time through the `WorkspaceProvider` protocol and a provider registry. You do not need to configure this directly — the registry inspects the `isolation_level` field and the host environment to pick the right backend.
-
-| Provider | Level | Platform |
-|----------|-------|----------|
-| `GitWorktreeProvider` | 0 — logical | All |
-| `SeatbeltProvider` | 1 — os_policy | macOS |
-| `BubblewrapProvider` | 1 — os_policy | Linux |
-| `E2BProvider` | 4 — vm | Any (remote) |
-| `ModalProvider` | 4 — vm | Any (remote) |
 
 ## Trust Levels
 

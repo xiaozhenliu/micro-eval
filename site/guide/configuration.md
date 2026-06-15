@@ -194,7 +194,7 @@ Write it as a list:
 command: ["python", "-m", "myagent.cli", "--mode", "transform"]
 ```
 
-micro-eval passes the list directly to `asyncio.create_subprocess_exec`, bypassing the shell entirely. This prevents shell injection and ensures argument boundaries are exact.
+micro-eval passes the list directly to the subprocess, bypassing the shell entirely. This prevents shell injection and ensures argument boundaries are exact.
 :::
 
 **`input_mode`**

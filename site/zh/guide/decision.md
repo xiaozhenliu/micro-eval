@@ -17,7 +17,7 @@ Run 完成后，micro-eval 会将所有任务结果综合为一份 **DecisionRep
 
 ## DecisionReport 结构
 
-`DecisionReport` 由 Python 的 `build_decision` 函数生成，并序列化到 `.micro-eval/runs/<run-id>/decision.json`。TypeScript 的 `recomputeDecision` 函数在 UI 中读取该结构。
+`DecisionReport` 在每次 run 完成后序列化到 `.micro-eval/runs/<run-id>/decision.json`，由 UI 读取并渲染对比视图。
 
 ```json
 {
@@ -178,46 +178,6 @@ ls .micro-eval/runs/abc123/evals/
 # 查看特定单元格的制品
 cat .micro-eval/runs/abc123/artifacts/task-refactor/claude-3-5-sonnet/rep-1/stdout.txt
 ```
-
-## 跨语言一致性
-
-决策逻辑在两处实现：
-
-- **Python**：`micro_eval/evaluation/decision.py` — `build_decision(run_result: RunResult) -> DecisionReport`
-- **TypeScript**：`ui/lib/decision.ts` — `recomputeDecision(runResult: RunResult): DecisionReport`
-
-两个实现都通过 `tests/contract/test_decision_contract.py` 中的共享黄金 fixture 集进行契约测试。如果任何 fixture 的输出出现分歧，CI 将失败。
-
-::: code-group
-
-```python [Python — build_decision]
-from micro_eval.evaluation.decision import build_decision
-from micro_eval.store import load_run_result
-
-run_result = load_run_result("abc123")
-decision = build_decision(run_result)
-print(decision.verdict)          # "mixed"
-print(decision.confidence)       # "medium"
-for caveat in decision.caveats:
-    print(caveat.kind, caveat.detail)
-```
-
-```typescript [TypeScript — recomputeDecision]
-import { recomputeDecision } from "@/lib/decision";
-import { loadRunResult } from "@/lib/store";
-
-const runResult = await loadRunResult("abc123");
-const decision = recomputeDecision(runResult);
-console.log(decision.verdict);        // "mixed"
-console.log(decision.confidence);     // "medium"
-decision.caveats.forEach((c) => {
-  console.log(c.kind, c.detail);
-});
-```
-
-:::
-
-共享的 Pydantic schema（Python）和 zod schema（TypeScript）确保双方在字段名称、类型和允许的枚举值上保持一致。任何 schema 变更都必须在两处同步更新。
 
 ## not_comparable — 如何处理
 

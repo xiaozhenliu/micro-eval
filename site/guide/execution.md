@@ -11,12 +11,12 @@ micro-eval evaluates agents by expanding a declarative configuration into a matr
 
 When you run `micro-eval run`, the engine performs these stages in order:
 
-1. **Parse & validate** — load `eval.yaml`, apply Pydantic schema validation
-2. **Matrix expansion** — decompose `Tasks × Configurations × Repetitions` into `RunCell` objects
-3. **Plan recording** — write the `RunPlan` to `.micro-eval/runs/<run-id>/plan.json` before any cell executes
-4. **Bounded concurrent execution** — dispatch cells via asyncio with a configurable concurrency cap
+1. **Parse & validate** — load `eval.yaml` and validate its schema
+2. **Matrix expansion** — decompose `Tasks × Configurations × Repetitions` into individual cells
+3. **Plan recording** — write the run plan to `.micro-eval/runs/<run-id>/plan.json` before any cell executes
+4. **Concurrent execution** — run cells in parallel, up to `guardrails.max_concurrency` at a time
 5. **Per-cell lifecycle** — prepare workspace → run agent → capture output → validate → score → clean up
-6. **Result aggregation** — write `ResultMatrix`, compute decisions, update the SQLite trend index
+6. **Result aggregation** — write `ResultMatrix` and compute decisions
 
 ## Matrix Expansion
 
@@ -60,7 +60,7 @@ The generated `execution_seed` is always written to `plan.json` and embedded in 
 
 ## Concurrency Control
 
-Cells run concurrently via `asyncio`, with a bounded semaphore:
+micro-eval runs cells concurrently. Control parallelism with `guardrails.max_concurrency`:
 
 ```yaml
 guardrails:
@@ -71,11 +71,9 @@ guardrails:
 For CPU-bound agent workloads, set `max_concurrency` to the number of available cores. For API-bound agents (LLM calls), higher values (8–16) are safe. Watch memory — each cell may clone a git worktree and spawn a subprocess.
 :::
 
-The semaphore ensures at most `max_concurrency` cells are in their subprocess phase simultaneously. Workspace preparation and cleanup happen outside the semaphore to avoid blocking other cells.
-
 ## Per-Cell Lifecycle
 
-Every `RunCell` passes through the same eight-step lifecycle. A failure at any step produces a structured `CellError` and skips remaining steps for that cell — but does not affect other cells.
+Each cell goes through the same lifecycle. A failure at any step is recorded and skips remaining steps for that cell — but does not affect other cells.
 
 ### Step 1 — Workspace Preparation
 
@@ -114,7 +112,7 @@ If any setup command exits with a non-zero code, the cell immediately transition
 
 ### Step 3 — Agent Subprocess Invocation
 
-The agent is launched via Python's `asyncio.create_subprocess_exec` — **never** via `shell=True`. The full command is constructed as an argv list:
+The agent is launched as a subprocess using the argv list specified in `agent.command`. The task prompt is delivered via a temporary file or stdin — never interpolated into a shell string:
 
 ```yaml
 configurations:
@@ -124,8 +122,6 @@ configurations:
       args: ["--task-file", "{task_file}"]   # placeholder expanded safely
       timeout: 120
 ```
-
-The task prompt is delivered via a temporary file or stdin — never interpolated into a shell string. This eliminates an entire class of injection vulnerabilities.
 
 ::: warning argv-only security
 micro-eval refuses to execute agent commands passed as shell strings. If your `command` value is a single string containing spaces or shell metacharacters, the CLI will reject the configuration at validate time with a clear error. Always use lists: `["my-agent", "--flag", "value"]`.
@@ -214,12 +210,7 @@ LLM judge failures (API error, malformed JSON response) produce a `judge_error` 
 
 ### Step 8 — Workspace Cleanup
 
-After output capture and scoring complete, the workspace is removed:
-
-- `blank` / `files` workspaces: the temp directory is deleted
-- `git_repo` workspaces: `git worktree remove --force <path>` is called
-
-Cleanup runs even if the agent exited with an error. Artifacts declared under `run.preserve_artifacts` are copied to `.micro-eval/runs/<run-id>/artifacts/` before the workspace is removed.
+After output capture and scoring complete, the workspace is removed. Cleanup runs even if the agent exited with an error. Artifacts declared under `run.preserve_artifacts` are copied to `.micro-eval/runs/<run-id>/artifacts/` before the workspace is removed.
 
 ## Timeout and Signal Escalation
 
@@ -261,21 +252,20 @@ Even when a run is interrupted (Ctrl-C, OOM, network drop), every completed cell
 
 ## Isolation Levels
 
-The workspace provider determines how cells are isolated from each other and from the host:
+The `isolation_level` setting controls how tightly the agent's process is contained:
 
-| Level | Provider | Guarantee |
+| Level | Name | Availability |
 |---|---|---|
-| `logical` | git worktree | Separate filesystem tree; shares host OS resources |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | Syscall/filesystem policy enforced by the OS |
-| `container` | Docker (planned) | Full container namespace isolation |
-| `vm` | E2B / Modal | Remote ephemeral VM; strongest isolation |
+| 0 | `logical` | Always available |
+| 1 | `os_policy` | Host OS dependent |
+| 4 | `vm` | Requires credentials |
 
 ```yaml{3}
 workspace:
   isolation_level: os_policy    # falls back to logical with a caveat if unavailable
 ```
 
-When `os_policy` is requested but Seatbelt/Bubblewrap is unavailable (e.g., wrong OS or missing permissions), micro-eval downgrades to `logical` and records a `SandboxCaveat` in the run metadata. Remote providers (`E2B`, `Modal`) **never downgrade** — they fail hard if credentials are absent.
+When `os_policy` is requested but unavailable on the host, micro-eval downgrades to `logical` and records a caveat in the run metadata. Remote providers (`E2B`, `Modal`) **never downgrade** — they fail hard if credentials are absent. See [Workspace Isolation](/guide/workspace-isolation) for the full details on each level.
 
 ## Guardrails Reference
 
