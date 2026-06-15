@@ -13,7 +13,7 @@
 
 `micro-eval` 把“candidate 感觉更强”转化为可复现对比：同一批任务、同一起点、同一证据链，并基于受保护的决策逻辑判断 baseline / candidate 在哪些 cell 上更强、更弱、样本不足、不可比或需要人工判断。
 
-0.2.0 将本地 MVP 扩展到 Phase 2：可复现矩阵执行现在会产出 pass@k / pass^k 聚合、独立 `decision.json`、可选 trace 捕获、cost source 展示、review UI，以及默认关闭的 LLM judge 适配器。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
+0.3.3 新增中英双语[项目文档网站](https://xiaozhenliu.github.io/micro-eval/)（VitePress 构建），涵盖指南、参考手册和示例文档。Phase 3 provider 化沙箱隔离（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal）、多源 fixture digest + toolchain fingerprint、SQLite 索引 + drift-aware 趋势分析均完全可用。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
 
 ## 为什么使用 micro-eval？
 

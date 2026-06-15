@@ -13,7 +13,7 @@ Current version: `0.3.3`
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-Version 0.3.3 completes Phase 3: provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints. Phase 2 features (pass@k aggregation, `decision.json`, trace capture, cost reporting, review UI, LLM judge) remain fully available. Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
+Version 0.3.3 adds a bilingual (English/Chinese) [project documentation website](https://xiaozhenliu.github.io/micro-eval/) built with VitePress, covering guides, reference, and examples. Phase 3 provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints remain fully available. Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
 
 ## Why micro-eval?
 
