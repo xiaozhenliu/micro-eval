@@ -2,6 +2,19 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.5 - 2026-06-15
+
+### Changed
+
+- **Documentation site restructure**: reorganized user-facing documentation from module-flat layout to journey-based architecture.
+  - New **Design System** page (`site/guide/design-system.md`) extracts the product's conceptual framework: decision loop, three design tensions (evidence-first, same-start, honest boundaries), and seven core objects (Task, Configuration, Run, Cell, Evidence, Evaluation, Decision).
+  - Sidebar reorganized from two groups (Introduction + Core Guide) to four groups (Get Started / Using micro-eval / Advanced / Reference) in both English and Chinese.
+  - `core-concepts.md` decomposed: core objects moved to Design System page, secondary concepts (AgentSpec, WorkspaceSpec, Expectation) moved to their respective topic pages. Old page retained as redirect with anchor stubs for external link compatibility.
+  - Implementation details removed from guide pages: asyncio/semaphore internals from execution, Seatbelt/Bubblewrap code paths from workspace isolation, SQLite index structure from trend analysis, Python/TS code snippets from security model.
+  - Each usage page now opens with a design-system context anchor linking back to the relevant principle.
+  - Field names normalized across guide pages to match reference schema (ground truth).
+  - Full bilingual (EN/ZH) treatment for all changes.
+
 ## 0.3.4 - 2026-06-15
 
 ### Changed

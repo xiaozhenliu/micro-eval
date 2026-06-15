@@ -1,12 +1,18 @@
 # 开发指南
 
-本文是当前 0.2.0 Phase 2 实现的工程入口。正式工程规范仍以 `docs/engineering/` 为准；长期架构/范围权威来源仍是：
+本文是工程入口。正式工程规范以 `docs/engineering/` 为准。
 
-- `docs/superpowers/specs/2026-06-02-unicorn-design.md`
-- `docs/superpowers/specs/2026-06-02-mvp-profile.md`
-- `docs/superpowers/specs/2026-06-02-test-architecture.md`
+**内部设计文档**（开发者参考）：
+- `docs/superpowers/specs/2026-06-02-unicorn-design.md` — 长期架构
+- `docs/superpowers/specs/2026-06-02-mvp-profile.md` — MVP 范围
+- `docs/superpowers/specs/2026-06-02-test-architecture.md` — 测试架构
 
-MVP release evidence 见 `docs/releases/2026-06-02-mvp-release-evidence.md`；0.2.0 release evidence 见 `docs/releases/2026-06-12-v0.2.0-release-evidence.md`。完整 release 流程见项目级 release skill `.codex/skills/micro-eval-release/SKILL.md`。
+**用户文档站点**（`site/`）：
+- 组织方式：Get Started → Using micro-eval → Advanced → Reference
+- 设计体系页：`site/guide/design-system.md`（决策闭环、3 张力、7 核心对象）
+- 用户文档不包含实现细节；内部文档不重述用户概念。两套文档服务不同受众。
+
+Release evidence 见 `docs/releases/`。完整 release 流程见 `.codex/skills/micro-eval-release/SKILL.md`。
 
 ## 开发原则
 
