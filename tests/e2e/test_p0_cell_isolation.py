@@ -77,6 +77,10 @@ def test_isolated_failure_redacts_secrets_in_stderr(tmp_path, monkeypatch):
 def test_cancelled_error_propagates_not_isolated(tmp_path, monkeypatch):
     # The isolation boundary must re-raise CancelledError, never swallow it,
     # so timeout / Ctrl-C cancellation semantics keep working.
+    #
+    # Uses a dedicated event loop + loop.close() instead of asyncio.run()
+    # because Python 3.12's asyncio.run cleanup deadlocks when CancelledError
+    # leaves subprocess tasks pending in the selector.
     plan = _build_plan(tmp_path)
     target = plan.cells[0].cell_id
     real_validate = kernel_module.validate_cell
@@ -88,5 +92,11 @@ def test_cancelled_error_propagates_not_isolated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(kernel_module, "validate_cell", cancelling_validate)
 
-    with pytest.raises(asyncio.CancelledError):
-        asyncio.run(ExecutionKernel(tmp_path).run(plan))
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            loop.run_until_complete(ExecutionKernel(tmp_path).run(plan))
+    finally:
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+        loop.close()
