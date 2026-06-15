@@ -159,7 +159,7 @@ configurations:
 
 #### `agent`
 
-agent spec 描述 micro-eval 如何将你的 agent 作为子进程启动。
+**AgentSpec** 是一个 agent 的完整调用契约。它告诉 micro-eval 命令 argv、输入如何传递给 agent、输出如何收集、每次调用的超时时间、额外的环境变量，以及需要哪些 secrets。每个 configuration 在 `agent` 键下包含恰好一个 AgentSpec。
 
 ```yaml
 agent:

@@ -159,7 +159,7 @@ Each task is executed this many times for this configuration. The result matrix 
 
 #### `agent`
 
-The agent spec describes how micro-eval launches your agent as a subprocess.
+An **AgentSpec** is the complete invocation contract for one agent. It tells micro-eval the command argv, how input is delivered to the agent, how output is collected, a per-invocation timeout, extra environment variables, and which secrets are required. Every configuration embeds exactly one AgentSpec under the `agent` key.
 
 ```yaml
 agent:

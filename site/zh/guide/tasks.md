@@ -88,7 +88,7 @@ revision_id: "2026-06-15-v1"
 
 ## 四种期望类型
 
-Expectations 是**确定性**检查，在 agent 进程退出后、调用 LLM judge 之前立即运行。它们速度快、成本低、可复现，是防御明显失败的第一道防线。
+**Expectation** 是针对单元格输出评估的确定性、零 LLM 验证规则。Expectations 速度快、成本低、可复现——它们在 agent 进程退出后、调用 LLM judge 之前立即运行，是防御明显失败的第一道防线。
 
 若任意 expectation 失败，该结果将被标记为 `failed`，结果矩阵中对应单元格的 LLM judge 将被跳过。
 
@@ -193,6 +193,8 @@ expectations:
 :::
 
 ## Workspace 类型
+
+**WorkspaceSpec** 定义了 run 中每个单元格启动时的执行环境。为使结果具有可比性，一次 run 中的每个单元格必须从相同的 WorkspaceSpec 启动——micro-eval 将 workspace 状态（fixture digest + toolchain fingerprint）哈希到 `SameStartSnapshot` 中，并用 `snapshot_mismatch` Caveat 标记存在差异的单元格。
 
 `workspace` 块控制 agent 运行的环境。每个 workspace 都是隔离的：结果矩阵中每个 `(task, configuration, repetition)` 单元格都有自己独立的目录。
 

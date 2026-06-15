@@ -88,7 +88,7 @@ revision_id: "2026-06-15-v1"
 
 ## The Four Expectation Types
 
-Expectations are **deterministic** checks that run immediately after the agent process exits, before any LLM judge is invoked. They are fast, cheap, and reproducible. Think of them as your first line of defense against obvious failures.
+An **Expectation** is a deterministic, zero-LLM validation rule evaluated against a cell's output. Expectations are fast, cheap, and reproducible — they run immediately after the agent process exits, before any LLM judge is invoked. Think of them as your first line of defense against obvious failures.
 
 If any expectation fails, the result is marked `failed` and the LLM judge is skipped for that cell in the result matrix.
 
@@ -193,6 +193,8 @@ Do not use `command: ["sh", "-c", "some command string"]`. If you need shell fea
 :::
 
 ## Workspace Types
+
+A **WorkspaceSpec** defines the execution environment that every cell in a run starts from. To produce comparable results, every cell in a run must start from the same WorkspaceSpec — micro-eval hashes the workspace state (fixture digest + toolchain fingerprint) into a `SameStartSnapshot` and flags cells where this differs with a `snapshot_mismatch` Caveat.
 
 The `workspace` block controls what environment the agent runs in. Every workspace is isolated: each `(task, configuration, repetition)` cell in the result matrix gets its own independent directory.
 
