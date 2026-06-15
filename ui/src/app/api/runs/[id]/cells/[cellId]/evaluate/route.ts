@@ -1,7 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getRun, getRunDir, saveRun } from "@/lib/api";
-import { appendEvaluationFile, appendEvaluationToRun, buildHumanEvaluation } from "@/lib/evaluation";
+import { getRun, getProjectRoot } from "@/lib/api";
 
 const HumanEvaluationRequestSchema = z.object({
   pass_fail: z.enum(["pass", "fail"]).nullable().default(null),
@@ -17,10 +17,10 @@ interface RouteContext {
 
 export async function POST(request: Request, context: RouteContext) {
   const { id, cellId } = await context.params;
+  if (!/^[A-Za-z0-9_.:-]+$/.test(id)) return NextResponse.json({ error: "invalid run id" }, { status: 400 });
   const decodedCellId = decodeURIComponent(cellId);
   const run = await getRun(id);
-  const runDir = getRunDir(id);
-  if (!run || !runDir) return NextResponse.json({ error: "run not found" }, { status: 404 });
+  if (!run) return NextResponse.json({ error: "run not found" }, { status: 404 });
   if (!run.results.some((result) => result.cell_id === decodedCellId)) {
     return NextResponse.json({ error: "cell not found" }, { status: 404 });
   }
@@ -32,9 +32,18 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "invalid evaluation payload", detail: String(error) }, { status: 400 });
   }
 
-  const { evaluation, evidence } = buildHumanEvaluation(decodedCellId, input);
-  appendEvaluationFile(runDir, decodedCellId, evaluation);
-  const updatedRun = appendEvaluationToRun(run, evaluation, evidence);
-  saveRun(updatedRun);
-  return NextResponse.json({ evaluation, evidence, decision: updatedRun.decision });
+  const uvBin = process.env.MICRO_EVAL_UV_PATH || "uv";
+  const args = ["run", "micro-eval", "apply-evaluation", "--run-id", id, "--cell-id", decodedCellId];
+  try {
+    const stdout = execFileSync(uvBin, args, {
+      input: JSON.stringify(input),
+      encoding: "utf-8",
+      cwd: getProjectRoot(),
+      timeout: 30_000,
+    });
+    return NextResponse.json(JSON.parse(stdout));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: "evaluation backend failed", detail }, { status: 502 });
+  }
 }

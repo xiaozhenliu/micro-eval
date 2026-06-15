@@ -11,6 +11,7 @@ from micro_eval.cli.init import init_command
 from micro_eval.cli.list import list_command
 from micro_eval.cli.report import report_command
 from micro_eval.cli.run import run_command
+from micro_eval.cli.evaluate import apply_evaluation_command
 from micro_eval.cli.validate import validate_command
 
 app = typer.Typer(
@@ -24,6 +25,7 @@ app.command(name="run")(run_command)
 app.command(name="list")(list_command)
 app.command(name="report")(report_command)
 app.command(name="validate")(validate_command)
+app.command(name="apply-evaluation")(apply_evaluation_command)
 
 
 @app.command()

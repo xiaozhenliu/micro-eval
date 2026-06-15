@@ -111,6 +111,7 @@ Config lookup order is `--config` → `$MICRO_EVAL_CONFIG` → `./eval.yaml`.
 | `micro-eval run [--config eval.yaml] [--max-concurrency N] [--dry-run] [--format text\|json]` | Execute the matrix run or print the RunPlan. |
 | `micro-eval list [--format text\|json]` | List `.micro-eval/runs/*/run.json` records. |
 | `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | Render the matrix, Basic Honest Stats, decision/caveats, and artifacts. |
+| `micro-eval apply-evaluation --run-id ID --cell-id ID` | Apply a human evaluation via stdin JSON and recompute the run decision (used by the UI). |
 | `micro-eval ui [--port 3000]` | Start the local Next.js UI from a source checkout. |
 
 ## Configuration and Tasks
