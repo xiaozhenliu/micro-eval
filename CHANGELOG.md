@@ -2,6 +2,24 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.3.3 - 2026-06-15
+
+### Added
+
+- **Project documentation website** built with VitePress, deployed to GitHub Pages at `https://xiaozhenliu.github.io/micro-eval/`.
+  - 10 English guide pages covering introduction, getting started, core concepts, configuration, tasks, execution, evaluation, decision/caveats, workspace isolation, trend analysis, and security model.
+  - 6 English reference pages: CLI commands, eval.yaml schema, task.yaml schema, data model, API routes, and Web UI.
+  - 4 English example pages: overview with capability coverage matrix, agent codefix showdown, multi-task matrix, and git workspace isolation.
+  - Complete Simplified Chinese translation (21 pages) with native i18n routing (`/zh/` prefix).
+  - Custom theme with brand colors (#6f42c1 purple), dark mode support, and Mermaid diagram rendering.
+  - GitHub Actions workflow for automatic deployment on push to `main` (path-scoped to `site/**`).
+  - Built-in local search via VitePress MiniSearch.
+- Documentation site link added to both README.md and README.zh-CN.md.
+
+### Changed
+
+- Version bump to 0.3.3 (Python `__init__.py`, UI `package.json`, VERSION, READMEs).
+
 ## 0.3.2 - 2026-06-15
 
 ### Added
