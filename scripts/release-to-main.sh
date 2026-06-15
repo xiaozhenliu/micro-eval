@@ -142,8 +142,6 @@ for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
   if git ls-files "$pattern" | grep -q .; then
     info "Stripping dev-only: $pattern"
     git rm --cached -r "$pattern" 2>/dev/null || true
-    # Restore to main's version if it existed (e.g. .gitignore itself)
-    git checkout HEAD -- "$pattern" 2>/dev/null || true
   fi
 done
 
