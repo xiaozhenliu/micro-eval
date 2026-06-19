@@ -4,10 +4,10 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.3.3](https://img.shields.io/badge/version-0.3.3-6f42c1)](VERSION)
+[![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.3.3`
+Current version: `0.4.0`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 

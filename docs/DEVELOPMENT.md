@@ -32,6 +32,16 @@ uv sync --all-extras
 cd ui && npm install
 ```
 
+本项目使用 `uv` 管理本地 Python 环境。`uv sync --all-extras` 会在项目根目录创建或更新 `.venv/`，后续运行项目命令时优先使用 `uv run ...`，不要依赖当前 shell 中的 `python` 或全局安装的 `micro-eval`：
+
+```bash
+uv run python --version
+uv run micro-eval --help
+uv run pytest -q
+```
+
+Zed 项目设置已关闭终端自动激活 `.venv`，这样集成终端会保持用户默认 zsh prompt；项目运行环境仍由 `uv run` 选择 `.venv`。
+
 常用本地命令：
 
 ```bash
@@ -92,19 +102,21 @@ grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples || true
 
 ```text
 src/micro_eval/
-├── cli/                 # init / validate / run / list / report / ui
+├── cli/                 # init / validate / run / list / report / ui / serve / worker / workspace / template / queue / build-plan
 ├── config/              # loader bridge + RunPlan builder
 ├── engine/              # AgentAdapter, ExecutionKernel, WorkspaceManager
 ├── evaluation/          # deterministic validator + human evaluation + optional LLM judge helper
 ├── decision/            # guarded DecisionReport + pass@k/pass^k aggregation
 ├── trace/               # optional TraceProvider adapters (process fallback, Langfuse optional)
 ├── models/              # canonical Pydantic contracts
+├── server/              # Team Server layer: workspace, template registry, queue, worker (v0.4)
 └── store/               # RunStore / ArtifactStore
 
 ui/src/
-├── app/                 # pages and API routes, including /run/[id]/review and trace lookup API
-├── components/          # RunList, ResultMatrix, CellDetail, ArtifactViewer, EvaluationPanel, review panels
-└── lib/                 # zod schema, fs data access, evaluation append helpers, contract fixture
+├── app/                 # pages and API routes (project-scoped + workspace-scoped)
+│   └── api/workspaces/  # server-mode workspace/run/queue/template API routes
+├── components/          # RunList, ResultMatrix, CellDetail, WorkspaceCard, QueueDashboard, etc.
+└── lib/                 # zod schema, fs data access, server-mode utilities, workspace API
 ```
 
 ## Canonical 数据流

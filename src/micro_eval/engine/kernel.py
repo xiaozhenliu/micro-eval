@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from collections.abc import Callable
 from pathlib import Path
 
 from micro_eval.decision.summary import build_decision
@@ -29,9 +30,10 @@ class ExecutionKernel:
 
     SUMMARY_LIMIT = 500
 
-    def __init__(self, project_root: Path | str):
+    def __init__(self, project_root: Path | str, on_cell_complete: Callable | None = None):
         self.project_root = Path(project_root)
         self.run_store = RunStore(self.project_root)
+        self._on_cell_complete = on_cell_complete
 
     async def run(self, plan: RunPlan) -> RunRecord:
         """Execute all cells in a plan and persist canonical run artifacts."""
@@ -62,6 +64,10 @@ class ExecutionKernel:
         for completed in asyncio.as_completed(tasks):
             result = await completed
             record = self.run_store.append_cell_result(record, result)
+            if self._on_cell_complete:
+                completed_count = len(record.results)
+                total_count = len(cells)
+                self._on_cell_complete(completed_count, total_count, result)
         record.artifacts = artifact_store.manifest.artifacts
         record.evidence = artifact_store.manifest.evidence
         record.traces = artifact_store.manifest.traces

@@ -278,7 +278,9 @@
     ],
     "evaluations": [],
     "decision": null,
-    "denominator_policy": "include_failed"
+    "denominator_policy": "include_failed",
+    "owner": null,
+    "server_context": null
   },
   "expected_decision": {
     "schema_version": "1.0",

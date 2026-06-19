@@ -143,3 +143,6 @@ class RunRecord(BaseModel):
     decision: DecisionReport | None = None
     # Copied from project config at plan time; default keeps old run.json files compatible.
     denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"
+    # Server mode fields (optional, backward compatible)
+    owner: str | None = None
+    server_context: dict | None = None

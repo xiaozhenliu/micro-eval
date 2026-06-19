@@ -51,3 +51,26 @@ related:
 - secret storage and rotation；
 - data retention and deletion；
 - abuse prevention and rate limiting。
+
+## Team Server 服务化安全附录（v0.4）
+
+### 信任模型
+- **可信内网假设**：server 部署在团队内网，所有成员互信。
+- **无认证**：`X-Micro-Eval-Member` header 为自报身份，仅用于归属记录，不做鉴权。
+- 此假设的边界条件：server 不暴露到公网；团队成员不主动伪造身份；浏览器可能访问恶意外部网页。
+
+### CSRF 防护（四层）
+1. Content-Type 强制：写接口只接受 `application/json`。
+2. 自定义 header 检查：写接口要求 `X-Micro-Eval-Member` header。
+3. 无 CORS headers：不返回 `Access-Control-Allow-Origin`。
+4. Host header allowlist：拒绝非 allowlist 的 Host header（防 DNS rebinding）。
+
+### config_overrides 白名单
+仅允许覆盖：`repetitions`、`timeout_s`、`max_concurrency`。
+禁止覆盖：`agent.command`、`workspace`、`output_dir`、`project_root`。
+
+### 归属记录（最小审计）
+所有写操作记录 `X-Micro-Eval-Member`。归属记录不可变（workspace.owner 创建后不可更改）。
+
+### 适用范围
+本附录仅适用于 `micro-eval serve` 模式。`micro-eval ui` 本地模式不受影响。

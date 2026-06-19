@@ -250,7 +250,41 @@ export const RunSchema = z.object({
   evaluations: z.array(EvaluationResultSchema).default([]),
   decision: DecisionReportSchema.nullable().default(null),
   denominator_policy: z.enum(["include_failed", "exclude_failed"]).default("include_failed"),
+  owner: z.string().nullable().default(null),
+  server_context: z.record(z.string(), z.any()).nullable().default(null),
 });
+
+export const WorkspaceMetaSchema = z.object({
+  schema_version: z.string().default("1.0"),
+  workspace_id: z.string(),
+  name: z.string(),
+  owner: z.string(),
+  template_id: z.string().nullable().default(null),
+  template_version: z.string().nullable().default(null),
+  created_at: z.string(),
+  last_run_at: z.string().nullable().default(null),
+  run_count: z.number().int().default(0),
+  description: z.string().default(""),
+  status: z.string().default("active"),
+});
+
+export const JobSchema = z.object({
+  job_id: z.string(),
+  workspace_id: z.string(),
+  owner: z.string(),
+  status: z.string(),
+  enqueued_at: z.string(),
+  started_at: z.string().nullable().default(null),
+  finished_at: z.string().nullable().default(null),
+  run_id: z.string().nullable().default(null),
+  error: z.string().nullable().default(null),
+  progress: z.any().nullable().default(null),
+  cancel_requested_at: z.string().nullable().default(null),
+  cancelled_by: z.string().nullable().default(null),
+});
+
+export type WorkspaceMeta = z.infer<typeof WorkspaceMetaSchema>;
+export type Job = z.infer<typeof JobSchema>;
 
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 export type EvidenceItem = z.infer<typeof EvidenceItemSchema>;
