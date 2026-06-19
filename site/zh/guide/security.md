@@ -240,6 +240,36 @@ Web UI 绑定到 `127.0.0.1`，不建议在网络接口上对外暴露。未经�
 
 ---
 
+## 团队服务器安全模型
+
+使用 `micro-eval serve` 时，攻击面从"本地进程读取本地文件"扩展为"可通过网络访问的 HTTP 服务器"。服务器在**受信任的内网假设**下运行——所有团队成员均被信任，但网络路径仍需防御跨域攻击。
+
+### CSRF 防护（4 层）
+
+所有写操作 API 路由（`POST`/`PUT`/`PATCH`/`DELETE`）均强制执行：
+
+1. **Content-Type** — 仅接受 `application/json`。拒绝 `form-urlencoded`、`multipart/form-data`、`text/plain`，从而阻断浏览器 `<form>` 和 `sendBeacon()` 的跨站提交。
+2. **自定义请求头** — 必须包含 `X-Micro-Eval-Member`。浏览器在跨域简单请求中无法发送自定义请求头，除非经过 CORS 预检。
+3. **不返回 CORS 头** — 服务器从不返回 `Access-Control-Allow-Origin`，因此来自其他源的预检请求会被浏览器拒绝。
+4. **Host 头白名单** — 含有未知 `Host` 值的请求将被拒绝，以防止 DNS 重绑定攻击。
+
+### 路径遍历防护
+
+所有工作区和制品的访问均通过基于 ID 的查找与路径包含性校验进行：
+- Workspace ID 必须匹配 `ws-<timestamp>-<hex>` 格式
+- 解析后的路径必须保持在 `~/.micro-eval-server/workspaces/` 内
+- 符号链接会被解析并再次检查路径包含性
+
+### 配置覆盖白名单
+
+在将 run 加入队列时，仅允许覆盖以下字段：`repetitions`、`timeout_s`、`max_concurrency`。Agent 命令、workspace 路径和输出目录不能通过 API 覆盖。
+
+::: warning 仅限内网使用
+团队服务器没有认证层。请勿将其暴露在公网上。`X-Micro-Eval-Member` 请求头是自报的，不经过验证——它提供的是归属标记，而非访问控制。
+:::
+
+---
+
 ## 运行前安全检查清单
 
 在评测来自外部来源的 agent 或任务之前，请使用以下检查清单：

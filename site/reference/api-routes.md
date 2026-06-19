@@ -1,6 +1,6 @@
 # API Routes
 
-The micro-eval Web UI is served by a local Next.js dev server. All API routes read from `.micro-eval/` JSON files on disk — there is no remote server, no database connection, and no authentication layer. The API is strictly local-only.
+The micro-eval Web UI is served by a local Next.js dev server. All API routes read from `.micro-eval/` JSON files on disk — there is no remote server, no database connection, and no authentication layer. The API is strictly local-only. In **server mode** (`micro-eval serve`), additional workspace-scoped and queue management routes become available — see [Server Mode API Routes](#server-mode-api-routes) below.
 
 ::: tip Starting the server
 ```bash
@@ -538,3 +538,129 @@ Do not bind the Next.js server to `0.0.0.0` or proxy it through a public-facing 
 - [Evaluation & Scoring](/guide/evaluation) — the three-layer scoring pipeline (deterministic → LLM judge → human)
 - [Security Model](/guide/security) — secrets redaction, workspace boundaries, and subprocess isolation
 - [Web UI](/reference/web-ui) — the browser interface that consumes these routes
+
+---
+
+## Server Mode API Routes
+
+These routes are only available when running `micro-eval serve`. In local mode (`micro-eval ui`) they return `404`.
+
+::: warning Intranet only
+Server mode routes have **no authentication**. Identity is self-reported via the `X-Micro-Eval-Member` HTTP header and is used for attribution only, not access control. Deploy only on a trusted private network.
+:::
+
+::: info Notes
+- **Server mode routes return 404 when not running in server mode.**
+- **All write routes require `X-Micro-Eval-Member` header and `Content-Type: application/json`.**
+:::
+
+### Overview
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/workspaces` | List all workspaces |
+| `POST` | `/api/workspaces` | Create a new workspace |
+| `GET` | `/api/workspaces/[id]` | Get workspace metadata |
+| `PATCH` | `/api/workspaces/[id]` | Update workspace metadata |
+| `DELETE` | `/api/workspaces/[id]` | Delete a workspace |
+| `GET` | `/api/workspaces/[id]/runs` | List runs in a workspace |
+| `POST` | `/api/workspaces/[id]/runs/enqueue` | Enqueue a new run job |
+| `GET` | `/api/workspaces/[id]/runs/[runId]` | Get a run within a workspace |
+| `GET` | `/api/workspaces/[id]/config` | Get the workspace eval.yaml |
+| `GET` | `/api/workspaces/[id]/trends` | Query workspace-scoped trend data |
+| `GET` | `/api/queue` | Get queue dashboard summary |
+| `GET` | `/api/jobs/[jobId]` | Get a single job record |
+| `POST` | `/api/jobs/[jobId]/cancel` | Cancel a queued or running job |
+| `GET` | `/api/templates` | List all templates |
+| `GET` | `/api/templates/[id]` | Get a single template |
+| `GET` | `/api/server/status` | Server health and process info |
+
+---
+
+### Workspace Routes
+
+**GET /api/workspaces** — Returns a list of `WorkspaceMeta` objects, ordered by `last_run_at` descending. Archived workspaces are excluded by default; pass `?include_archived=true` to include them.
+
+**POST /api/workspaces** — Create a new workspace. Body fields: `name` (required), `owner` (required), `template_id`, `description`. Returns the created `WorkspaceMeta`.
+
+**GET /api/workspaces/[id]** — Get full metadata for a single workspace.
+
+**PATCH /api/workspaces/[id]** — Update `name`, `description`, or `status` (`active` | `archived`). Returns the updated `WorkspaceMeta`.
+
+**DELETE /api/workspaces/[id]** — Delete the workspace and all associated run data. Returns `204 No Content`. This is irreversible.
+
+**GET /api/workspaces/[id]/config** — Returns the raw `eval.yaml` content for the workspace as `text/plain`.
+
+**GET /api/workspaces/[id]/trends** — Same shape as the local `/api/trends` route but scoped to this workspace's runs. Accepts `config_id`, `since`, and `limit` query parameters.
+
+---
+
+### Run Enqueue and Status
+
+**GET /api/workspaces/[id]/runs** — List all runs for a workspace in reverse chronological order. Returns `RunRecord[]` summaries.
+
+**POST /api/workspaces/[id]/runs/enqueue** — Enqueue a new evaluation run for this workspace. The worker picks it up and executes it serially.
+
+Request body:
+
+```json
+{
+  "overrides": {}
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `overrides` | object | No | JSON overrides applied on top of the workspace `eval.yaml` before the plan is built. |
+
+Response: the created `Job` record (status: `queued`).
+
+Required headers: `X-Micro-Eval-Member`, `Content-Type: application/json`.
+
+**GET /api/workspaces/[id]/runs/[runId]** — Get a completed run record within a workspace. Same shape as the local `/api/runs/[id]` route.
+
+---
+
+### Queue Routes
+
+**GET /api/queue** — Returns a summary of the entire queue across all workspaces.
+
+```json
+{
+  "queued": 2,
+  "running": 1,
+  "done_today": 14,
+  "jobs": [ /* Job records, most recent first */ ]
+}
+```
+
+**GET /api/jobs/[jobId]** — Get a single `Job` record by ID. Includes `status`, `progress`, timestamps, and any error message.
+
+**POST /api/jobs/[jobId]/cancel** — Request cancellation of a queued or running job. Queued jobs are cancelled immediately. Running jobs finish the current cell, then stop. Body: `{}`. Required headers: `X-Micro-Eval-Member`, `Content-Type: application/json`.
+
+---
+
+### Template Routes
+
+Templates are managed via the CLI (`micro-eval template create/update/delete`) and are **read-only** through the browser API.
+
+**GET /api/templates** — List all templates as `TemplateMeta[]`.
+
+**GET /api/templates/[id]** — Get a single template's metadata. Does not return the template file contents; use the CLI to inspect files.
+
+---
+
+### Server Status
+
+**GET /api/server/status** — Returns basic server health information.
+
+```json
+{
+  "version": "0.4.0",
+  "mode": "server",
+  "worker_alive": true,
+  "queue_depth": 2,
+  "data_root": "/srv/micro-eval",
+  "uptime_s": 3601
+}
+```

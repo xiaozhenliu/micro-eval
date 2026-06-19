@@ -66,6 +66,16 @@ flowchart LR
 以上是核心对象。其他对象——AgentSpec、WorkspaceSpec、RunPlan、Expectation、Caveat——属于次级对象，在配置特定功能时按需接触。
 :::
 
+::: info 服务器模式扩展（v0.4）
+Team Server 新增了三个位于核心七对象之外的运维层概念：
+
+- **Workspace（工作区）** — 服务器上的隔离评测环境，归属于某个团队成员。逻辑上等价于本地的 `project_root`。
+- **Template（模板）** — 共享模板库中的只读配置蓝图。成员基于模板创建工作区。
+- **Job（任务队列项）** — 已排队的 run 请求。服务器通过 worker 进程串行执行 Job。
+
+这些是基础设施层的概念。核心决策循环（Task → Configuration → Run → Cell → Evidence → Evaluation → Decision）在服务器模式下保持不变。
+:::
+
 ## 这些原则对你意味着什么
 
 作为用户，你会遇到四个实际影响：

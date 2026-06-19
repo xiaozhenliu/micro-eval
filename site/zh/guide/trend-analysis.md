@@ -213,3 +213,9 @@ uv run micro-eval index import-json
 ## 后续步骤
 
 - [安全性](/zh/guide/security) — 如何对 secrets 进行脱敏处理以及如何执行 workspace 边界约束
+
+---
+
+## 服务器模式
+
+在服务器模式下，每个 workspace 拥有独立的 `index.db` 趋势数据库。通过 `/api/workspaces/[id]/trends` 发起的趋势查询会自动限定在该 workspace 范围内。v0.4 不支持跨 workspace 的趋势对比——每个 workspace 独立追踪自身的历史表现。

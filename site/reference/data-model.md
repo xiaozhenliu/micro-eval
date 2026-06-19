@@ -44,6 +44,8 @@ The top-level record written when a run completes. It captures the full configur
 | `evaluations` | `EvaluationResult[]` | All evaluation results across all cells. |
 | `decision` | `DecisionReport \| null` | Final verdict. `null` until all cells complete. |
 | `denominator_policy` | `"all_cells" \| "successful_cells"` | How pass rates are computed across the run. |
+| `owner` | `string \| null` | Member who initiated the run. `null` in local mode; set by the worker from the job's `X-Micro-Eval-Member` header in server mode. |
+| `server_context` | `object \| null` | Server metadata (workspace_id, job_id, server_name, template info). `null` in local mode. |
 
 ```json
 {
@@ -67,7 +69,9 @@ The top-level record written when a run completes. It captures the full configur
   "traces": [],
   "evaluations": ["..."],
   "decision": { "...": "see DecisionReport" },
-  "denominator_policy": "successful_cells"
+  "denominator_policy": "successful_cells",
+  "owner": null,
+  "server_context": null
 }
 ```
 
@@ -521,3 +525,111 @@ console.log(record.decision?.verdict); // "improved"
 ```
 
 :::
+
+---
+
+## Server Mode Data Structures
+
+These structures are only present when running `micro-eval serve`. They are stored in `<data-root>/` alongside workspace run data.
+
+### WorkspaceMeta
+
+Stored as `<data-root>/workspaces/<workspace-id>/workspace.json`.
+
+| Field | Type | Description |
+|---|---|---|
+| `workspace_id` | `string` | UUID v4. |
+| `name` | `string` | Human-readable workspace name. |
+| `owner` | `string` | Member identifier of the workspace creator. |
+| `template_id` | `string \| null` | Template used to initialise the workspace. `null` if created from scratch. |
+| `template_version` | `string \| null` | Version of the template at creation time. |
+| `created_at` | `string` | ISO-8601 UTC timestamp. |
+| `last_run_at` | `string \| null` | Timestamp of the most recent run. `null` if no runs yet. |
+| `run_count` | `integer` | Total number of completed runs in this workspace. |
+| `description` | `string \| null` | Optional free-text description. |
+| `status` | `"active" \| "archived"` | Lifecycle status. Archived workspaces are hidden from the default list view. |
+
+```json
+{
+  "workspace_id": "ws-2026-0619-a1b2",
+  "name": "PR Review Agent v2",
+  "owner": "alice",
+  "template_id": "claude-code-v1",
+  "template_version": "3",
+  "created_at": "2026-06-19T09:00:00Z",
+  "last_run_at": "2026-06-19T11:30:00Z",
+  "run_count": 4,
+  "description": "Evaluating the updated PR review skill.",
+  "status": "active"
+}
+```
+
+---
+
+### TemplateMeta
+
+Stored as `<data-root>/templates/<template-id>/template.json`.
+
+| Field | Type | Description |
+|---|---|---|
+| `template_id` | `string` | Unique slug (e.g. `"claude-code-v1"`). |
+| `name` | `string` | Human-readable template name. |
+| `description` | `string \| null` | Optional description. |
+| `version` | `string` | Monotonically increasing version string, incremented on each `template update`. |
+| `created_at` | `string` | ISO-8601 UTC timestamp. |
+| `updated_at` | `string` | ISO-8601 UTC timestamp of the last `template update`. |
+| `author` | `string \| null` | Member who created or last updated the template. |
+| `tags` | `string[]` | Optional tags for filtering (e.g. `["coding", "review"]`). |
+| `includes` | `string[]` | List of file paths bundled in the template, relative to the template root. |
+
+```json
+{
+  "template_id": "claude-code-v1",
+  "name": "Claude Code v1",
+  "description": "Baseline eval suite for Claude Code agent tasks.",
+  "version": "3",
+  "created_at": "2026-06-10T08:00:00Z",
+  "updated_at": "2026-06-18T14:22:00Z",
+  "author": "alice",
+  "tags": ["coding", "review"],
+  "includes": ["eval.yaml", "tasks/fix-bug.yaml", "tasks/refactor.yaml"]
+}
+```
+
+---
+
+### Job Record
+
+Stored in the SQLite queue database at `<data-root>/queue.db`, table `jobs`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `job_id` | `TEXT` | UUID v4. Primary key. |
+| `workspace_id` | `TEXT` | Foreign key — workspace that owns this job. |
+| `owner` | `TEXT` | Value of `X-Micro-Eval-Member` header at enqueue time. |
+| `plan_json` | `TEXT` | Serialised `RunPlan` JSON built from the workspace `eval.yaml` plus any overrides. |
+| `status` | `TEXT` | Job lifecycle status (see below). |
+| `enqueued_at` | `TEXT` | ISO-8601 UTC timestamp. |
+| `started_at` | `TEXT \| null` | Set when the worker picks up the job. |
+| `finished_at` | `TEXT \| null` | Set when the job reaches a terminal state. |
+| `run_id` | `TEXT \| null` | The `RunRecord.id` created for this job. `null` until execution begins. |
+| `error` | `TEXT \| null` | Error message if `status = "failed"`. |
+| `progress` | `TEXT \| null` | JSON progress snapshot updated by the worker during execution (e.g. `{"done": 3, "total": 12}`). |
+| `cancel_requested_at` | `TEXT \| null` | Set when a cancellation is requested while the job is running. |
+| `cancelled_by` | `TEXT \| null` | Member who requested cancellation. |
+
+**Status values and transitions:**
+
+```
+queued → running → done
+                 → failed
+                 → cancelled
+```
+
+| Status | Meaning |
+|--------|---------|
+| `queued` | Waiting in the queue; not yet picked up by the worker. |
+| `running` | The worker is actively executing cells. |
+| `done` | All cells completed successfully (some may have scored 0). |
+| `failed` | The run aborted due to an unrecoverable error. |
+| `cancelled` | Cancelled by a `micro-eval queue cancel` request or via the UI. |

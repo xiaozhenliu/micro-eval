@@ -213,3 +213,9 @@ Never treat `index.db` as a source of truth. Always keep the JSON run files. If 
 ## Next Steps
 
 - [Security](./security) — how secrets are redacted and workspace boundaries are enforced
+
+---
+
+## Server Mode
+
+In server mode, each workspace has its own `index.db` trend database. Trend queries via `/api/workspaces/[id]/trends` are automatically scoped to that workspace. Cross-workspace trend comparison is not supported in v0.4 — each workspace tracks its own performance history independently.

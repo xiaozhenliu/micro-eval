@@ -243,6 +243,57 @@ The UI shows:
 
 ---
 
+## Team Server (Optional)
+
+For teams that want to share evaluation results and collaborate on runs, micro-eval offers a **server mode** that turns a single machine into a shared evaluation server.
+
+### Quick Start
+
+```bash
+# Start the team server (Next.js + worker)
+micro-eval serve --port 3000
+```
+
+Team members access the server via browser at `http://<server-ip>:3000`.
+
+### What Server Mode Adds
+
+- **Workspaces** — each member creates isolated workspaces with their own `eval.yaml` and run history
+- **Templates** — shared read-only template library; members create workspaces from templates
+- **Run queue** — members enqueue runs from the browser; a worker process executes them serially
+- **Attribution** — each workspace and run records who created it
+
+### Workspace Management
+
+```bash
+# Create a template from a local eval project
+micro-eval template create ./my-eval-project --id my-template --name "My Template"
+
+# Create a workspace from a template
+micro-eval workspace create --name "alice-eval" --owner alice --template my-template
+
+# List workspaces
+micro-eval workspace list
+```
+
+### Differences from Local Mode
+
+| Aspect | `micro-eval ui` (local) | `micro-eval serve` (server) |
+|--------|------------------------|----------------------------|
+| Access | localhost only | intranet (0.0.0.0) |
+| Data | `.micro-eval/` in project | `~/.micro-eval-server/` |
+| Users | single user | multiple members |
+| Execution | direct CLI | serial queue via worker |
+| Authentication | none needed | none (trusted intranet) |
+
+::: tip No migration needed
+Local mode and server mode are independent. You can run both on the same machine — they use separate data directories and don't interfere with each other.
+:::
+
+For full details, see [Team Server Guide](/guide/team-server).
+
+---
+
 ## Inspecting Results on Disk
 
 Every run is stored as plain JSON under `.micro-eval/runs/{run_id}/`:

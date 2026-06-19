@@ -2,8 +2,8 @@
 
 micro-eval Web UI 是一个**本地运行的 Next.js 应用**，与你的项目一同提供服务。它通过 API 路由读取 `.micro-eval/` 目录下的 JSON 文件——无需数据库、无需云端、无需身份验证。
 
-::: tip 本地优先设计
-Web UI 绑定到 `localhost`，直接从你的文件系统读取数据。评测数据不会离开本机。
+::: tip 本地模式
+Web UI 绑定到 `localhost`，直接从你的文件系统读取数据。评测数据不会离开本机。以上说明适用于 `micro-eval ui`。服务器模式（`micro-eval serve`）专为局域网内访问而设计。
 :::
 
 ## 启动
@@ -28,6 +28,38 @@ cd ui && npm run dev
 ::: warning 端口冲突
 如果 3000 端口已被占用，请传入 `--port <number>` 选择其他端口。CLI 启动时会打印实际的访问 URL。
 :::
+
+## 服务器模式
+
+`micro-eval serve` 会启动团队服务器——一个 Next.js 生产构建加上一个 Python Worker 进程——而非本地单用户 UI。
+
+```bash
+micro-eval serve --port 3000
+```
+
+与本地模式的主要区别：
+
+- **网络绑定** — 绑定到 `0.0.0.0:3000`（在局域网内可访问），而非 `localhost`。
+- **数据目录** — 所有数据存储在 `~/.micro-eval-server/`（与 `micro-eval ui` 使用的本地 `~/.micro-eval/` 相互独立）。
+- **Worker 进程** — 一个 Python Worker 与 Next.js 服务器并行运行，串行执行队列中的 run。
+- **无身份验证** — 专为 1–20 人团队在可信局域网内使用。`X-Micro-Eval-Member` 请求头仅用于标注归属，不用于访问控制。
+
+现有的 `micro-eval ui` 本地模式完全不受影响。
+
+### 服务器模式页面
+
+| 页面 | 描述 |
+|---|---|
+| `/` | 服务器仪表盘——workspace 网格与队列状态（服务器模式首页） |
+| `/workspaces` | 所有 workspace（活跃与已归档） |
+| `/workspaces/new` | 创建 workspace 表单（从模板或空白创建） |
+| `/workspace/[id]` | Workspace 详情及 run 列表 |
+| `/workspace/[id]/run/[runId]` | Run 详情（workspace 范围内） |
+| `/workspace/[id]/run/[runId]/review` | 复盘页（workspace 范围内） |
+| `/workspace/[id]/config` | 查看与编辑 workspace 的 `eval.yaml` |
+| `/templates` | 模板浏览器（共享只读模板库） |
+| `/templates/[id]` | 模板详情 |
+| `/queue` | 队列仪表盘——正在运行、排队中及近期完成的任务 |
 
 ## 数据流
 

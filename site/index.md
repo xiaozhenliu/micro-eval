@@ -33,4 +33,7 @@ features:
   - icon: 📈
     title: Trend Analysis
     details: Track configuration performance across runs. Drift-aware breakpoints flag when comparisons become invalid.
+  - icon: 👥
+    title: Team Server
+    details: Share evaluations across your team with isolated workspaces, a serial run queue, and a read-only template library. Trusted intranet — no infrastructure needed beyond one machine.
 ---

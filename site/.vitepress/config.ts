@@ -58,6 +58,7 @@ export default withMermaid(defineConfig({
               items: [
                 { text: 'Workspace 与沙箱', link: '/zh/guide/workspace-isolation' },
                 { text: '趋势分析', link: '/zh/guide/trend-analysis' },
+                { text: '团队服务器', link: '/zh/guide/team-server' },
                 { text: '安全模型', link: '/zh/guide/security' },
               ],
             },
@@ -123,6 +124,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: 'Workspace & Sandboxing', link: '/guide/workspace-isolation' },
             { text: 'Trend Analysis', link: '/guide/trend-analysis' },
+            { text: 'Team Server', link: '/guide/team-server' },
             { text: 'Security Model', link: '/guide/security' },
           ],
         },

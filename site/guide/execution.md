@@ -295,6 +295,27 @@ Do not pass secrets via `args` in the configuration YAML — those values are st
 Anything written to `eval.yaml` or any field under `configurations[].agent.args` ends up in `.micro-eval/runs/<run-id>/plan.json` in plaintext. Use `MICRO_EVAL_SECRET_*` env vars for all credentials.
 :::
 
+---
+
+## Server Mode Execution
+
+When running via `micro-eval serve`, the execution model adds a queue layer:
+
+1. **Enqueue** — a team member clicks "Run" in the browser. The server constructs a `RunPlan` from the workspace's `eval.yaml` and inserts a job into the SQLite queue.
+2. **Dequeue** — the worker process polls the queue and picks up the next job (FIFO order).
+3. **Execute** — the worker calls `ExecutionKernel.run(plan)` with the workspace directory as `project_root`. Cell execution, workspace isolation, and artifact collection work identically to local mode.
+4. **Progress** — after each cell completes, the worker updates the job's progress in the queue. The browser polls for status.
+5. **Finalize** — the worker marks the job as done (or failed/cancelled). Run results are available in the workspace's `.micro-eval/runs/`.
+
+::: tip Serial queue
+Runs execute one at a time. Cells within a run still use `max_concurrency` for parallel execution. The serial constraint applies between runs, not within them.
+:::
+
+### Cancellation
+
+- **Queued jobs** are cancelled immediately.
+- **Running jobs** use "stop-after-run" semantics: the current run finishes, then the job is marked as cancelled. Cell-level interruption is not supported in v0.4.
+
 ## Next Steps
 
 With execution covered, the next topic explains how micro-eval scores and annotates results:

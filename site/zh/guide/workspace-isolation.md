@@ -282,6 +282,28 @@ expectations:
 
 :::
 
+---
+
+## 服务器模式：工作区级隔离
+
+在服务器模式（`micro-eval serve`）下，单元格级 workspace 隔离之上还有一层额外的隔离：
+
+**服务器工作区**是位于 `~/.micro-eval-server/workspaces/<workspace-id>/` 下的隔离目录。每个工作区：
+
+- 拥有独立的 `eval.yaml`、`tasks/` 和 `.micro-eval/runs/`
+- 作为 ExecutionKernel 的 `project_root`——单元格级 worktree 隔离在其内部的工作方式完全相同
+- 归属于某个成员（在创建时记录，不可变更）
+- 拥有独立的趋势索引（`index.db`）
+
+这意味着在服务器模式下存在**两层** workspace 隔离：
+
+| 层级 | 范围 | 机制 |
+|-------|-------|-----------|
+| 服务器工作区 | 每个成员的评测环境 | `~/.micro-eval-server/workspaces/` 下的目录隔离 |
+| 单元格工作区 | 每个单元格的执行沙箱 | `.micro-eval/workspaces/<run>/<cell>/` 下的 Git worktree / blank / files |
+
+API 路由强制执行工作区边界：对 `/api/workspaces/[id]/runs/...` 的请求只能访问该工作区内的 run。路径遍历尝试会被格式校验和路径包含性检查拒绝。
+
 ## 下一步
 
 - [趋势分析](/zh/guide/trend-analysis) — 追踪评测结果随时间的变化，检测回归，并标注漂移断点

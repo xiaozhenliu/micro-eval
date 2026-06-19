@@ -240,6 +240,36 @@ The Web UI binds to `127.0.0.1` and is not intended to be exposed on a network i
 
 ---
 
+## Team Server Security Model
+
+When using `micro-eval serve`, the attack surface expands from "local process reads local files" to "network-reachable HTTP server." The server operates under a **trusted intranet assumption** — all team members are trusted, but the network path must still be defended against cross-origin attacks.
+
+### CSRF Protection (4 Layers)
+
+All write API routes (`POST`/`PUT`/`PATCH`/`DELETE`) enforce:
+
+1. **Content-Type** — only `application/json` is accepted. Rejects `form-urlencoded`, `multipart/form-data`, `text/plain` — blocking browser `<form>` and `sendBeacon()` cross-site submissions.
+2. **Custom header** — `X-Micro-Eval-Member` is required. Browsers cannot send custom headers in cross-origin simple requests without a CORS preflight.
+3. **No CORS headers** — the server never returns `Access-Control-Allow-Origin`, so preflight requests from other origins are rejected by the browser.
+4. **Host header allowlist** — requests with unknown `Host` values are rejected, preventing DNS rebinding attacks.
+
+### Path Traversal Protection
+
+All workspace and artifact access goes through ID-based lookup with containment validation:
+- Workspace IDs must match `ws-<timestamp>-<hex>` format
+- Resolved paths must stay inside `~/.micro-eval-server/workspaces/`
+- Symlinks are resolved and re-checked for containment
+
+### Config Override Whitelist
+
+When enqueuing runs, only these fields can be overridden: `repetitions`, `timeout_s`, `max_concurrency`. Agent commands, workspace paths, and output directories cannot be overridden via the API.
+
+::: warning Intranet only
+The team server has no authentication layer. Do not expose it to the public internet. The `X-Micro-Eval-Member` header is self-reported and not verified — it provides attribution, not access control.
+:::
+
+---
+
 ## Security Checklist Before Running
 
 Use this checklist before evaluating agents or tasks from external sources:

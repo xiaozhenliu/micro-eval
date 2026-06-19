@@ -282,6 +282,28 @@ expectations:
 
 :::
 
+---
+
+## Server Mode: Workspace-Level Isolation
+
+In server mode (`micro-eval serve`), an additional isolation layer sits above cell-level workspace isolation:
+
+**Server workspaces** are isolated directories under `~/.micro-eval-server/workspaces/<workspace-id>/`. Each workspace:
+
+- Has its own `eval.yaml`, `tasks/`, and `.micro-eval/runs/`
+- Acts as a `project_root` for ExecutionKernel — cell-level worktree isolation works identically inside it
+- Is owned by a member (recorded at creation, immutable)
+- Has its own trend index (`index.db`)
+
+This means there are **two layers** of workspace isolation in server mode:
+
+| Layer | Scope | Mechanism |
+|-------|-------|-----------|
+| Server workspace | Per-member evaluation environment | Directory isolation under `~/.micro-eval-server/workspaces/` |
+| Cell workspace | Per-cell execution sandbox | Git worktree / blank / files under `.micro-eval/workspaces/<run>/<cell>/` |
+
+API routes enforce workspace boundaries: a request to `/api/workspaces/[id]/runs/...` can only access runs within that workspace. Path traversal attempts are rejected by format validation and containment checks.
+
 ## Next Steps
 
 - [Trend Analysis](/guide/trend-analysis) — track evaluation results over time, detect regressions, and annotate drift breakpoints

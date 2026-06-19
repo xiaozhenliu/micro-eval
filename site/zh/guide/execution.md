@@ -295,6 +295,27 @@ export MICRO_EVAL_SECRET_GITHUB_TOKEN=ghp_...
 写入 `eval.yaml` 或 `configurations[].agent.args` 下任何字段的内容都会以明文形式出现在 `.micro-eval/runs/<run-id>/plan.json` 中。所有凭证请使用 `MICRO_EVAL_SECRET_*` 环境变量。
 :::
 
+---
+
+## 服务器模式执行
+
+通过 `micro-eval serve` 运行时，执行模型增加了一个队列层：
+
+1. **入队** — 团队成员在浏览器中点击"Run"。服务器从 workspace 的 `eval.yaml` 构建 `RunPlan`，并将任务插入 SQLite 队列。
+2. **出队** — Worker 进程轮询队列，按 FIFO 顺序取出下一个任务。
+3. **执行** — Worker 以 workspace 目录为 `project_root` 调用 `ExecutionKernel.run(plan)`。Cell 执行、workspace 隔离与 artifact 收集的工作方式与本地模式完全相同。
+4. **进度更新** — 每个 cell 完成后，worker 更新队列中该任务的进度。浏览器轮询获取状态。
+5. **完成** — Worker 将任务标记为已完成（或失败/已取消）。Run 结果可在 workspace 的 `.micro-eval/runs/` 中查看。
+
+::: tip 串行队列
+Run 逐个执行。Run 内部的 cell 仍使用 `max_concurrency` 进行并行执行。串行约束作用于 run 之间，而非 run 内部。
+:::
+
+### 取消操作
+
+- **排队中的任务**立即取消。
+- **运行中的任务**采用"run 完成后停止"语义：当前 run 执行完毕后，任务才被标记为已取消。v0.4 不支持 cell 级别的中断。
+
 ## 下一步
 
 了解了执行机制后，下一个主题将介绍 micro-eval 如何对结果进行评分和标注：

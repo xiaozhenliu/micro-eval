@@ -44,6 +44,8 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 | `evaluations` | `EvaluationResult[]` | 所有 cell 的全部评测结果。 |
 | `decision` | `DecisionReport \| null` | 最终裁决，所有 cell 完成前为 `null`。 |
 | `denominator_policy` | `"all_cells" \| "successful_cells"` | 计算 run 通过率时的分母策略。 |
+| `owner` | `string \| null` | 发起本次 run 的成员。本地模式下为 `null`；服务器模式下由 worker 从任务的 `X-Micro-Eval-Member` 请求头中设置。 |
+| `server_context` | `object \| null` | 服务器元数据（workspace_id、job_id、server_name、模板信息）。本地模式下为 `null`。 |
 
 ```json
 {
@@ -67,7 +69,9 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
   "traces": [],
   "evaluations": ["..."],
   "decision": { "...": "see DecisionReport" },
-  "denominator_policy": "successful_cells"
+  "denominator_policy": "successful_cells",
+  "owner": null,
+  "server_context": null
 }
 ```
 
@@ -521,3 +525,111 @@ console.log(record.decision?.verdict); // "improved"
 ```
 
 :::
+
+---
+
+## 服务器模式数据结构
+
+以下结构仅在运行 `micro-eval serve` 时存在，存储在 `<data-root>/` 目录下，与 workspace run 数据并列。
+
+### WorkspaceMeta
+
+存储路径：`<data-root>/workspaces/<workspace-id>/workspace.json`。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `workspace_id` | `string` | UUID v4。 |
+| `name` | `string` | 人类可读的 workspace 名称。 |
+| `owner` | `string` | workspace 创建者的成员标识。 |
+| `template_id` | `string \| null` | 初始化 workspace 时使用的模板 ID。从头创建时为 `null`。 |
+| `template_version` | `string \| null` | 创建时使用的模板版本。 |
+| `created_at` | `string` | ISO-8601 UTC 时间戳。 |
+| `last_run_at` | `string \| null` | 最近一次 run 的时间戳。尚未有 run 时为 `null`。 |
+| `run_count` | `integer` | 该 workspace 中已完成的 run 总数。 |
+| `description` | `string \| null` | 可选的自由文本描述。 |
+| `status` | `"active" \| "archived"` | 生命周期状态。已归档的 workspace 在默认列表视图中不显示。 |
+
+```json
+{
+  "workspace_id": "ws-2026-0619-a1b2",
+  "name": "PR Review Agent v2",
+  "owner": "alice",
+  "template_id": "claude-code-v1",
+  "template_version": "3",
+  "created_at": "2026-06-19T09:00:00Z",
+  "last_run_at": "2026-06-19T11:30:00Z",
+  "run_count": 4,
+  "description": "评测更新后的 PR review skill。",
+  "status": "active"
+}
+```
+
+---
+
+### TemplateMeta
+
+存储路径：`<data-root>/templates/<template-id>/template.json`。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `template_id` | `string` | 唯一 slug（如 `"claude-code-v1"`）。 |
+| `name` | `string` | 人类可读的模板名称。 |
+| `description` | `string \| null` | 可选描述。 |
+| `version` | `string` | 单调递增的版本字符串，每次 `template update` 后自增。 |
+| `created_at` | `string` | ISO-8601 UTC 时间戳。 |
+| `updated_at` | `string` | 最近一次 `template update` 的 ISO-8601 UTC 时间戳。 |
+| `author` | `string \| null` | 创建或最后更新模板的成员。 |
+| `tags` | `string[]` | 用于筛选的可选标签（如 `["coding", "review"]`）。 |
+| `includes` | `string[]` | 模板中打包的文件路径列表，相对于模板根目录。 |
+
+```json
+{
+  "template_id": "claude-code-v1",
+  "name": "Claude Code v1",
+  "description": "Claude Code agent 任务的基线评测套件。",
+  "version": "3",
+  "created_at": "2026-06-10T08:00:00Z",
+  "updated_at": "2026-06-18T14:22:00Z",
+  "author": "alice",
+  "tags": ["coding", "review"],
+  "includes": ["eval.yaml", "tasks/fix-bug.yaml", "tasks/refactor.yaml"]
+}
+```
+
+---
+
+### Job 记录
+
+存储在 `<data-root>/queue.db` SQLite 数据库的 `jobs` 表中。
+
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| `job_id` | `TEXT` | UUID v4，主键。 |
+| `workspace_id` | `TEXT` | 外键——拥有该任务的 workspace。 |
+| `owner` | `TEXT` | 入队时 `X-Micro-Eval-Member` 请求头的值。 |
+| `plan_json` | `TEXT` | 序列化的 `RunPlan` JSON，由 workspace `eval.yaml` 加上覆盖字段构建。 |
+| `status` | `TEXT` | 任务生命周期状态（见下文）。 |
+| `enqueued_at` | `TEXT` | ISO-8601 UTC 时间戳。 |
+| `started_at` | `TEXT \| null` | worker 取出任务时设置。 |
+| `finished_at` | `TEXT \| null` | 任务进入终态时设置。 |
+| `run_id` | `TEXT \| null` | 为该任务创建的 `RunRecord.id`，执行开始前为 `null`。 |
+| `error` | `TEXT \| null` | `status = "failed"` 时的错误信息。 |
+| `progress` | `TEXT \| null` | worker 在执行过程中更新的 JSON 进度快照（如 `{"done": 3, "total": 12}`）。 |
+| `cancel_requested_at` | `TEXT \| null` | 任务运行时收到取消请求时设置。 |
+| `cancelled_by` | `TEXT \| null` | 请求取消的成员。 |
+
+**状态值及转换：**
+
+```
+queued → running → done
+                 → failed
+                 → cancelled
+```
+
+| 状态 | 含义 |
+|------|------|
+| `queued` | 等待队列中，尚未被 worker 取出。 |
+| `running` | worker 正在执行各 cell。 |
+| `done` | 所有 cell 已成功完成（部分 cell 得分可能为 0）。 |
+| `failed` | run 因不可恢复的错误而中止。 |
+| `cancelled` | 通过 `micro-eval queue cancel` 或 UI 请求取消。 |

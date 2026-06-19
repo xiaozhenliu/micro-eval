@@ -66,6 +66,16 @@ flowchart LR
 These are the core objects. Others — AgentSpec, WorkspaceSpec, RunPlan, Expectation, Caveat — are secondary. You encounter them as needed when configuring specific features.
 :::
 
+::: info Server Mode Extensions (v0.4)
+The Team Server adds three operational concepts that sit outside the core seven:
+
+- **Workspace** — an isolated evaluation environment on the server, owned by a team member. Logically equivalent to a local `project_root`.
+- **Template** — a read-only configuration blueprint in the shared template library. Members create workspaces from templates.
+- **Job** — a queued run request. The server executes jobs serially via a worker process.
+
+These are infrastructure-layer concepts. The core decision loop (Task → Configuration → Run → Cell → Evidence → Evaluation → Decision) remains unchanged in server mode.
+:::
+
 ## What These Principles Mean for You
 
 Four practical consequences you will encounter as a user:

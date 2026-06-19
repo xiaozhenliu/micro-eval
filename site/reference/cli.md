@@ -1,6 +1,6 @@
 # CLI Commands
 
-Complete reference for all `micro-eval` commands. Current version: **0.3.2**.
+Complete reference for all `micro-eval` commands. Current version: **0.4.0**.
 
 ## Configuration Lookup Order
 
@@ -416,6 +416,381 @@ The UI hot-reloads when new runs complete. You can leave it running in a termina
 
 ---
 
+## Team Server Commands
+
+These commands require v0.4.0+. They manage the shared intranet server, workspaces, templates, and the run queue. All `--data-root` options default to `~/.micro-eval-server`.
+
+::: tip Intranet use only
+The Team Server has **no authentication and no RBAC**. It is designed for trusted 1–20 person teams on a private network. Do not expose it on a public interface.
+:::
+
+---
+
+### micro-eval serve
+
+Start the Team Server: a Next.js frontend and a Python run worker as two co-located processes. This is the primary entry point for shared team use.
+
+**Synopsis**
+
+```
+micro-eval serve [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--port N` | int | `3000` | Port for the Next.js server. |
+| `--host HOST` | string | `0.0.0.0` | Bind address for the Next.js server. |
+| `--data-root PATH` | path | `~/.micro-eval-server` | Root directory for server-side data (workspaces, queue, templates). |
+
+**Description**
+
+`micro-eval serve` starts both processes and keeps them alive together. Stopping it (Ctrl-C) shuts down both. For production-like deployments where you want to manage the worker separately, use `micro-eval serve` for the frontend and `micro-eval worker` for the worker.
+
+**Examples**
+
+::: code-group
+
+```bash [Default]
+micro-eval serve
+```
+
+```bash [Custom port]
+micro-eval serve --port 8080
+```
+
+```bash [Custom data root]
+micro-eval serve --data-root /srv/micro-eval
+```
+
+:::
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Both processes stopped cleanly. |
+| `1` | Error — port in use, data root not writable, or missing Node.js. |
+
+---
+
+### micro-eval worker
+
+Start the run worker as a standalone process. The worker dequeues jobs from the SQLite queue and executes them one at a time (cells within a run still use `--max-concurrency`).
+
+**Synopsis**
+
+```
+micro-eval worker [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | Root directory shared with the server. |
+
+**Description**
+
+In the two-process model, run `micro-eval serve --port N` in one terminal and `micro-eval worker` in another. The worker polls the SQLite queue (`<data-root>/queue.db`) for new jobs. There is always exactly **one** worker — the queue serialises runs.
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Worker stopped cleanly. |
+| `1` | Error — `data-root` not found or queue database inaccessible. |
+
+---
+
+### micro-eval workspace create
+
+Create a new workspace under the server's data root.
+
+**Synopsis**
+
+```
+micro-eval workspace create [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--name TEXT` | string | _(required)_ | Human-readable workspace name. |
+| `--owner TEXT` | string | _(required)_ | Member identifier of the workspace owner. |
+| `--template ID` | string | `null` | Template ID to initialise the workspace from. |
+| `--description TEXT` | string | `null` | Optional description. |
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+**Examples**
+
+```bash
+micro-eval workspace create --name "PR Review Eval" --owner alice --template claude-code-v1
+```
+
+---
+
+### micro-eval workspace list
+
+List all workspaces.
+
+**Synopsis**
+
+```
+micro-eval workspace list [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--all` | flag | `false` | Include archived workspaces. |
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+---
+
+### micro-eval workspace update
+
+Update workspace metadata.
+
+**Synopsis**
+
+```
+micro-eval workspace update WORKSPACE_ID [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `WORKSPACE_ID` | Workspace identifier. |
+
+**Options**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--name TEXT` | string | New workspace name. |
+| `--description TEXT` | string | New description. |
+| `--status STATUS` | `active` \| `archived` | Lifecycle status. |
+| `--data-root PATH` | path | Server data root. |
+
+---
+
+### micro-eval workspace delete
+
+Delete a workspace and all its run data. **Irreversible.**
+
+**Synopsis**
+
+```
+micro-eval workspace delete WORKSPACE_ID [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `WORKSPACE_ID` | Workspace identifier. |
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--force` | flag | `false` | Skip the confirmation prompt. |
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+---
+
+### micro-eval template create
+
+Create a template from a local directory. Templates are read-only once created; use `template update` to replace content.
+
+**Synopsis**
+
+```
+micro-eval template create SOURCE_DIR [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `SOURCE_DIR` | Path to the local directory containing the template files. |
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--id ID` | string | _(required)_ | Unique template identifier (slug). |
+| `--name TEXT` | string | _(required)_ | Human-readable template name. |
+| `--description TEXT` | string | `null` | Optional description. |
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+**Examples**
+
+```bash
+micro-eval template create ./my-eval-template --id claude-code-v1 --name "Claude Code v1"
+```
+
+---
+
+### micro-eval template update
+
+Replace a template's content with a new version from a local directory.
+
+**Synopsis**
+
+```
+micro-eval template update TEMPLATE_ID SOURCE_DIR [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `TEMPLATE_ID` | Template identifier. |
+| `SOURCE_DIR` | Path to the updated template directory. |
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+---
+
+### micro-eval template list
+
+List all templates.
+
+**Synopsis**
+
+```
+micro-eval template list [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+---
+
+### micro-eval template delete
+
+Delete a template. Workspaces that were created from this template are not affected.
+
+**Synopsis**
+
+```
+micro-eval template delete TEMPLATE_ID [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `TEMPLATE_ID` | Template identifier. |
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+---
+
+### micro-eval build-plan
+
+Construct a `RunPlan` from an `eval.yaml` and output the resolved JSON to stdout. Used internally by the server when enqueuing a job; also useful for debugging.
+
+**Synopsis**
+
+```
+micro-eval build-plan [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--workspace ID` | string | _(required)_ | Workspace ID to resolve the plan against. |
+| `--overrides JSON` | string | `null` | JSON string of field overrides applied on top of the workspace's `eval.yaml`. |
+
+**Examples**
+
+```bash
+micro-eval build-plan --workspace ws-abc123 | jq '.cells | length'
+```
+
+---
+
+### micro-eval queue status
+
+Show the current state of the run queue.
+
+**Synopsis**
+
+```
+micro-eval queue status [OPTIONS]
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+**Sample output**
+
+```
+Queue: 2 queued, 1 running, 14 done
+Running: job-20260619-001 (workspace: ws-abc123, owner: alice, started 4m ago)
+Queued:
+  job-20260619-002  ws-def456  bob   enqueued 2m ago
+  job-20260619-003  ws-ghi789  carol enqueued 1m ago
+```
+
+---
+
+### micro-eval queue cancel
+
+Cancel a queued or running job.
+
+**Synopsis**
+
+```
+micro-eval queue cancel JOB_ID [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `JOB_ID` | Job identifier from `micro-eval queue status`. |
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+**Description**
+
+For a **queued** job, cancellation is immediate. For a **running** job, a cancellation request is recorded; the worker finishes the current cell and then stops. The job transitions to `cancelled` status.
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Cancellation recorded. |
+| `1` | Job ID not found or already in a terminal state (`done`, `failed`, `cancelled`). |
+
+---
+
 ## Global Options
 
 These options are accepted by every command:
@@ -427,7 +802,7 @@ These options are accepted by every command:
 
 ```bash
 micro-eval --version
-# micro-eval 0.3.2
+# micro-eval 0.4.0
 ```
 
 ---
@@ -467,6 +842,24 @@ micro-eval list
 # Read the report
 micro-eval report --run <RUN_ID> --format html --output report.html
 
-# Open the web UI
+# Open the local-only web UI
 micro-eval ui
+
+# --- Team Server (v0.4.0+) ---
+
+# Start the team server (Next.js + worker)
+micro-eval serve --port 3000
+
+# Manage workspaces
+micro-eval workspace create --name "My Eval" --owner alice
+micro-eval workspace list
+micro-eval workspace update <WORKSPACE_ID> --status archived
+
+# Manage templates (CLI-only, read-only in browser)
+micro-eval template create ./my-template --id my-tmpl --name "My Template"
+micro-eval template list
+
+# Check the queue
+micro-eval queue status
+micro-eval queue cancel <JOB_ID>
 ```

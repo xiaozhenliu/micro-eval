@@ -243,6 +243,57 @@ UI 展示：
 
 ---
 
+## 团队服务器（可选）
+
+对于希望共享评测结果、协作运行评测的团队，micro-eval 提供**服务器模式**，可将一台机器变为共享的评测服务器。
+
+### 快速启动
+
+```bash
+# 启动团队服务器（Next.js + worker）
+micro-eval serve --port 3000
+```
+
+团队成员通过浏览器访问 `http://<server-ip>:3000`。
+
+### 服务器模式新增能力
+
+- **Workspace** — 每位成员创建独立的 workspace，拥有各自的 `eval.yaml` 和 run 历史
+- **模板** — 共享的只读模板库；成员从模板创建 workspace
+- **Run 队列** — 成员在浏览器中将 run 加入队列，worker 进程串行执行
+- **归属记录** — 每个 workspace 和 run 都记录创建者信息
+
+### Workspace 管理
+
+```bash
+# 从本地 eval 项目创建模板
+micro-eval template create ./my-eval-project --id my-template --name "My Template"
+
+# 从模板创建 workspace
+micro-eval workspace create --name "alice-eval" --owner alice --template my-template
+
+# 列出所有 workspace
+micro-eval workspace list
+```
+
+### 与本地模式的区别
+
+| 方面 | `micro-eval ui`（本地） | `micro-eval serve`（服务器） |
+|------|------------------------|------------------------------|
+| 访问方式 | 仅限 localhost | 局域网（0.0.0.0） |
+| 数据目录 | 项目中的 `.micro-eval/` | `~/.micro-eval-server/` |
+| 用户 | 单用户 | 多成员 |
+| 执行方式 | 直接 CLI | 通过 worker 串行队列 |
+| 身份验证 | 无需 | 无（可信局域网） |
+
+::: tip 无需迁移
+本地模式与服务器模式相互独立。你可以在同一台机器上同时运行两者——它们使用独立的数据目录，互不干扰。
+:::
+
+完整说明请参阅[团队服务器指南](/zh/guide/team-server)。
+
+---
+
 ## 检查磁盘上的结果
 
 每次 run 都以纯 JSON 格式存储在 `.micro-eval/runs/{run_id}/` 下：
