@@ -2,8 +2,8 @@
 
 The micro-eval Web UI is a **Next.js application served locally** alongside your project. It reads `.micro-eval/` JSON files through API routes — no database, no cloud, no authentication required.
 
-::: tip Local-only by design
-The Web UI binds to `localhost` and reads directly from your filesystem. Your evaluation data never leaves the machine.
+::: tip Local mode
+The Web UI binds to `localhost` and reads directly from your filesystem. Your evaluation data never leaves the machine. The above applies to `micro-eval ui`. Server mode (`micro-eval serve`) is designed for intranet access.
 :::
 
 ## Launching
@@ -28,6 +28,38 @@ Once started, open `http://localhost:3000` in your browser.
 ::: warning Port conflicts
 If port 3000 is already in use, pass `--port <number>` to pick a different one. The CLI will print the actual URL on startup.
 :::
+
+## Server Mode
+
+`micro-eval serve` starts the team server — a Next.js production build plus a Python worker process — instead of the local single-user UI.
+
+```bash
+micro-eval serve --port 3000
+```
+
+Key differences from local mode:
+
+- **Network binding** — binds to `0.0.0.0:3000` (network-accessible on the local subnet) instead of `localhost`.
+- **Data directory** — stores all data in `~/.micro-eval-server/` (separate from the local `~/.micro-eval/` used by `micro-eval ui`).
+- **Worker process** — a Python worker runs alongside the Next.js server and executes queued runs serially.
+- **No authentication** — designed for trusted intranet use within a 1–20 person team. `X-Micro-Eval-Member` header is used for attribution only, not access control.
+
+The existing `micro-eval ui` local mode is completely unchanged.
+
+### Server Mode Pages
+
+| Page | Description |
+|---|---|
+| `/` | Server dashboard — workspace grid and queue status (server mode home) |
+| `/workspaces` | All workspaces (active and archived) |
+| `/workspaces/new` | Create workspace form (from a template or blank) |
+| `/workspace/[id]` | Workspace detail and run list |
+| `/workspace/[id]/run/[runId]` | Run detail, scoped to the workspace |
+| `/workspace/[id]/run/[runId]/review` | Review page, scoped to the workspace |
+| `/workspace/[id]/config` | View and edit the workspace `eval.yaml` |
+| `/templates` | Template browser (shared read-only library) |
+| `/templates/[id]` | Template detail |
+| `/queue` | Queue dashboard — running, queued, and recently finished jobs |
 
 ## Data flow
 

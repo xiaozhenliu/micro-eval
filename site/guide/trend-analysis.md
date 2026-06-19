@@ -4,7 +4,7 @@ Track how configurations perform across multiple runs over time. Trend analysis 
 
 ## How It Works
 
-micro-eval keeps JSON run files as the **authoritative source of truth**. A derived SQLite index sits alongside the JSON store and enables fast time-series queries without duplicating data.
+micro-eval keeps JSON run files as the **authoritative source of truth**. A derived index sits alongside the JSON store and enables fast time-series queries without duplicating data.
 
 ```
 .micro-eval/
@@ -15,15 +15,11 @@ micro-eval keeps JSON run files as the **authoritative source of truth**. A deri
 └── index.db                       ← derived, re-buildable from JSON
 ```
 
-The index is updated automatically when `run_store.finalize_run` writes a new run. Existing JSON runs from before v0.3.0 can be imported in one command:
+The index is updated automatically after each run completes. Existing JSON runs from before v0.3.0 can be imported in one command:
 
 ```bash
 uv run micro-eval index import-json
 ```
-
-::: tip What the index stores
-The SQLite index stores lightweight metadata per run — config digest, task ids, pass counts, latency percentiles, cost totals, and the timestamp. Raw artifacts and traces remain in JSON only.
-:::
 
 ## Drift-Aware Breakpoints
 
@@ -217,3 +213,9 @@ Never treat `index.db` as a source of truth. Always keep the JSON run files. If 
 ## Next Steps
 
 - [Security](./security) — how secrets are redacted and workspace boundaries are enforced
+
+---
+
+## Server Mode
+
+In server mode, each workspace has its own `index.db` trend database. Trend queries via `/api/workspaces/[id]/trends` are automatically scoped to that workspace. Cross-workspace trend comparison is not supported in v0.4 — each workspace tracks its own performance history independently.

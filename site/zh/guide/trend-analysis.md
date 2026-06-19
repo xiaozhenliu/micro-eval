@@ -4,7 +4,7 @@
 
 ## 工作原理
 
-micro-eval 以 JSON run 文件作为**权威数据源**。在 JSON store 旁边还有一个派生的 SQLite 索引，它支持快速的时间序列查询，而无需重复存储数据。
+micro-eval 以 JSON run 文件作为**权威数据源**。在 JSON store 旁边还有一个派生索引，它支持快速的时间序列查询，而无需重复存储数据。
 
 ```
 .micro-eval/
@@ -15,15 +15,11 @@ micro-eval 以 JSON run 文件作为**权威数据源**。在 JSON store 旁边�
 └── index.db                       ← 派生索引，可从 JSON 重建
 ```
 
-每当 `run_store.finalize_run` 写入新的 run 时，索引会自动更新。v0.3.0 之前已有的 JSON run 可以通过一条命令导入：
+每次 run 完成后，索引会自动更新。v0.3.0 之前已有的 JSON run 可以通过一条命令导入：
 
 ```bash
 uv run micro-eval index import-json
 ```
-
-::: tip 索引存储的内容
-SQLite 索引为每个 run 存储轻量级元数据——config digest、task id 列表、通过计数、延迟百分位数、总费用以及时间戳。原始 artifacts 和 trace 仅保留在 JSON 中。
-:::
 
 ## 漂移感知断点
 
@@ -217,3 +213,9 @@ uv run micro-eval index import-json
 ## 后续步骤
 
 - [安全性](/zh/guide/security) — 如何对 secrets 进行脱敏处理以及如何执行 workspace 边界约束
+
+---
+
+## 服务器模式
+
+在服务器模式下，每个 workspace 拥有独立的 `index.db` 趋势数据库。通过 `/api/workspaces/[id]/trends` 发起的趋势查询会自动限定在该 workspace 范围内。v0.4 不支持跨 workspace 的趋势对比——每个 workspace 独立追踪自身的历史表现。

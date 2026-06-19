@@ -25,27 +25,23 @@ The `workspace` field on a task defines what the agent finds when it starts.
 An empty temporary directory. Use this for tasks that do not require pre-existing files — pure generation tasks, API calls, or tasks that create their own scaffolding.
 
 ```yaml
-tasks:
-  - id: generate-readme
-    prompt: "Write a README.md for a Python CLI tool called 'greet'."
-    workspace:
-      type: blank
+workspace:
+  type: blank
+  isolation_level: logical
 ```
 
 ### `files`
 
-Copies specified files and directories into the task workspace before execution. The source paths are resolved relative to the config file.
+Copies specified files and directories into the task workspace before execution. The file paths are resolved relative to the task YAML file.
 
 ```yaml
-tasks:
-  - id: refactor-utils
-    prompt: "Refactor the helper functions in utils.py to reduce duplication."
-    workspace:
-      type: files
-      sources:
-        - path: src/utils.py
-        - path: tests/test_utils.py
-        - path: pyproject.toml
+workspace:
+  type: files
+  files:
+    - ./fixtures/src/utils.py
+    - ./fixtures/tests/test_utils.py
+    - ./fixtures/pyproject.toml
+  isolation_level: logical
 ```
 
 ::: tip Fixture digests
@@ -54,27 +50,25 @@ When using `files`, micro-eval computes a SHA-256 digest of each source at run t
 
 ### `git_repo`
 
-Creates an isolated git worktree at a specific commit. This is the most reproducible option for code-editing tasks — the agent gets a real git history, can create branches, and its changes are fully isolated from your working tree.
+Creates an isolated git worktree at a specific ref. This is the most reproducible option for code-editing tasks — the agent gets a real git history, can create branches, and its changes are fully isolated from your working tree.
 
 ```yaml
-tasks:
-  - id: fix-issue-42
-    prompt: "Fix the bug described in issue #42. The relevant code is in src/parser.py."
-    workspace:
-      type: git_repo
-      repo: .                      # path to the repo (relative to config)
-      commit: "abc1234"            # pin to a specific commit
-      setup_commands:              # optional: run inside the worktree before the agent starts
-        - ["uv", "sync"]
+workspace:
+  type: git_repo
+  path: .                          # path to the repo (relative to task YAML)
+  ref: "abc1234"                   # pin to a specific commit
+  isolation_level: logical
+  setup:                           # optional: run inside the worktree before the agent starts
+    - ["uv", "sync"]
 ```
 
-::: warning Pinning the commit
-Always set `commit` explicitly for evaluations you intend to compare over time. If `commit` is omitted, micro-eval uses `HEAD` at run time — the workspace will drift as your repo evolves, making historical comparisons unreliable.
+::: warning Pinning the ref
+Always set `ref` to a full commit SHA for evaluations you intend to compare over time. If `ref` is omitted, micro-eval uses `HEAD` at run time — the workspace will drift as your repo evolves, making historical comparisons unreliable.
 :::
 
 ## Isolation Levels
 
-The `sandbox.level` field controls how tightly the agent's process is contained. Levels are defined in the provider protocol (spec §3.4.5).
+The `isolation_level` field on a workspace controls how tightly the agent's process is contained.
 
 | Level | Name | Backend | Availability |
 |-------|------|---------|--------------|
@@ -90,41 +84,29 @@ The default. The agent process runs with your full user permissions, but receive
 This is suitable for trusted agents (your own code) running against your own repositories.
 
 ```yaml
-configurations:
-  - id: my-agent-v1
-    agent:
-      command: ["uv", "run", "my-agent"]
-    sandbox:
-      level: logical
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: logical
 ```
 
 ### Level 1 — `os_policy`
 
-Adds an OS-level sandbox policy around the agent process:
-
-- **macOS**: Apple Seatbelt (`sandbox-exec`) restricts filesystem writes to the workspace directory
-- **Linux**: Bubblewrap (`bwrap`) creates a user namespace with a private filesystem view
-
-This level prevents an agent from accidentally (or intentionally) reading secrets from `~/.ssh`, writing to paths outside the workspace, or modifying your global config files.
+Adds an OS-level sandbox policy around the agent process. This level prevents an agent from accidentally (or intentionally) reading secrets from `~/.ssh`, writing to paths outside the workspace, or modifying your global config files.
 
 ```yaml
-configurations:
-  - id: semi-trusted-agent
-    agent:
-      command: ["./external-agent"]
-    sandbox:
-      level: os_policy
-      network: allowlist              # full | allowlist | none
-      network_allowlist:
-        - "api.openai.com"
-        - "pypi.org"
-    trust: semi_trusted
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: allowlist
 ```
 
 ::: warning Degradation to logical
 If `os_policy` is requested but Seatbelt or Bubblewrap is not available on the host (e.g., Linux without `bwrap` installed), micro-eval **degrades to `logical`** and records a `mixed_isolation` caveat in the run result. The run is not aborted, but the caveat is surfaced in the UI and excluded from strict comparability checks.
-
-To require `os_policy` without silent downgrade, set `sandbox.strict: true`.
 :::
 
 ### Level 4 — `vm` (Remote Execution)
@@ -136,16 +118,11 @@ Runs the agent inside a remote VM provided by E2B or Modal. This is the highest 
 - Tasks that require specific OS packages or kernel features
 
 ```yaml
-configurations:
-  - id: untrusted-agent
-    agent:
-      command: ["./unknown-agent"]
-    sandbox:
-      level: vm
-      provider: e2b                   # e2b | modal
-      template: "base-python-3.11"    # provider-specific template ID
-    trust: untrusted
-    network: none
+workspace:
+  type: blank
+  isolation_level: vm
+  trust_level: untrusted
+  network_policy: none
 ```
 
 ::: danger Remote providers fail hard
@@ -162,21 +139,9 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 
 Secrets prefixed with `MICRO_EVAL_SECRET_` are automatically redacted from logs, run artifacts, and LLM judge prompts.
 
-## Provider Registry
-
-micro-eval selects the appropriate backend at run time through the `WorkspaceProvider` protocol and a provider registry. You do not need to configure this directly — the registry inspects the `sandbox.level` field and the host environment to pick the right backend.
-
-| Provider | Level | Platform |
-|----------|-------|----------|
-| `GitWorktreeProvider` | 0 — logical | All |
-| `SeatbeltProvider` | 1 — os_policy | macOS |
-| `BubblewrapProvider` | 1 — os_policy | Linux |
-| `E2BProvider` | 4 — vm | Any (remote) |
-| `ModalProvider` | 4 — vm | Any (remote) |
-
 ## Trust Levels
 
-The `trust` field communicates intent and is used by the provider registry to validate that the chosen isolation level is appropriate.
+The `trust_level` field communicates intent and is used by the provider registry to validate that the chosen isolation level is appropriate.
 
 | Trust level | Recommended isolation | Typical use case |
 |-------------|----------------------|------------------|
@@ -186,12 +151,12 @@ The `trust` field communicates intent and is used by the provider registry to va
 | `adversarial` | `vm` | Red-teaming, agents that may attempt escapes |
 
 ::: warning Trust is advisory, not enforced
-Setting `trust: adversarial` does not automatically upgrade the isolation level. You must also set `sandbox.level: vm`. Trust is used for documentation, comparability metadata, and future policy enforcement — not as a security gate by itself.
+Setting `trust_level: adversarial` does not automatically upgrade the isolation level. You must also set `isolation_level: vm`. Trust is used for documentation, comparability metadata, and future policy enforcement — not as a security gate by itself.
 :::
 
 ## Network Policy
 
-The `sandbox.network` field controls outbound network access from the agent process. It applies at Level 1 and above.
+The `network_policy` field on the workspace controls outbound network access from the agent process. It applies at Level 1 and above.
 
 | Policy | Behavior |
 |--------|----------|
@@ -200,17 +165,13 @@ The `sandbox.network` field controls outbound network access from the agent proc
 | `none` | All outbound network access blocked |
 
 ```yaml{6-10}
-configurations:
-  - id: offline-agent
-    agent:
-      command: ["./my-agent"]
-    sandbox:
-      level: os_policy
-      network: allowlist
-      network_allowlist:
-        - "api.anthropic.com"
-        - "raw.githubusercontent.com"
-    trust: semi_trusted
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: allowlist
 ```
 
 ## SameStartSnapshot: Comparability Dimensions
@@ -239,18 +200,22 @@ configurations:
     agent:
       command: ["claude", "--dangerously-skip-permissions"]
       input_mode: stdin
-      timeout: 120
-    sandbox:
-      level: logical
-    trust: trusted
+      timeout_s: 120
 
 tasks:
-  - id: add-docstrings
-    prompt: "Add Google-style docstrings to every public function in src/parser.py."
-    workspace:
-      type: git_repo
-      repo: .
-      commit: "a1b2c3d"
+  - tasks/add-docstrings.yaml
+```
+
+```yaml [tasks/add-docstrings.yaml]
+id: add-docstrings
+name: Add docstrings
+input_payload: "Add Google-style docstrings to every public function in src/parser.py."
+workspace:
+  type: git_repo
+  path: .
+  ref: "a1b2c3d"
+  isolation_level: logical
+  trust_level: trusted
 ```
 
 ```yaml [os_policy — semi-trusted agent]
@@ -259,28 +224,30 @@ configurations:
     agent:
       command: ["./bin/external-agent", "--mode", "edit"]
       input_mode: stdin
-      timeout: 180
-    sandbox:
-      level: os_policy
-      network: allowlist
-      network_allowlist:
-        - "api.openai.com"
-    trust: semi_trusted
+      timeout_s: 180
 
 tasks:
-  - id: implement-feature
-    prompt: "Implement the feature described in SPEC.md."
-    workspace:
-      type: files
-      sources:
-        - path: SPEC.md
-        - path: src/
-        - path: tests/
-    expectations:
-      - type: exit_code
-        value: 0
-      - type: file_exists
-        path: src/feature.py
+  - tasks/implement-feature.yaml
+```
+
+```yaml [tasks/implement-feature.yaml]
+id: implement-feature
+name: Implement feature
+input_payload: "Implement the feature described in SPEC.md."
+workspace:
+  type: files
+  files:
+    - ./fixtures/SPEC.md
+    - ./fixtures/src/
+    - ./fixtures/tests/
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: allowlist
+expectations:
+  - type: exit_code
+    value: 0
+  - type: file_exists
+    path: src/feature.py
 ```
 
 ```yaml [vm — untrusted agent]
@@ -289,28 +256,53 @@ configurations:
     agent:
       command: ["./downloaded-agent"]
       input_mode: stdin
-      timeout: 300
-    sandbox:
-      level: vm
-      provider: e2b
-      template: "base-python-3.11"
-      strict: true
-    trust: adversarial
-    network: none
+      timeout_s: 300
+    required_secrets:
+      - MICRO_EVAL_SECRET_E2B_API_KEY
 
 tasks:
-  - id: code-challenge
-    prompt: "Solve the algorithmic problem in challenge.txt."
-    workspace:
-      type: files
-      sources:
-        - path: challenge.txt
-    expectations:
-      - type: contains
-        value: "SOLVED"
+  - tasks/code-challenge.yaml
+```
+
+```yaml [tasks/code-challenge.yaml]
+id: code-challenge
+name: Code challenge
+input_payload: "Solve the algorithmic problem in challenge.txt."
+workspace:
+  type: files
+  files:
+    - ./fixtures/challenge.txt
+  isolation_level: vm
+  trust_level: adversarial
+  network_policy: none
+expectations:
+  - type: contains
+    value: "SOLVED"
 ```
 
 :::
+
+---
+
+## Server Mode: Workspace-Level Isolation
+
+In server mode (`micro-eval serve`), an additional isolation layer sits above cell-level workspace isolation:
+
+**Server workspaces** are isolated directories under `~/.micro-eval-server/workspaces/<workspace-id>/`. Each workspace:
+
+- Has its own `eval.yaml`, `tasks/`, and `.micro-eval/runs/`
+- Acts as a `project_root` for ExecutionKernel — cell-level worktree isolation works identically inside it
+- Is owned by a member (recorded at creation, immutable)
+- Has its own trend index (`index.db`)
+
+This means there are **two layers** of workspace isolation in server mode:
+
+| Layer | Scope | Mechanism |
+|-------|-------|-----------|
+| Server workspace | Per-member evaluation environment | Directory isolation under `~/.micro-eval-server/workspaces/` |
+| Cell workspace | Per-cell execution sandbox | Git worktree / blank / files under `.micro-eval/workspaces/<run>/<cell>/` |
+
+API routes enforce workspace boundaries: a request to `/api/workspaces/[id]/runs/...` can only access runs within that workspace. Path traversal attempts are rejected by format validation and containment checks.
 
 ## Next Steps
 

@@ -2,6 +2,42 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.4.0 - 2026-06-19
+
+### Added
+
+- **Team Server** (`micro-eval serve`): multi-member shared server for trusted intranet teams (1–20 people).
+  - **Workspace isolation**: each member creates isolated workspaces with independent `eval.yaml`, `.micro-eval/runs/`, and git worktree areas. Workspace IDs are format-validated and path-traversal-protected.
+  - **Serial run queue**: SQLite-backed job queue (`queue.db`) with WAL mode. Runs execute one at a time via a dedicated Python worker process. Supports enqueue, cancel (queued: immediate; running: stop-after-run), progress reporting, and crash recovery.
+  - **Template library**: read-only template registry managed via CLI (`micro-eval template create/update/list/delete`). Members create workspaces from templates, then freely modify their copy.
+  - **Member attribution**: `X-Micro-Eval-Member` header tracks workspace ownership, run authorship, and cancellation. No authentication (trusted intranet assumption).
+  - **CSRF protection** (4-layer): Content-Type enforcement, custom header requirement, no CORS headers, Host header allowlist.
+- New CLI commands: `serve`, `worker`, `workspace create/list/delete`, `template create/update/list/delete`, `build-plan`, `queue status/cancel`.
+- `RunRecord` extended with optional `owner` and `server_context` fields (backward compatible).
+- `ExecutionKernel` accepts optional `on_cell_complete` callback for progress reporting.
+- Server-mode UI: workspace dashboard, workspace detail/config pages, queue dashboard, template browser, workspace-scoped run/review/artifact pages.
+- 19 new API routes under `/api/workspaces/`, `/api/queue/`, `/api/jobs/`, `/api/templates/`, `/api/server/`.
+- 35 new Python tests (workspace, template, queue, worker crash recovery, security negative tests).
+- Security appendix added to `docs/engineering/security-service-guidelines.md`.
+
+### Changed
+
+- `micro-eval --help` now shows all server management commands alongside existing evaluation commands.
+- Golden test fixtures regenerated for new RunRecord fields.
+
+## 0.3.5 - 2026-06-15
+
+### Changed
+
+- **Documentation site restructure**: reorganized user-facing documentation from module-flat layout to journey-based architecture.
+  - New **Design System** page (`site/guide/design-system.md`) extracts the product's conceptual framework: decision loop, three design tensions (evidence-first, same-start, honest boundaries), and seven core objects (Task, Configuration, Run, Cell, Evidence, Evaluation, Decision).
+  - Sidebar reorganized from two groups (Introduction + Core Guide) to four groups (Get Started / Using micro-eval / Advanced / Reference) in both English and Chinese.
+  - `core-concepts.md` decomposed: core objects moved to Design System page, secondary concepts (AgentSpec, WorkspaceSpec, Expectation) moved to their respective topic pages. Old page retained as redirect with anchor stubs for external link compatibility.
+  - Implementation details removed from guide pages: asyncio/semaphore internals from execution, Seatbelt/Bubblewrap code paths from workspace isolation, SQLite index structure from trend analysis, Python/TS code snippets from security model.
+  - Each usage page now opens with a design-system context anchor linking back to the relevant principle.
+  - Field names normalized across guide pages to match reference schema (ground truth).
+  - Full bilingual (EN/ZH) treatment for all changes.
+
 ## 0.3.4 - 2026-06-15
 
 ### Changed

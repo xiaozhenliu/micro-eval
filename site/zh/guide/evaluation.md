@@ -1,5 +1,10 @@
 # 评估与评分
 
+::: tip 你在决策循环中的位置
+**Evaluation** 将 Cell 的原始输出转化为分数和判断——是证据与决策之间的桥梁。
+参见[设计系统](/zh/guide/design-system#three-design-tensions)了解为什么确定性检查先于 LLM 评判运行。
+:::
+
 micro-eval 使用**三层评估流水线**，将任务原始输出转化为可信、可操作的分数。每一层在上一层的基础上构建——确定性检查优先，可选的 LLM 评判其次，最后是人工标注。
 
 ```
@@ -39,19 +44,22 @@ Task output
 ```yaml{6-17}
 tasks:
   - id: refactor-sort
-    prompt: "Refactor the sort function in utils.py to use Timsort."
+    input_payload: "Refactor the sort function in utils.py to use Timsort."
     workspace:
       type: git_repo
+      path: ./fixtures/repo
+      ref: main
     expectations:
       - type: exit_code
         value: 0
       - type: contains
-        target: stdout
+        stream: stdout
         value: "timsort"
       - type: file_exists
         path: utils.py
       - type: command
-        run: "python -c 'import utils; assert utils.sort([3,1,2]) == [1,2,3]'"
+        command: ["python", "-c", "import utils; assert utils.sort([3,1,2]) == [1,2,3]"]
+        cwd: "{output_dir}"
 ```
 
 ### 验证器的输出
@@ -152,7 +160,7 @@ export MICRO_EVAL_SECRET_OPENAI_API_KEY="sk-..."
 
 ## 第三层：人工标注
 
-人工标注是最后一层，也是**唯一能表达超出自动化系统所能捕捉的细微判断**的层次。标注通过 Web UI 的 AnnotationPanel 添加。
+人工标注是最后一层，也是**唯一能表达超出自动化系统所能捕捉的细微判断**的层次。标注通过 Web UI 添加。
 
 ::: tip 启动 Web UI
 ```bash
@@ -163,7 +171,7 @@ micro-eval ui
 
 ### 添加标注
 
-导航到结果矩阵中的任意单元格，打开 AnnotationPanel。你可以指定：
+导航到结果矩阵中的任意单元格。你可以指定：
 
 - **Score**（0.0 – 1.0）——你的数值判断
 - **Comment**——自由文本说明、注意事项或后续跟进备注

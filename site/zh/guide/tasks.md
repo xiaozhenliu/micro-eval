@@ -1,5 +1,10 @@
 # 任务与期望
 
+::: tip 你在决策循环中的位置
+**Task** 是结果矩阵中的一行——它定义了*测什么*。
+参见[设计系统](/zh/guide/design-system#core-objects)了解 Task 与其他核心对象的关系。
+:::
+
 **task** 是 micro-eval 中评测的基本单元。每个 task 描述一个场景：交给 agent 的输入、agent 运行的环境，以及判断 agent 是否成功的规则。
 
 Task 在 YAML 文件中定义，并由 `Run` 引用。执行 run 时，micro-eval 将 `Tasks × Configurations × Repetitions` 展开为结果矩阵，对每个 configuration 执行每个 task，次数由 `repetitions` 指定。
@@ -46,7 +51,7 @@ expectations:
   - type: file_exists
     path: "{output_dir}/src/utils.py"
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
+    command: ["python", "-m", "pytest", "tests/", "-q"]
     cwd: "{output_dir}"
 
 workspace:
@@ -54,19 +59,18 @@ workspace:
   path: /path/to/your/project
   ref: main
   isolation_level: logical
-  trust_level: project
+  trust_level: semi_trusted
   network_policy: none
   setup:
     - ["pip", "install", "-e", "."]
   fixtures:
-    - source: testdata/utils_original.py
-      dest: src/utils.py
+    - path: testdata/utils_original.py
       digest: sha256:abc123...
   toolchain:
-    python: "3.11"
-    pip: "23.3"
+    runtime: python3
+    lockfile: requirements.txt
 
-business_impact_tier: p1
+business_impact_tier: 2
 tags: [refactor, python, extract-function]
 revision_id: "2026-06-15-v1"
 ```
@@ -83,13 +87,13 @@ revision_id: "2026-06-15-v1"
 | `rubric` | 否 | 评分标准，可以是普通字符串，也可以是包含命名维度和权重的结构化对象。 |
 | `expectations` | 否 | 在 LLM judge 运行前执行的确定性验证规则，验证失败会短路评分流程。 |
 | `workspace` | 否 | 执行环境规格，默认为 `type: blank` 且 `isolation_level: logical`。 |
-| `business_impact_tier` | 否 | `p0`–`p3`，在报告中显示以辅助优先级排序。 |
+| `business_impact_tier` | 否 | `1`–`3`（整数），在报告中显示以辅助优先级排序，`1` 为最高优先级。 |
 | `tags` | 否 | 自由格式列表，用于 `micro-eval list` 和 `--tag` 筛选。 |
 | `revision_id` | 否 | 不透明字符串，用于追踪 task 定义随时间的变化。 |
 
 ## 四种期望类型
 
-Expectations 是**确定性**检查，在 agent 进程退出后、调用 LLM judge 之前立即运行。它们速度快、成本低、可复现，是防御明显失败的第一道防线。
+**Expectation** 是针对单元格输出评估的确定性、零 LLM 验证规则。Expectations 速度快、成本低、可复现——它们在 agent 进程退出后、调用 LLM judge 之前立即运行，是防御明显失败的第一道防线。
 
 若任意 expectation 失败，该结果将被标记为 `failed`，结果矩阵中对应单元格的 LLM judge 将被跳过。
 
@@ -167,33 +171,35 @@ Agent 的工作目录是工作区根目录，与 `{output_dir}` 解析的路径�
 ```yaml
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
+    command: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["npx", "tsc", "--noEmit"]
+    command: ["npx", "tsc", "--noEmit"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["git", "diff", "--exit-code"]
+    command: ["git", "diff", "--exit-code"]
     cwd: "{output_dir}"
 
   - type: command
-    argv: ["bash", "scripts/validate_output.sh"]
+    command: ["bash", "scripts/validate_output.sh"]
     cwd: "{output_dir}"
 ```
 
 **`command` expectations 的重要约束：**
 
-- `argv` 必须是列表——绝不能是 shell 字符串。micro-eval 直接将参数传递给子进程，不经过 shell，从而防止注入攻击和引号问题。
+- `command` 必须是列表——绝不能是 shell 字符串。micro-eval 直接将参数传递给子进程，不经过 shell，从而防止注入攻击和引号问题。
 - 省略 `cwd` 时默认为 `{output_dir}`。
 - 命令的 stdout 和 stderr 会被捕获并附加到 run 结果中以便调试，但不影响通过/失败的判定——只有退出码才有效。
 
 ::: warning
-不要使用 `argv: ["sh", "-c", "some command string"]`。如果需要 shell 特性，请写一个脚本文件，将其提交到 fixture，然后用 `argv: ["bash", "scripts/my-check.sh"]` 调用。
+不要使用 `command: ["sh", "-c", "some command string"]`。如果需要 shell 特性，请写一个脚本文件，将其提交到 fixture，然后用 `command: ["bash", "scripts/my-check.sh"]` 调用。
 :::
 
 ## Workspace 类型
+
+**WorkspaceSpec** 定义了 run 中每个单元格启动时的执行环境。为使结果具有可比性，一次 run 中的每个单元格必须从相同的 WorkspaceSpec 启动——micro-eval 将 workspace 状态（fixture digest + toolchain fingerprint）哈希到 `SameStartSnapshot` 中，并用 `snapshot_mismatch` Caveat 标记存在差异的单元格。
 
 `workspace` 块控制 agent 运行的环境。每个 workspace 都是隔离的：结果矩阵中每个 `(task, configuration, repetition)` 单元格都有自己独立的目录。
 
@@ -236,11 +242,11 @@ workspace:
   setup:
     - ["pip", "install", "-e", ".[dev]"]
   fixtures:
-    - source: testdata/seed_data.sql
-      dest: testdata/seed_data.sql
+    - path: testdata/seed_data.sql
       digest: sha256:deadbeef...
   toolchain:
-    python: "3.11"
+    runtime: python3
+    lockfile: requirements.txt
 ```
 
 ::: tip
@@ -289,7 +295,7 @@ Setup 命令在 workspace 内运行，而非你的项目根目录。每条 setup
 
 ## Fixtures
 
-Fixtures 允许你将特定文件版本注入 `git_repo` workspace，覆盖仓库在 `ref` 处的内容。每个 fixture 条目指定一个源路径（相对于你的项目）和一个目标路径（相对于 workspace 根目录）。
+Fixtures 允许你将特定文件版本注入 `git_repo` workspace，覆盖仓库在 `ref` 处的内容。每个 fixture 条目指定文件路径（相对于你的项目）和可选的摘要用于完整性校验。
 
 ```yaml
 workspace:
@@ -297,11 +303,9 @@ workspace:
   path: /path/to/repo
   ref: main
   fixtures:
-    - source: testdata/initial_state.py
-      dest: src/module.py
+    - path: testdata/initial_state.py
       digest: sha256:abc123...
-    - source: testdata/config_v2.yaml
-      dest: config/settings.yaml
+    - path: testdata/config_v2.yaml
       digest: sha256:def456...
 ```
 

@@ -52,4 +52,5 @@ micro-eval runs entirely on your laptop. The only external dependencies are the 
 
 Ready to run your first evaluation?
 
-- [Getting Started](/guide/getting-started) — install micro-eval and run your first comparison in under 10 minutes
+- [Getting Started](/guide/getting-started) — install and run your first comparison in 10 minutes
+- [Design System](/guide/design-system) — understand the core principles before diving into configuration

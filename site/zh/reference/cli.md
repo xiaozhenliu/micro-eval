@@ -1,6 +1,6 @@
 # CLI 命令
 
-`micro-eval` 全部命令参考。当前版本：**0.3.2**。
+`micro-eval` 全部命令参考。当前版本：**0.4.0**。
 
 ## 配置文件查找顺序
 
@@ -416,6 +416,381 @@ MICRO_EVAL_PROJECT_ROOT=/path/to/my-agent-project micro-eval ui --port 3000
 
 ---
 
+## 团队服务器命令
+
+以下命令需要 v0.4.0+，用于管理共享内网服务器、workspace、模板和运行队列。所有 `--data-root` 选项的默认值均为 `~/.micro-eval-server`。
+
+::: tip 仅限内网使用
+团队服务器**没有认证机制，也没有 RBAC**。它为私有网络上 1–20 人的受信团队而设计。请勿在公网接口上暴露该服务器。
+:::
+
+---
+
+### micro-eval serve
+
+启动团队服务器：将 Next.js 前端和 Python 运行 worker 作为两个协同进程运行。这是团队共享使用的主要入口。
+
+**语法**
+
+```
+micro-eval serve [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--port N` | int | `3000` | Next.js 服务器的端口。 |
+| `--host HOST` | string | `0.0.0.0` | Next.js 服务器的绑定地址。 |
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器侧数据的根目录（workspace、队列、模板）。 |
+
+**描述**
+
+`micro-eval serve` 同时启动两个进程并保持它们运行。停止时（Ctrl-C）会同时关闭两个进程。如需独立管理 worker，可用 `micro-eval serve` 启动前端，用 `micro-eval worker` 启动 worker。
+
+**示例**
+
+::: code-group
+
+```bash [默认]
+micro-eval serve
+```
+
+```bash [自定义端口]
+micro-eval serve --port 8080
+```
+
+```bash [自定义数据根目录]
+micro-eval serve --data-root /srv/micro-eval
+```
+
+:::
+
+**退出码**
+
+| 代码 | 含义 |
+|------|------|
+| `0` | 两个进程均已正常停止。 |
+| `1` | 错误——端口已被占用、数据根目录不可写，或缺少 Node.js。 |
+
+---
+
+### micro-eval worker
+
+将运行 worker 作为独立进程启动。worker 从 SQLite 队列中取出任务并逐一执行（run 内部的 cell 仍使用 `--max-concurrency`）。
+
+**语法**
+
+```
+micro-eval worker [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | 与服务器共享的根目录。 |
+
+**描述**
+
+在双进程模式下，在一个终端运行 `micro-eval serve --port N`，在另一个终端运行 `micro-eval worker`。worker 轮询 SQLite 队列（`<data-root>/queue.db`）以获取新任务。队列始终只有**一个** worker——所有 run 串行执行。
+
+**退出码**
+
+| 代码 | 含义 |
+|------|------|
+| `0` | worker 正常停止。 |
+| `1` | 错误——`data-root` 未找到或队列数据库不可访问。 |
+
+---
+
+### micro-eval workspace create
+
+在服务器数据根目录下创建新的 workspace。
+
+**语法**
+
+```
+micro-eval workspace create [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--name TEXT` | string | _（必填）_ | 人类可读的 workspace 名称。 |
+| `--owner TEXT` | string | _（必填）_ | workspace 所有者的成员标识。 |
+| `--template ID` | string | `null` | 用于初始化 workspace 的模板 ID。 |
+| `--description TEXT` | string | `null` | 可选描述。 |
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+**示例**
+
+```bash
+micro-eval workspace create --name "PR Review Eval" --owner alice --template claude-code-v1
+```
+
+---
+
+### micro-eval workspace list
+
+列出所有 workspace。
+
+**语法**
+
+```
+micro-eval workspace list [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--all` | 标志 | `false` | 包含已归档的 workspace。 |
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+---
+
+### micro-eval workspace update
+
+更新 workspace 元数据。
+
+**语法**
+
+```
+micro-eval workspace update WORKSPACE_ID [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `WORKSPACE_ID` | Workspace 标识符。 |
+
+**选项**
+
+| 选项 | 类型 | 描述 |
+|------|------|------|
+| `--name TEXT` | string | 新 workspace 名称。 |
+| `--description TEXT` | string | 新描述。 |
+| `--status STATUS` | `active` \| `archived` | 生命周期状态。 |
+| `--data-root PATH` | path | 服务器数据根目录。 |
+
+---
+
+### micro-eval workspace delete
+
+删除 workspace 及其所有运行数据。**不可恢复。**
+
+**语法**
+
+```
+micro-eval workspace delete WORKSPACE_ID [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `WORKSPACE_ID` | Workspace 标识符。 |
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--force` | 标志 | `false` | 跳过确认提示。 |
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+---
+
+### micro-eval template create
+
+从本地目录创建模板。模板创建后为只读；如需替换内容，请使用 `template update`。
+
+**语法**
+
+```
+micro-eval template create SOURCE_DIR [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `SOURCE_DIR` | 包含模板文件的本地目录路径。 |
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--id ID` | string | _（必填）_ | 唯一模板标识符（slug）。 |
+| `--name TEXT` | string | _（必填）_ | 人类可读的模板名称。 |
+| `--description TEXT` | string | `null` | 可选描述。 |
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+**示例**
+
+```bash
+micro-eval template create ./my-eval-template --id claude-code-v1 --name "Claude Code v1"
+```
+
+---
+
+### micro-eval template update
+
+用本地目录中的新版本替换模板内容。
+
+**语法**
+
+```
+micro-eval template update TEMPLATE_ID SOURCE_DIR [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `TEMPLATE_ID` | 模板标识符。 |
+| `SOURCE_DIR` | 更新后的模板目录路径。 |
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+---
+
+### micro-eval template list
+
+列出所有模板。
+
+**语法**
+
+```
+micro-eval template list [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+---
+
+### micro-eval template delete
+
+删除模板。从该模板创建的 workspace 不受影响。
+
+**语法**
+
+```
+micro-eval template delete TEMPLATE_ID [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `TEMPLATE_ID` | 模板标识符。 |
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+---
+
+### micro-eval build-plan
+
+从 `eval.yaml` 构建 `RunPlan` 并将解析后的 JSON 输出到 stdout。服务器入队任务时在内部使用；也可用于调试。
+
+**语法**
+
+```
+micro-eval build-plan [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--workspace ID` | string | _（必填）_ | 用于解析计划的 workspace ID。 |
+| `--overrides JSON` | string | `null` | 在 workspace 的 `eval.yaml` 之上应用的字段覆盖 JSON 字符串。 |
+
+**示例**
+
+```bash
+micro-eval build-plan --workspace ws-abc123 | jq '.cells | length'
+```
+
+---
+
+### micro-eval queue status
+
+显示运行队列的当前状态。
+
+**语法**
+
+```
+micro-eval queue status [OPTIONS]
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+**输出示例**
+
+```
+Queue: 2 queued, 1 running, 14 done
+Running: job-20260619-001 (workspace: ws-abc123, owner: alice, started 4m ago)
+Queued:
+  job-20260619-002  ws-def456  bob   enqueued 2m ago
+  job-20260619-003  ws-ghi789  carol enqueued 1m ago
+```
+
+---
+
+### micro-eval queue cancel
+
+取消排队或运行中的任务。
+
+**语法**
+
+```
+micro-eval queue cancel JOB_ID [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `JOB_ID` | 来自 `micro-eval queue status` 的任务标识符。 |
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+**描述**
+
+对于**排队中**的任务，取消立即生效。对于**运行中**的任务，将记录取消请求；worker 完成当前 cell 后停止，任务状态变为 `cancelled`。
+
+**退出码**
+
+| 代码 | 含义 |
+|------|------|
+| `0` | 取消请求已记录。 |
+| `1` | 任务 ID 未找到，或任务已处于终态（`done`、`failed`、`cancelled`）。 |
+
+---
+
 ## 全局选项
 
 以下选项被所有命令接受：
@@ -427,7 +802,7 @@ MICRO_EVAL_PROJECT_ROOT=/path/to/my-agent-project micro-eval ui --port 3000
 
 ```bash
 micro-eval --version
-# micro-eval 0.3.2
+# micro-eval 0.4.0
 ```
 
 ---
@@ -467,6 +842,24 @@ micro-eval list
 # 读取报告
 micro-eval report --run <RUN_ID> --format html --output report.html
 
-# 打开 Web UI
+# 打开本地 Web UI
 micro-eval ui
+
+# --- 团队服务器（v0.4.0+）---
+
+# 启动团队服务器（Next.js + worker）
+micro-eval serve --port 3000
+
+# 管理 workspace
+micro-eval workspace create --name "My Eval" --owner alice
+micro-eval workspace list
+micro-eval workspace update <WORKSPACE_ID> --status archived
+
+# 管理模板（仅 CLI，浏览器中为只读）
+micro-eval template create ./my-template --id my-tmpl --name "My Template"
+micro-eval template list
+
+# 查看队列
+micro-eval queue status
+micro-eval queue cancel <JOB_ID>
 ```

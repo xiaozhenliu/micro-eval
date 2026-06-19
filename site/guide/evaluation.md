@@ -1,5 +1,10 @@
 # Evaluation & Scoring
 
+::: tip Where you are in the decision loop
+**Evaluation** turns raw cell output into scores and judgments — the bridge between evidence and decisions.
+See [Design System](./design-system#three-design-tensions) for why deterministic checks run before LLM judgment.
+:::
+
 micro-eval uses a **three-layer evaluation pipeline** to turn raw task output into trustworthy, actionable scores. Each layer builds on the previous one — deterministic checks first, optional LLM judgment second, human annotation last.
 
 ```
@@ -39,19 +44,22 @@ The validator runs automatically on every cell in the result matrix. It evaluate
 ```yaml{6-17}
 tasks:
   - id: refactor-sort
-    prompt: "Refactor the sort function in utils.py to use Timsort."
+    input_payload: "Refactor the sort function in utils.py to use Timsort."
     workspace:
       type: git_repo
+      path: ./fixtures/repo
+      ref: main
     expectations:
       - type: exit_code
         value: 0
       - type: contains
-        target: stdout
+        stream: stdout
         value: "timsort"
       - type: file_exists
         path: utils.py
       - type: command
-        run: "python -c 'import utils; assert utils.sort([3,1,2]) == [1,2,3]'"
+        command: ["python", "-c", "import utils; assert utils.sort([3,1,2]) == [1,2,3]"]
+        cwd: "{output_dir}"
 ```
 
 ### What the Validator Produces
@@ -152,7 +160,7 @@ All `MICRO_EVAL_SECRET_*` variables are automatically redacted from logs, traces
 
 ## Layer 3: Human Annotation
 
-Human annotation is the final layer and the **only layer that can express nuanced judgment** beyond what automated systems capture. Annotations are added through the Web UI's AnnotationPanel.
+Human annotation is the final layer and the **only layer that can express nuanced judgment** beyond what automated systems capture. Annotations are added through the Web UI.
 
 ::: tip Start the Web UI
 ```bash
@@ -163,7 +171,7 @@ micro-eval ui
 
 ### Adding an Annotation
 
-Navigate to any cell in the result matrix and open the AnnotationPanel. You can assign:
+Navigate to any cell in the result matrix. You can assign:
 
 - **Score** (0.0 – 1.0) — your numeric judgment
 - **Comment** — free-text reasoning, caveats, or follow-up notes

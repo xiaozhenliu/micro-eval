@@ -25,27 +25,23 @@ task 上的 `workspace` 字段定义了 agent 启动时所面对的环境。
 一个空的临时目录。适用于不需要预先存在文件的任务——纯生成任务、API 调用，或自行创建脚手架的任务。
 
 ```yaml
-tasks:
-  - id: generate-readme
-    prompt: "Write a README.md for a Python CLI tool called 'greet'."
-    workspace:
-      type: blank
+workspace:
+  type: blank
+  isolation_level: logical
 ```
 
 ### `files`
 
-在执行前将指定的文件和目录复制到任务工作区。源路径相对于配置文件解析。
+在执行前将指定的文件和目录复制到任务工作区。文件路径相对于 task YAML 文件解析。
 
 ```yaml
-tasks:
-  - id: refactor-utils
-    prompt: "Refactor the helper functions in utils.py to reduce duplication."
-    workspace:
-      type: files
-      sources:
-        - path: src/utils.py
-        - path: tests/test_utils.py
-        - path: pyproject.toml
+workspace:
+  type: files
+  files:
+    - ./fixtures/src/utils.py
+    - ./fixtures/tests/test_utils.py
+    - ./fixtures/pyproject.toml
+  isolation_level: logical
 ```
 
 ::: tip Fixture 摘要
@@ -54,27 +50,25 @@ tasks:
 
 ### `git_repo`
 
-在指定 commit 处创建一个隔离的 git worktree。这是代码编辑任务最具可复现性的选项——agent 获得真实的 git 历史记录，可以创建分支，其改动完全与你的工作树隔离。
+在指定 ref 处创建一个隔离的 git worktree。这是代码编辑任务最具可复现性的选项——agent 获得真实的 git 历史记录，可以创建分支，其改动完全与你的工作树隔离。
 
 ```yaml
-tasks:
-  - id: fix-issue-42
-    prompt: "Fix the bug described in issue #42. The relevant code is in src/parser.py."
-    workspace:
-      type: git_repo
-      repo: .                      # path to the repo (relative to config)
-      commit: "abc1234"            # pin to a specific commit
-      setup_commands:              # optional: run inside the worktree before the agent starts
-        - ["uv", "sync"]
+workspace:
+  type: git_repo
+  path: .                          # path to the repo (relative to task YAML)
+  ref: "abc1234"                   # pin to a specific commit
+  isolation_level: logical
+  setup:                           # optional: run inside the worktree before the agent starts
+    - ["uv", "sync"]
 ```
 
-::: warning 锁定 commit
-对于打算随时间进行比较的评测，请始终显式设置 `commit`。如果省略 `commit`，micro-eval 会在运行时使用 `HEAD`——随着仓库演进，工作区会发生漂移，导致历史比较不可靠。
+::: warning 锁定 ref
+对于打算随时间进行比较的评测，请始终将 `ref` 设为完整的 commit SHA。如果省略 `ref`，micro-eval 会在运行时使用 `HEAD`——随着仓库演进，工作区会发生漂移，导致历史比较不可靠。
 :::
 
 ## 隔离级别
 
-`sandbox.level` 字段控制 agent 进程被约束的严格程度。各级别在 provider 协议（规格 §3.4.5）中定义。
+workspace 上的 `isolation_level` 字段控制 agent 进程被约束的严格程度。
 
 | 级别 | 名称 | 后端 | 可用性 |
 |-------|------|---------|--------------|
@@ -90,41 +84,29 @@ tasks:
 适用于针对自己仓库运行的受信任 agent（你自己的代码）。
 
 ```yaml
-configurations:
-  - id: my-agent-v1
-    agent:
-      command: ["uv", "run", "my-agent"]
-    sandbox:
-      level: logical
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: logical
 ```
 
 ### 级别 1 — `os_policy`
 
-在 agent 进程周围添加 OS 级别的沙箱策略：
-
-- **macOS**：Apple Seatbelt（`sandbox-exec`）将文件系统写入限制在工作区目录
-- **Linux**：Bubblewrap（`bwrap`）创建具有私有文件系统视图的用户命名空间
-
-此级别可防止 agent 意外（或故意）读取 `~/.ssh` 中的密钥、向工作区外的路径写入，或修改你的全局配置文件。
+在 agent 进程周围添加 OS 级别的沙箱策略。此级别可防止 agent 意外（或故意）读取 `~/.ssh` 中的密钥、向工作区外的路径写入，或修改你的全局配置文件。
 
 ```yaml
-configurations:
-  - id: semi-trusted-agent
-    agent:
-      command: ["./external-agent"]
-    sandbox:
-      level: os_policy
-      network: allowlist              # full | allowlist | none
-      network_allowlist:
-        - "api.openai.com"
-        - "pypi.org"
-    trust: semi_trusted
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: allowlist
 ```
 
 ::: warning 降级至 logical
 如果请求 `os_policy` 但宿主机上 Seatbelt 或 Bubblewrap 不可用（例如，未安装 `bwrap` 的 Linux），micro-eval 会**降级至 `logical`** 并在运行结果中记录一个 `mixed_isolation` 告警。运行不会中止，但该告警会在 UI 中显示，并在严格可比性检查中被排除。
-
-若要求 `os_policy` 不发生静默降级，请设置 `sandbox.strict: true`。
 :::
 
 ### 级别 4 — `vm`（远程执行）
@@ -136,16 +118,11 @@ configurations:
 - 需要特定 OS 包或内核特性的任务
 
 ```yaml
-configurations:
-  - id: untrusted-agent
-    agent:
-      command: ["./unknown-agent"]
-    sandbox:
-      level: vm
-      provider: e2b                   # e2b | modal
-      template: "base-python-3.11"    # provider-specific template ID
-    trust: untrusted
-    network: none
+workspace:
+  type: blank
+  isolation_level: vm
+  trust_level: untrusted
+  network_policy: none
 ```
 
 ::: danger 远程 provider 会直接失败
@@ -162,21 +139,9 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 
 以 `MICRO_EVAL_SECRET_` 为前缀的密钥会自动从日志、运行产物和 LLM judge 提示词中脱敏。
 
-## Provider 注册表
-
-micro-eval 在运行时通过 `WorkspaceProvider` 协议和 provider 注册表选择合适的后端。你无需直接配置——注册表会检查 `sandbox.level` 字段和宿主环境来选择正确的后端。
-
-| Provider | 级别 | 平台 |
-|----------|-------|----------|
-| `GitWorktreeProvider` | 0 — logical | 所有平台 |
-| `SeatbeltProvider` | 1 — os_policy | macOS |
-| `BubblewrapProvider` | 1 — os_policy | Linux |
-| `E2BProvider` | 4 — vm | 任意（远程） |
-| `ModalProvider` | 4 — vm | 任意（远程） |
-
 ## 信任级别
 
-`trust` 字段传达意图，由 provider 注册表用于验证所选隔离级别是否合适。
+`trust_level` 字段传达意图，由 provider 注册表用于验证所选隔离级别是否合适。
 
 | 信任级别 | 推荐隔离 | 典型用途 |
 |-------------|----------------------|------------------|
@@ -186,12 +151,12 @@ micro-eval 在运行时通过 `WorkspaceProvider` 协议和 provider 注册表�
 | `adversarial` | `vm` | 红队测试、可能尝试逃逸的 agent |
 
 ::: warning 信任是建议性的，不是强制性的
-设置 `trust: adversarial` 不会自动升级隔离级别。你还必须设置 `sandbox.level: vm`。信任用于文档、可比性元数据和未来的策略执行——本身不作为安全门控。
+设置 `trust_level: adversarial` 不会自动升级隔离级别。你还必须设置 `isolation_level: vm`。信任用于文档、可比性元数据和未来的策略执行——本身不作为安全门控。
 :::
 
 ## 网络策略
 
-`sandbox.network` 字段控制 agent 进程的出站网络访问。它在级别 1 及以上生效。
+workspace 上的 `network_policy` 字段控制 agent 进程的出站网络访问。它在级别 1 及以上生效。
 
 | 策略 | 行为 |
 |--------|----------|
@@ -200,17 +165,13 @@ micro-eval 在运行时通过 `WorkspaceProvider` 协议和 provider 注册表�
 | `none` | 阻止所有出站网络访问 |
 
 ```yaml{6-10}
-configurations:
-  - id: offline-agent
-    agent:
-      command: ["./my-agent"]
-    sandbox:
-      level: os_policy
-      network: allowlist
-      network_allowlist:
-        - "api.anthropic.com"
-        - "raw.githubusercontent.com"
-    trust: semi_trusted
+workspace:
+  type: git_repo
+  path: ./fixtures/repo
+  ref: main
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: allowlist
 ```
 
 ## SameStartSnapshot：可比性维度
@@ -239,18 +200,22 @@ configurations:
     agent:
       command: ["claude", "--dangerously-skip-permissions"]
       input_mode: stdin
-      timeout: 120
-    sandbox:
-      level: logical
-    trust: trusted
+      timeout_s: 120
 
 tasks:
-  - id: add-docstrings
-    prompt: "Add Google-style docstrings to every public function in src/parser.py."
-    workspace:
-      type: git_repo
-      repo: .
-      commit: "a1b2c3d"
+  - tasks/add-docstrings.yaml
+```
+
+```yaml [tasks/add-docstrings.yaml]
+id: add-docstrings
+name: Add docstrings
+input_payload: "Add Google-style docstrings to every public function in src/parser.py."
+workspace:
+  type: git_repo
+  path: .
+  ref: "a1b2c3d"
+  isolation_level: logical
+  trust_level: trusted
 ```
 
 ```yaml [os_policy — semi-trusted agent]
@@ -259,28 +224,30 @@ configurations:
     agent:
       command: ["./bin/external-agent", "--mode", "edit"]
       input_mode: stdin
-      timeout: 180
-    sandbox:
-      level: os_policy
-      network: allowlist
-      network_allowlist:
-        - "api.openai.com"
-    trust: semi_trusted
+      timeout_s: 180
 
 tasks:
-  - id: implement-feature
-    prompt: "Implement the feature described in SPEC.md."
-    workspace:
-      type: files
-      sources:
-        - path: SPEC.md
-        - path: src/
-        - path: tests/
-    expectations:
-      - type: exit_code
-        value: 0
-      - type: file_exists
-        path: src/feature.py
+  - tasks/implement-feature.yaml
+```
+
+```yaml [tasks/implement-feature.yaml]
+id: implement-feature
+name: Implement feature
+input_payload: "Implement the feature described in SPEC.md."
+workspace:
+  type: files
+  files:
+    - ./fixtures/SPEC.md
+    - ./fixtures/src/
+    - ./fixtures/tests/
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: allowlist
+expectations:
+  - type: exit_code
+    value: 0
+  - type: file_exists
+    path: src/feature.py
 ```
 
 ```yaml [vm — untrusted agent]
@@ -289,28 +256,53 @@ configurations:
     agent:
       command: ["./downloaded-agent"]
       input_mode: stdin
-      timeout: 300
-    sandbox:
-      level: vm
-      provider: e2b
-      template: "base-python-3.11"
-      strict: true
-    trust: adversarial
-    network: none
+      timeout_s: 300
+    required_secrets:
+      - MICRO_EVAL_SECRET_E2B_API_KEY
 
 tasks:
-  - id: code-challenge
-    prompt: "Solve the algorithmic problem in challenge.txt."
-    workspace:
-      type: files
-      sources:
-        - path: challenge.txt
-    expectations:
-      - type: contains
-        value: "SOLVED"
+  - tasks/code-challenge.yaml
+```
+
+```yaml [tasks/code-challenge.yaml]
+id: code-challenge
+name: Code challenge
+input_payload: "Solve the algorithmic problem in challenge.txt."
+workspace:
+  type: files
+  files:
+    - ./fixtures/challenge.txt
+  isolation_level: vm
+  trust_level: adversarial
+  network_policy: none
+expectations:
+  - type: contains
+    value: "SOLVED"
 ```
 
 :::
+
+---
+
+## 服务器模式：工作区级隔离
+
+在服务器模式（`micro-eval serve`）下，单元格级 workspace 隔离之上还有一层额外的隔离：
+
+**服务器工作区**是位于 `~/.micro-eval-server/workspaces/<workspace-id>/` 下的隔离目录。每个工作区：
+
+- 拥有独立的 `eval.yaml`、`tasks/` 和 `.micro-eval/runs/`
+- 作为 ExecutionKernel 的 `project_root`——单元格级 worktree 隔离在其内部的工作方式完全相同
+- 归属于某个成员（在创建时记录，不可变更）
+- 拥有独立的趋势索引（`index.db`）
+
+这意味着在服务器模式下存在**两层** workspace 隔离：
+
+| 层级 | 范围 | 机制 |
+|-------|-------|-----------|
+| 服务器工作区 | 每个成员的评测环境 | `~/.micro-eval-server/workspaces/` 下的目录隔离 |
+| 单元格工作区 | 每个单元格的执行沙箱 | `.micro-eval/workspaces/<run>/<cell>/` 下的 Git worktree / blank / files |
+
+API 路由强制执行工作区边界：对 `/api/workspaces/[id]/runs/...` 的请求只能访问该工作区内的 run。路径遍历尝试会被格式校验和路径包含性检查拒绝。
 
 ## 下一步
 

@@ -1,5 +1,11 @@
 # Configuration
 
+::: tip Where you are in the decision loop
+A **Configuration** is one column in the result matrix — it defines
+*what you are testing*. See [Design System](./design-system#core-objects)
+for how configurations relate to the other core objects.
+:::
+
 `eval.yaml` is the central configuration file for every micro-eval experiment. It answers one question: **what exactly are you comparing, and under what conditions?** Everything — the agents under test, the tasks to run, the isolation policy, the scoring rules — lives here or references files that do.
 
 ## Complete Example
@@ -159,7 +165,7 @@ Each task is executed this many times for this configuration. The result matrix 
 
 #### `agent`
 
-The agent spec describes how micro-eval launches your agent as a subprocess.
+An **AgentSpec** is the complete invocation contract for one agent. It tells micro-eval the command argv, how input is delivered to the agent, how output is collected, a per-invocation timeout, extra environment variables, and which secrets are required. Every configuration embeds exactly one AgentSpec under the `agent` key.
 
 ```yaml
 agent:
@@ -188,7 +194,7 @@ Write it as a list:
 command: ["python", "-m", "myagent.cli", "--mode", "transform"]
 ```
 
-micro-eval passes the list directly to `asyncio.create_subprocess_exec`, bypassing the shell entirely. This prevents shell injection and ensures argument boundaries are exact.
+micro-eval passes the list directly to the subprocess, bypassing the shell entirely. This prevents shell injection and ensures argument boundaries are exact.
 :::
 
 **`input_mode`**

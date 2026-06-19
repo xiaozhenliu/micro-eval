@@ -1,17 +1,22 @@
 # Execution
 
+::: tip Where you are in the decision loop  
+A **Run** expands Tasks × Configurations × Repetitions into a matrix of **Cells**, executes them, and produces a **ResultMatrix**.
+See [Design System](./design-system#the-decision-loop) for the full pipeline.
+:::
+
 micro-eval evaluates agents by expanding a declarative configuration into a matrix of isolated runs, executing each cell concurrently, and collecting structured results. This page explains exactly how that pipeline works — from YAML to `ResultMatrix`.
 
 ## Execution Pipeline Overview
 
 When you run `micro-eval run`, the engine performs these stages in order:
 
-1. **Parse & validate** — load `eval.yaml`, apply Pydantic schema validation
-2. **Matrix expansion** — decompose `Tasks × Configurations × Repetitions` into `RunCell` objects
-3. **Plan recording** — write the `RunPlan` to `.micro-eval/runs/<run-id>/plan.json` before any cell executes
-4. **Bounded concurrent execution** — dispatch cells via asyncio with a configurable concurrency cap
+1. **Parse & validate** — load `eval.yaml` and validate its schema
+2. **Matrix expansion** — decompose `Tasks × Configurations × Repetitions` into individual cells
+3. **Plan recording** — write the run plan to `.micro-eval/runs/<run-id>/plan.json` before any cell executes
+4. **Concurrent execution** — run cells in parallel, up to `guardrails.max_concurrency` at a time
 5. **Per-cell lifecycle** — prepare workspace → run agent → capture output → validate → score → clean up
-6. **Result aggregation** — write `ResultMatrix`, compute decisions, update the SQLite trend index
+6. **Result aggregation** — write `ResultMatrix` and compute decisions
 
 ## Matrix Expansion
 
@@ -33,8 +38,8 @@ configurations:
   - id: sonnet-skill-v1
   - id: sonnet-skill-v2
 
-run:
-  repetitions: 2        # each (task, config) pair runs twice
+# repetitions is set per configuration:
+# configurations[].repetitions: 2
 ```
 
 Each cell carries a stable identity — `(task_id, config_id, rep_index)` — recorded in `plan.json` before execution begins. This means partial results from an interrupted run are always traceable.
@@ -45,21 +50,20 @@ By default, cells execute in **deterministic order**: tasks iterate in declarati
 
 When you need to eliminate ordering effects — for example, suspecting that sequential workspace writes influence later cells — enable randomization:
 
-```yaml{3,4}
-run:
-  guardrails:
-    randomize_execution_order: true
-    # execution_seed is auto-generated and recorded in plan.json
+```yaml{2}
+guardrails:
+  randomize_execution_order: true
+  # execution_seed is auto-generated and recorded in plan.json
 ```
 
 The generated `execution_seed` is always written to `plan.json` and embedded in `RunResult.metadata`, so the exact order can be replayed.
 
 ## Concurrency Control
 
-Cells run concurrently via `asyncio`, with a bounded semaphore:
+micro-eval runs cells concurrently. Control parallelism with `guardrails.max_concurrency`:
 
 ```yaml
-run:
+guardrails:
   max_concurrency: 4    # default; adjust based on available CPU/memory
 ```
 
@@ -67,11 +71,9 @@ run:
 For CPU-bound agent workloads, set `max_concurrency` to the number of available cores. For API-bound agents (LLM calls), higher values (8–16) are safe. Watch memory — each cell may clone a git worktree and spawn a subprocess.
 :::
 
-The semaphore ensures at most `max_concurrency` cells are in their subprocess phase simultaneously. Workspace preparation and cleanup happen outside the semaphore to avoid blocking other cells.
-
 ## Per-Cell Lifecycle
 
-Every `RunCell` passes through the same eight-step lifecycle. A failure at any step produces a structured `CellError` and skips remaining steps for that cell — but does not affect other cells.
+Each cell goes through the same lifecycle. A failure at any step is recorded and skips remaining steps for that cell — but does not affect other cells.
 
 ### Step 1 — Workspace Preparation
 
@@ -86,9 +88,9 @@ The engine provisions an isolated workspace for each cell based on `workspace.ty
 ```yaml
 workspace:
   type: git_repo
-  repo: .
-  commit: HEAD        # pinned for reproducibility
-  setup_commands:
+  path: .
+  ref: HEAD           # pinned for reproducibility
+  setup:
     - ["uv", "sync"]
 ```
 
@@ -96,11 +98,11 @@ The worktree path is unique per cell — parallel cells never share a filesystem
 
 ### Step 2 — Setup Commands
 
-`setup_commands` run sequentially inside the workspace before the agent is invoked. Every command must be an **argv list** (no shell strings):
+`setup` commands run sequentially inside the workspace before the agent is invoked. Every command must be an **argv list** (no shell strings):
 
 ```yaml{3,4,5}
 workspace:
-  setup_commands:
+  setup:
     - ["uv", "sync", "--frozen"]
     - ["npm", "ci"]
     - ["python", "scripts/seed_db.py"]
@@ -110,7 +112,7 @@ If any setup command exits with a non-zero code, the cell immediately transition
 
 ### Step 3 — Agent Subprocess Invocation
 
-The agent is launched via Python's `asyncio.create_subprocess_exec` — **never** via `shell=True`. The full command is constructed as an argv list:
+The agent is launched as a subprocess using the argv list specified in `agent.command`. The task prompt is delivered via a temporary file or stdin — never interpolated into a shell string:
 
 ```yaml
 configurations:
@@ -121,8 +123,6 @@ configurations:
       timeout: 120
 ```
 
-The task prompt is delivered via a temporary file or stdin — never interpolated into a shell string. This eliminates an entire class of injection vulnerabilities.
-
 ::: warning argv-only security
 micro-eval refuses to execute agent commands passed as shell strings. If your `command` value is a single string containing spaces or shell metacharacters, the CLI will reject the configuration at validate time with a clear error. Always use lists: `["my-agent", "--flag", "value"]`.
 :::
@@ -132,16 +132,15 @@ micro-eval refuses to execute agent commands passed as shell strings. If your `c
 stdout, stderr, and declared artifact paths are captured with size caps to prevent runaway output from exhausting disk:
 
 ```yaml
-run:
-  guardrails:
-    max_output_bytes: 1048576     # 1 MB per stream (default)
-    max_artifact_bytes: 10485760  # 10 MB per artifact (default)
+guardrails:
+  output_cap_bytes: 10485760    # 10 MB per cell (default)
+  artifact_cap_bytes: 52428800  # 50 MB per artifact (default)
 ```
 
 When a stream exceeds its cap, capture stops and `stdout_truncated: true` (or `stderr_truncated: true`) is set on the `CellResult`. The agent process is not killed — only the capture buffer is capped.
 
 ::: warning Truncated output affects validation
-If `stdout_truncated` is `true`, `contains` expectations that match against the end of stdout may produce false negatives. Check `cell_result.stdout_truncated` when debugging unexpected validation failures. Increase `max_output_bytes` if your agent produces large structured output.
+If `stdout_truncated` is `true`, `contains` expectations that match against the end of stdout may produce false negatives. Check `cell_result.stdout_truncated` when debugging unexpected validation failures. Increase `output_cap_bytes` in `guardrails` if your agent produces large structured output.
 :::
 
 ### Step 5 — Deterministic Validation
@@ -174,8 +173,8 @@ expectations:
 ```yaml [command]
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
-    expect_exit_code: 0
+    command: ["python", "-m", "pytest", "tests/", "-q"]
+    cwd: "{output_dir}"
 ```
 
 :::
@@ -211,12 +210,7 @@ LLM judge failures (API error, malformed JSON response) produce a `judge_error` 
 
 ### Step 8 — Workspace Cleanup
 
-After output capture and scoring complete, the workspace is removed:
-
-- `blank` / `files` workspaces: the temp directory is deleted
-- `git_repo` workspaces: `git worktree remove --force <path>` is called
-
-Cleanup runs even if the agent exited with an error. Artifacts declared under `run.preserve_artifacts` are copied to `.micro-eval/runs/<run-id>/artifacts/` before the workspace is removed.
+After output capture and scoring complete, the workspace is removed. Cleanup runs even if the agent exited with an error. Artifacts declared under `run.preserve_artifacts` are copied to `.micro-eval/runs/<run-id>/artifacts/` before the workspace is removed.
 
 ## Timeout and Signal Escalation
 
@@ -246,7 +240,7 @@ The `CellResult` records `exit_reason: timeout` and the actual wall-clock durati
 By default, a cell error (setup failure, agent crash, timeout) is recorded as a `CellResult` with `status: error` and the run continues:
 
 ```yaml
-run:
+guardrails:
   stop_on_cell_error: false   # default — continue on error
 ```
 
@@ -258,36 +252,32 @@ Even when a run is interrupted (Ctrl-C, OOM, network drop), every completed cell
 
 ## Isolation Levels
 
-The workspace provider determines how cells are isolated from each other and from the host:
+The `isolation_level` setting controls how tightly the agent's process is contained:
 
-| Level | Provider | Guarantee |
+| Level | Name | Availability |
 |---|---|---|
-| `logical` | git worktree | Separate filesystem tree; shares host OS resources |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | Syscall/filesystem policy enforced by the OS |
-| `container` | Docker (planned) | Full container namespace isolation |
-| `vm` | E2B / Modal | Remote ephemeral VM; strongest isolation |
+| 0 | `logical` | Always available |
+| 1 | `os_policy` | Host OS dependent |
+| 4 | `vm` | Requires credentials |
 
 ```yaml{3}
-run:
-  workspace_provider:
-    isolation_level: os_policy    # falls back to logical with a caveat if unavailable
+workspace:
+  isolation_level: os_policy    # falls back to logical with a caveat if unavailable
 ```
 
-When `os_policy` is requested but Seatbelt/Bubblewrap is unavailable (e.g., wrong OS or missing permissions), micro-eval downgrades to `logical` and records a `SandboxCaveat` in the run metadata. Remote providers (`E2B`, `Modal`) **never downgrade** — they fail hard if credentials are absent.
+When `os_policy` is requested but unavailable on the host, micro-eval downgrades to `logical` and records a caveat in the run metadata. Remote providers (`E2B`, `Modal`) **never downgrade** — they fail hard if credentials are absent. See [Workspace Isolation](/guide/workspace-isolation) for the full details on each level.
 
 ## Guardrails Reference
 
-All safety limits live under `run.guardrails`:
+All safety limits live under `guardrails`:
 
 ```yaml
-run:
-  guardrails:
-    max_concurrency: 4
-    max_output_bytes: 1048576
-    max_artifact_bytes: 10485760
-    randomize_execution_order: false
-    stop_on_cell_error: false
-    allowed_exit_codes: [0]       # cells with other exit codes are flagged
+guardrails:
+  max_concurrency: 4
+  output_cap_bytes: 10485760
+  artifact_cap_bytes: 52428800
+  randomize_execution_order: false
+  stop_on_cell_error: false
 ```
 
 ## Secrets Handling
@@ -304,6 +294,27 @@ Do not pass secrets via `args` in the configuration YAML — those values are st
 ::: danger Never put secrets in YAML
 Anything written to `eval.yaml` or any field under `configurations[].agent.args` ends up in `.micro-eval/runs/<run-id>/plan.json` in plaintext. Use `MICRO_EVAL_SECRET_*` env vars for all credentials.
 :::
+
+---
+
+## Server Mode Execution
+
+When running via `micro-eval serve`, the execution model adds a queue layer:
+
+1. **Enqueue** — a team member clicks "Run" in the browser. The server constructs a `RunPlan` from the workspace's `eval.yaml` and inserts a job into the SQLite queue.
+2. **Dequeue** — the worker process polls the queue and picks up the next job (FIFO order).
+3. **Execute** — the worker calls `ExecutionKernel.run(plan)` with the workspace directory as `project_root`. Cell execution, workspace isolation, and artifact collection work identically to local mode.
+4. **Progress** — after each cell completes, the worker updates the job's progress in the queue. The browser polls for status.
+5. **Finalize** — the worker marks the job as done (or failed/cancelled). Run results are available in the workspace's `.micro-eval/runs/`.
+
+::: tip Serial queue
+Runs execute one at a time. Cells within a run still use `max_concurrency` for parallel execution. The serial constraint applies between runs, not within them.
+:::
+
+### Cancellation
+
+- **Queued jobs** are cancelled immediately.
+- **Running jobs** use "stop-after-run" semantics: the current run finishes, then the job is marked as cancelled. Cell-level interruption is not supported in v0.4.
 
 ## Next Steps
 

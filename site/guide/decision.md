@@ -1,5 +1,10 @@
 # Decision & Caveats
 
+::: tip Where you are in the decision loop
+The **Decision** is the final output of the loop — a guarded, evidence-backed conclusion.
+See [Design System](./design-system#three-design-tensions) for why "inconclusive" is a valid answer.
+:::
+
 After a run completes, micro-eval synthesizes all task results into a single **DecisionReport**. This report answers the core question: *does the candidate configuration outperform the baseline?* The key philosophy guiding this process is conservative by design — micro-eval would rather say **inconclusive** than manufacture a false winner.
 
 ## Philosophy: Honest Over Confident
@@ -12,7 +17,7 @@ Verdicts like `inconclusive` and `needs_human_review` are not failures — they 
 
 ## DecisionReport Structure
 
-The `DecisionReport` is produced by the Python `build_decision` function and serialized to `.micro-eval/runs/<run-id>/decision.json`. The TypeScript `recomputeDecision` function reads this structure in the UI.
+The `DecisionReport` is serialized to `.micro-eval/runs/<run-id>/decision.json` after each run completes and is read by the UI to render the comparison view.
 
 ```json
 {
@@ -173,46 +178,6 @@ ls .micro-eval/runs/abc123/evals/
 # Open the artifact for a specific cell
 cat .micro-eval/runs/abc123/artifacts/task-refactor/claude-3-5-sonnet/rep-1/stdout.txt
 ```
-
-## Cross-Language Consistency
-
-The decision logic is implemented in two places:
-
-- **Python**: `micro_eval/evaluation/decision.py` — `build_decision(run_result: RunResult) -> DecisionReport`
-- **TypeScript**: `ui/lib/decision.ts` — `recomputeDecision(runResult: RunResult): DecisionReport`
-
-Both implementations are contract-tested against a shared golden fixture set in `tests/contract/test_decision_contract.py`. If the outputs diverge for any fixture, CI fails.
-
-::: code-group
-
-```python [Python — build_decision]
-from micro_eval.evaluation.decision import build_decision
-from micro_eval.store import load_run_result
-
-run_result = load_run_result("abc123")
-decision = build_decision(run_result)
-print(decision.verdict)          # "mixed"
-print(decision.confidence)       # "medium"
-for caveat in decision.caveats:
-    print(caveat.kind, caveat.detail)
-```
-
-```typescript [TypeScript — recomputeDecision]
-import { recomputeDecision } from "@/lib/decision";
-import { loadRunResult } from "@/lib/store";
-
-const runResult = await loadRunResult("abc123");
-const decision = recomputeDecision(runResult);
-console.log(decision.verdict);        // "mixed"
-console.log(decision.confidence);     // "medium"
-decision.caveats.forEach((c) => {
-  console.log(c.kind, c.detail);
-});
-```
-
-:::
-
-The shared Pydantic schema (Python) and zod schema (TypeScript) ensure both sides agree on field names, types, and allowed enum values. Any schema change must be updated in both places.
 
 ## not_comparable — What To Do
 

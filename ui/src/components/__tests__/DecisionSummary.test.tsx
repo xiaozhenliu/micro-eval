@@ -43,6 +43,10 @@ function makeRun(
     traces: [],
     evaluations: [],
     denominator_policy: "include_failed",
+    execution_order: [],
+    execution_seed: null,
+    owner: null,
+    server_context: null,
     decision: {
       schema_version: "1.0",
       decision_report_id: "run-test::decision::20260612T000000Z",

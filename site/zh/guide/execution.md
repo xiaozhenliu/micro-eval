@@ -1,17 +1,22 @@
 # 执行
 
+::: tip 你在决策循环中的位置  
+**Run** 将 Tasks × Configurations × Repetitions 展开为 **Cell** 矩阵，执行后产出 **ResultMatrix**。
+参见[设计系统](/zh/guide/design-system#the-decision-loop)了解完整流水线。
+:::
+
 micro-eval 通过将声明式配置展开为隔离运行的矩阵、并发执行每个单元格并收集结构化结果来评测 agent。本页详细说明该流水线的工作原理——从 YAML 到 `ResultMatrix`。
 
 ## 执行流水线概览
 
 当你运行 `micro-eval run` 时，引擎按顺序执行以下阶段：
 
-1. **解析与验证** — 加载 `eval.yaml`，应用 Pydantic schema 验证
-2. **矩阵展开** — 将 `Tasks × Configurations × Repetitions` 分解为 `RunCell` 对象
-3. **计划记录** — 在任何单元格执行之前，将 `RunPlan` 写入 `.micro-eval/runs/<run-id>/plan.json`
-4. **有界并发执行** — 通过 asyncio 调度单元格，可配置并发上限
+1. **解析与验证** — 加载 `eval.yaml` 并验证其 schema
+2. **矩阵展开** — 将 `Tasks × Configurations × Repetitions` 分解为独立的单元格
+3. **计划记录** — 在任何单元格执行之前，将运行计划写入 `.micro-eval/runs/<run-id>/plan.json`
+4. **并发执行** — 并行运行单元格，最多同时执行 `guardrails.max_concurrency` 个
 5. **单元格生命周期** — 准备工作区 → 运行 agent → 捕获输出 → 验证 → 评分 → 清理
-6. **结果聚合** — 写入 `ResultMatrix`，计算决策，更新 SQLite 趋势索引
+6. **结果聚合** — 写入 `ResultMatrix` 并计算决策
 
 ## 矩阵展开
 
@@ -33,8 +38,8 @@ configurations:
   - id: sonnet-skill-v1
   - id: sonnet-skill-v2
 
-run:
-  repetitions: 2        # each (task, config) pair runs twice
+# repetitions is set per configuration:
+# configurations[].repetitions: 2
 ```
 
 每个单元格携带一个稳定的标识——`(task_id, config_id, rep_index)`——在执行开始前记录在 `plan.json` 中。这意味着中断运行的部分结果始终可追溯。
@@ -45,21 +50,20 @@ run:
 
 当你需要消除排序效应时——例如，怀疑顺序写入工作区会影响后续单元格——可启用随机化：
 
-```yaml{3,4}
-run:
-  guardrails:
-    randomize_execution_order: true
-    # execution_seed is auto-generated and recorded in plan.json
+```yaml{2}
+guardrails:
+  randomize_execution_order: true
+  # execution_seed is auto-generated and recorded in plan.json
 ```
 
 生成的 `execution_seed` 始终写入 `plan.json` 并嵌入 `RunResult.metadata`，因此可以精确回放执行顺序。
 
 ## 并发控制
 
-单元格通过 `asyncio` 并发运行，使用有界信号量：
+micro-eval 并发运行单元格。通过 `guardrails.max_concurrency` 控制并行度：
 
 ```yaml
-run:
+guardrails:
   max_concurrency: 4    # default; adjust based on available CPU/memory
 ```
 
@@ -67,11 +71,9 @@ run:
 对于 CPU 密集型 agent 工作负载，将 `max_concurrency` 设置为可用核心数。对于 API 密集型 agent（LLM 调用），较高的值（8–16）是安全的。注意内存——每个单元格可能克隆一个 git worktree 并生成一个子进程。
 :::
 
-信号量确保最多 `max_concurrency` 个单元格同时处于子进程阶段。工作区准备和清理在信号量之外进行，以避免阻塞其他单元格。
-
 ## 单元格生命周期
 
-每个 `RunCell` 经历相同的八步生命周期。任意步骤的失败都会产生一个结构化的 `CellError`，并跳过该单元格的后续步骤——但不影响其他单元格。
+每个单元格经历相同的生命周期。任意步骤的失败都会被记录并跳过该单元格的后续步骤——但不影响其他单元格。
 
 ### 第 1 步 — 工作区准备
 
@@ -86,9 +88,9 @@ run:
 ```yaml
 workspace:
   type: git_repo
-  repo: .
-  commit: HEAD        # pinned for reproducibility
-  setup_commands:
+  path: .
+  ref: HEAD           # pinned for reproducibility
+  setup:
     - ["uv", "sync"]
 ```
 
@@ -96,11 +98,11 @@ workspace:
 
 ### 第 2 步 — 设置命令
 
-`setup_commands` 在 agent 被调用之前，在工作区内顺序运行。每条命令必须是 **argv 列表**（不使用 shell 字符串）：
+`setup` 命令在 agent 被调用之前，在工作区内顺序运行。每条命令必须是 **argv 列表**（不使用 shell 字符串）：
 
 ```yaml{3,4,5}
 workspace:
-  setup_commands:
+  setup:
     - ["uv", "sync", "--frozen"]
     - ["npm", "ci"]
     - ["python", "scripts/seed_db.py"]
@@ -110,7 +112,7 @@ workspace:
 
 ### 第 3 步 — Agent 子进程调用
 
-agent 通过 Python 的 `asyncio.create_subprocess_exec` 启动——**绝不**使用 `shell=True`。完整命令构造为 argv 列表：
+agent 以子进程的形式启动，使用 `agent.command` 中指定的 argv 列表。任务提示通过临时文件或 stdin 传递——绝不插值到 shell 字符串中：
 
 ```yaml
 configurations:
@@ -121,8 +123,6 @@ configurations:
       timeout: 120
 ```
 
-任务提示通过临时文件或 stdin 传递——绝不插值到 shell 字符串中。这消除了整类注入漏洞。
-
 ::: warning 仅限 argv 的安全性
 micro-eval 拒绝执行以 shell 字符串形式传递的 agent 命令。如果你的 `command` 值是包含空格或 shell 元字符的单个字符串，CLI 将在验证时拒绝该配置并给出明确的错误提示。始终使用列表：`["my-agent", "--flag", "value"]`。
 :::
@@ -132,16 +132,15 @@ micro-eval 拒绝执行以 shell 字符串形式传递的 agent 命令。如果�
 stdout、stderr 和声明的 artifact 路径在大小上限内捕获，以防止失控输出耗尽磁盘：
 
 ```yaml
-run:
-  guardrails:
-    max_output_bytes: 1048576     # 1 MB per stream (default)
-    max_artifact_bytes: 10485760  # 10 MB per artifact (default)
+guardrails:
+  output_cap_bytes: 10485760    # 10 MB per cell (default)
+  artifact_cap_bytes: 52428800  # 50 MB per artifact (default)
 ```
 
 当某个流超过其上限时，捕获停止，并在 `CellResult` 上设置 `stdout_truncated: true`（或 `stderr_truncated: true`）。agent 进程不会被终止——只有捕获缓冲区会受到限制。
 
 ::: warning 输出截断会影响验证
-如果 `stdout_truncated` 为 `true`，针对 stdout 末尾匹配的 `contains` 期望可能产生假阴性。调试意外的验证失败时请检查 `cell_result.stdout_truncated`。如果你的 agent 产生大量结构化输出，请增大 `max_output_bytes`。
+如果 `stdout_truncated` 为 `true`，针对 stdout 末尾匹配的 `contains` 期望可能产生假阴性。调试意外的验证失败时请检查 `cell_result.stdout_truncated`。如果你的 agent 产生大量结构化输出，请在 `guardrails` 中增大 `output_cap_bytes`。
 :::
 
 ### 第 5 步 — 确定性验证
@@ -174,8 +173,8 @@ expectations:
 ```yaml [command]
 expectations:
   - type: command
-    argv: ["python", "-m", "pytest", "tests/", "-q"]
-    expect_exit_code: 0
+    command: ["python", "-m", "pytest", "tests/", "-q"]
+    cwd: "{output_dir}"
 ```
 
 :::
@@ -211,12 +210,7 @@ LLM 评判失败（API 错误、JSON 响应格式错误）会在 `CellResult` �
 
 ### 第 8 步 — 工作区清理
 
-输出捕获和评分完成后，工作区被移除：
-
-- `blank` / `files` 工作区：临时目录被删除
-- `git_repo` 工作区：调用 `git worktree remove --force <path>`
-
-即使 agent 以错误退出，清理也会运行。在 `run.preserve_artifacts` 下声明的 artifact 会在工作区移除之前复制到 `.micro-eval/runs/<run-id>/artifacts/`。
+输出捕获和评分完成后，工作区被移除。即使 agent 以错误退出，清理也会运行。在 `run.preserve_artifacts` 下声明的 artifact 会在工作区移除之前复制到 `.micro-eval/runs/<run-id>/artifacts/`。
 
 ## 超时与信号升级
 
@@ -246,7 +240,7 @@ configurations:
 默认情况下，单元格错误（设置失败、agent 崩溃、超时）记录为状态为 `status: error` 的 `CellResult`，运行继续进行：
 
 ```yaml
-run:
+guardrails:
   stop_on_cell_error: false   # default — continue on error
 ```
 
@@ -258,36 +252,32 @@ run:
 
 ## 隔离级别
 
-工作区 provider 决定单元格之间以及与宿主之间的隔离程度：
+`isolation_level` 设置控制 agent 进程被约束的严格程度：
 
-| 级别 | Provider | 保证 |
+| 级别 | 名称 | 可用性 |
 |---|---|---|
-| `logical` | git worktree | 独立的文件系统树；共享宿主 OS 资源 |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | OS 强制执行的系统调用/文件系统策略 |
-| `container` | Docker（计划中） | 完整容器命名空间隔离 |
-| `vm` | E2B / Modal | 远程临时虚拟机；最强隔离 |
+| 0 | `logical` | 始终可用 |
+| 1 | `os_policy` | 取决于宿主 OS |
+| 4 | `vm` | 需要凭证 |
 
-```yaml{3}
-run:
-  workspace_provider:
-    isolation_level: os_policy    # falls back to logical with a caveat if unavailable
+```yaml{2}
+workspace:
+  isolation_level: os_policy    # falls back to logical with a caveat if unavailable
 ```
 
-当请求 `os_policy` 但 Seatbelt/Bubblewrap 不可用时（例如，操作系统不匹配或缺少权限），micro-eval 降级为 `logical` 并在运行元数据中记录一条 `SandboxCaveat`。远程 provider（`E2B`、`Modal`）**永不降级**——如果凭证缺失，它们会直接失败。
+当请求 `os_policy` 但宿主机上不可用时，micro-eval 降级为 `logical` 并在运行元数据中记录一条告警。远程 provider（`E2B`、`Modal`）**永不降级**——如果凭证缺失，它们会直接失败。完整的级别说明请参阅 [Workspace 隔离](/zh/guide/workspace-isolation)。
 
 ## Guardrails 参考
 
-所有安全限制位于 `run.guardrails` 下：
+所有安全限制位于 `guardrails` 下：
 
 ```yaml
-run:
-  guardrails:
-    max_concurrency: 4
-    max_output_bytes: 1048576
-    max_artifact_bytes: 10485760
-    randomize_execution_order: false
-    stop_on_cell_error: false
-    allowed_exit_codes: [0]       # cells with other exit codes are flagged
+guardrails:
+  max_concurrency: 4
+  output_cap_bytes: 10485760
+  artifact_cap_bytes: 52428800
+  randomize_execution_order: false
+  stop_on_cell_error: false
 ```
 
 ## Secrets 处理
@@ -304,6 +294,27 @@ export MICRO_EVAL_SECRET_GITHUB_TOKEN=ghp_...
 ::: danger 永远不要将 secrets 写入 YAML
 写入 `eval.yaml` 或 `configurations[].agent.args` 下任何字段的内容都会以明文形式出现在 `.micro-eval/runs/<run-id>/plan.json` 中。所有凭证请使用 `MICRO_EVAL_SECRET_*` 环境变量。
 :::
+
+---
+
+## 服务器模式执行
+
+通过 `micro-eval serve` 运行时，执行模型增加了一个队列层：
+
+1. **入队** — 团队成员在浏览器中点击"Run"。服务器从 workspace 的 `eval.yaml` 构建 `RunPlan`，并将任务插入 SQLite 队列。
+2. **出队** — Worker 进程轮询队列，按 FIFO 顺序取出下一个任务。
+3. **执行** — Worker 以 workspace 目录为 `project_root` 调用 `ExecutionKernel.run(plan)`。Cell 执行、workspace 隔离与 artifact 收集的工作方式与本地模式完全相同。
+4. **进度更新** — 每个 cell 完成后，worker 更新队列中该任务的进度。浏览器轮询获取状态。
+5. **完成** — Worker 将任务标记为已完成（或失败/已取消）。Run 结果可在 workspace 的 `.micro-eval/runs/` 中查看。
+
+::: tip 串行队列
+Run 逐个执行。Run 内部的 cell 仍使用 `max_concurrency` 进行并行执行。串行约束作用于 run 之间，而非 run 内部。
+:::
+
+### 取消操作
+
+- **排队中的任务**立即取消。
+- **运行中的任务**采用"run 完成后停止"语义：当前 run 执行完毕后，任务才被标记为已取消。v0.4 不支持 cell 级别的中断。
 
 ## 下一步
 

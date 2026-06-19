@@ -33,4 +33,7 @@ features:
   - icon: 📈
     title: 趋势分析
     details: 跨 run 追踪 configuration 表现。Drift-aware breakpoint 标记比较何时变得无效。
+  - icon: 👥
+    title: 团队服务器
+    details: 通过隔离 Workspace、串行队列和只读模板库在团队间共享评测。可信内网部署——只需一台机器，无需额外基础设施。
 ---

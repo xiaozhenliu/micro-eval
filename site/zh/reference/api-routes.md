@@ -1,6 +1,6 @@
 # API 路由
 
-micro-eval Web UI 由本地 Next.js 开发服务器提供服务。所有 API 路由均从磁盘上的 `.micro-eval/` JSON 文件读取数据——没有远程服务器、没有数据库连接、也没有认证层。API 严格仅限本地使用。
+micro-eval Web UI 由本地 Next.js 开发服务器提供服务。所有 API 路由均从磁盘上的 `.micro-eval/` JSON 文件读取数据——没有远程服务器、没有数据库连接、也没有认证层。API 严格仅限本地使用。在**服务器模式**（`micro-eval serve`）下，还会开放额外的 workspace 作用域路由和队列管理路由——详见下方的[服务器模式 API 路由](#服务器模式-api-路由)。
 
 ::: tip 启动服务器
 ```bash
@@ -538,3 +538,129 @@ uv run micro-eval index import-json
 - [评分](/zh/guide/evaluation) — 三层评分流水线（确定性校验 → LLM judge → 人工）
 - [安全模型](/zh/guide/security) — 密钥脱敏、workspace 边界与子进程隔离
 - [Web UI](/zh/reference/web-ui) — 消费这些路由的浏览器界面
+
+---
+
+## 服务器模式 API 路由
+
+以下路由仅在运行 `micro-eval serve` 时可用。在本地模式（`micro-eval ui`）下访问这些路由会返回 `404`。
+
+::: warning 仅限内网
+服务器模式路由**没有认证机制**。身份通过 `X-Micro-Eval-Member` HTTP 请求头自我申报，仅用于归因，不作为访问控制依据。请仅在受信的私有网络中部署。
+:::
+
+::: info 注意事项
+- **服务器模式路由在非服务器模式下运行时返回 404。**
+- **所有写入路由均需要 `X-Micro-Eval-Member` 请求头和 `Content-Type: application/json`。**
+:::
+
+### 概览
+
+| 方法 | 路由 | 用途 |
+|--------|-------|---------|
+| `GET` | `/api/workspaces` | 列出所有 workspace |
+| `POST` | `/api/workspaces` | 创建新 workspace |
+| `GET` | `/api/workspaces/[id]` | 获取 workspace 元数据 |
+| `PATCH` | `/api/workspaces/[id]` | 更新 workspace 元数据 |
+| `DELETE` | `/api/workspaces/[id]` | 删除 workspace |
+| `GET` | `/api/workspaces/[id]/runs` | 列出 workspace 内的 run |
+| `POST` | `/api/workspaces/[id]/runs/enqueue` | 入队新的运行任务 |
+| `GET` | `/api/workspaces/[id]/runs/[runId]` | 获取 workspace 内的某次 run |
+| `GET` | `/api/workspaces/[id]/config` | 获取 workspace 的 eval.yaml |
+| `GET` | `/api/workspaces/[id]/trends` | 查询 workspace 作用域的趋势数据 |
+| `GET` | `/api/queue` | 获取队列面板摘要 |
+| `GET` | `/api/jobs/[jobId]` | 获取单个任务记录 |
+| `POST` | `/api/jobs/[jobId]/cancel` | 取消排队或运行中的任务 |
+| `GET` | `/api/templates` | 列出所有模板 |
+| `GET` | `/api/templates/[id]` | 获取单个模板 |
+| `GET` | `/api/server/status` | 服务器健康状态和进程信息 |
+
+---
+
+### Workspace 路由
+
+**GET /api/workspaces** — 返回 `WorkspaceMeta` 对象列表，按 `last_run_at` 倒序排列。默认不包含已归档的 workspace；传入 `?include_archived=true` 可包含它们。
+
+**POST /api/workspaces** — 创建新 workspace。请求体字段：`name`（必填）、`owner`（必填）、`template_id`、`description`。返回创建的 `WorkspaceMeta`。
+
+**GET /api/workspaces/[id]** — 获取单个 workspace 的完整元数据。
+
+**PATCH /api/workspaces/[id]** — 更新 `name`、`description` 或 `status`（`active` | `archived`）。返回更新后的 `WorkspaceMeta`。
+
+**DELETE /api/workspaces/[id]** — 删除 workspace 及其所有关联的 run 数据，返回 `204 No Content`。此操作不可恢复。
+
+**GET /api/workspaces/[id]/config** — 以 `text/plain` 格式返回 workspace 的原始 `eval.yaml` 内容。
+
+**GET /api/workspaces/[id]/trends** — 与本地 `/api/trends` 路由格式相同，但仅限于该 workspace 的 run。支持 `config_id`、`since`、`limit` 查询参数。
+
+---
+
+### 运行入队与状态
+
+**GET /api/workspaces/[id]/runs** — 列出 workspace 内的所有 run，按时间倒序排列，返回 `RunRecord[]` 摘要。
+
+**POST /api/workspaces/[id]/runs/enqueue** — 为该 workspace 入队新的评测运行。worker 会串行取出并执行。
+
+请求体：
+
+```json
+{
+  "overrides": {}
+}
+```
+
+| 字段 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| `overrides` | object | 否 | 在构建计划前，叠加到 workspace `eval.yaml` 之上的 JSON 覆盖字段。 |
+
+响应：创建的 `Job` 记录（状态：`queued`）。
+
+必填请求头：`X-Micro-Eval-Member`、`Content-Type: application/json`。
+
+**GET /api/workspaces/[id]/runs/[runId]** — 获取 workspace 内已完成的某次 run 记录。格式与本地 `/api/runs/[id]` 路由相同。
+
+---
+
+### 队列路由
+
+**GET /api/queue** — 返回跨所有 workspace 的整体队列摘要。
+
+```json
+{
+  "queued": 2,
+  "running": 1,
+  "done_today": 14,
+  "jobs": [ /* 任务记录，最新的在前 */ ]
+}
+```
+
+**GET /api/jobs/[jobId]** — 通过 ID 获取单条 `Job` 记录，包含 `status`、`progress`、时间戳及错误信息。
+
+**POST /api/jobs/[jobId]/cancel** — 请求取消排队或运行中的任务。排队中的任务立即取消；运行中的任务完成当前 cell 后停止。请求体：`{}`。必填请求头：`X-Micro-Eval-Member`、`Content-Type: application/json`。
+
+---
+
+### 模板路由
+
+模板通过 CLI（`micro-eval template create/update/delete`）管理，通过浏览器 API 为**只读**。
+
+**GET /api/templates** — 以 `TemplateMeta[]` 形式列出所有模板。
+
+**GET /api/templates/[id]** — 获取单个模板的元数据。不返回模板文件内容；如需检查文件，请使用 CLI。
+
+---
+
+### 服务器状态
+
+**GET /api/server/status** — 返回基本的服务器健康信息。
+
+```json
+{
+  "version": "0.4.0",
+  "mode": "server",
+  "worker_alive": true,
+  "queue_depth": 2,
+  "data_root": "/srv/micro-eval",
+  "uptime_s": 3601
+}
+```

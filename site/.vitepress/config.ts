@@ -40,19 +40,25 @@ export default withMermaid(defineConfig({
               items: [
                 { text: 'micro-eval 是什么？', link: '/zh/guide/' },
                 { text: '快速开始', link: '/zh/guide/getting-started' },
+                { text: '设计体系', link: '/zh/guide/design-system' },
               ],
             },
             {
-              text: '核心指南',
+              text: '使用指南',
               items: [
-                { text: '核心概念', link: '/zh/guide/core-concepts' },
-                { text: '配置详解', link: '/zh/guide/configuration' },
-                { text: '任务与验证', link: '/zh/guide/tasks' },
-                { text: '执行层', link: '/zh/guide/execution' },
+                { text: '定义任务', link: '/zh/guide/tasks' },
+                { text: '配置对比组', link: '/zh/guide/configuration' },
+                { text: '运行与结果', link: '/zh/guide/execution' },
                 { text: '评分系统', link: '/zh/guide/evaluation' },
-                { text: '决策与 Caveat', link: '/zh/guide/decision' },
-                { text: 'Workspace 隔离', link: '/zh/guide/workspace-isolation' },
+                { text: '做出决策', link: '/zh/guide/decision' },
+              ],
+            },
+            {
+              text: '进阶',
+              items: [
+                { text: 'Workspace 与沙箱', link: '/zh/guide/workspace-isolation' },
                 { text: '趋势分析', link: '/zh/guide/trend-analysis' },
+                { text: '团队服务器', link: '/zh/guide/team-server' },
                 { text: '安全模型', link: '/zh/guide/security' },
               ],
             },
@@ -96,23 +102,29 @@ export default withMermaid(defineConfig({
     sidebar: {
       '/guide/': [
         {
-          text: 'Introduction',
+          text: 'Get Started',
           items: [
             { text: 'What is micro-eval?', link: '/guide/' },
             { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Design System', link: '/guide/design-system' },
           ],
         },
         {
-          text: 'Core Guide',
+          text: 'Using micro-eval',
           items: [
-            { text: 'Core Concepts', link: '/guide/core-concepts' },
-            { text: 'Configuration', link: '/guide/configuration' },
-            { text: 'Tasks & Expectations', link: '/guide/tasks' },
-            { text: 'Execution', link: '/guide/execution' },
+            { text: 'Defining Tasks', link: '/guide/tasks' },
+            { text: 'Configuring Comparisons', link: '/guide/configuration' },
+            { text: 'Running & Results', link: '/guide/execution' },
             { text: 'Evaluation & Scoring', link: '/guide/evaluation' },
-            { text: 'Decision & Caveats', link: '/guide/decision' },
-            { text: 'Workspace Isolation', link: '/guide/workspace-isolation' },
+            { text: 'Making Decisions', link: '/guide/decision' },
+          ],
+        },
+        {
+          text: 'Advanced',
+          items: [
+            { text: 'Workspace & Sandboxing', link: '/guide/workspace-isolation' },
             { text: 'Trend Analysis', link: '/guide/trend-analysis' },
+            { text: 'Team Server', link: '/guide/team-server' },
             { text: 'Security Model', link: '/guide/security' },
           ],
         },

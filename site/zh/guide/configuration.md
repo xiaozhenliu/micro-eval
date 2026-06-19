@@ -1,5 +1,10 @@
 # 配置
 
+::: tip 你在决策循环中的位置
+**Configuration** 是结果矩阵中的一列——它定义了*在测什么*。
+参见[设计系统](/zh/guide/design-system#core-objects)了解 Configuration 与其他核心对象的关系。
+:::
+
 `eval.yaml` 是每个 micro-eval 实验的核心配置文件。它回答一个问题：**你究竟在比较什么，在什么条件下比较？** 所有内容——被测 agent、要运行的任务、隔离策略、评分规则——都在这里定义或引用相关文件。
 
 ## 完整示例
@@ -159,7 +164,7 @@ configurations:
 
 #### `agent`
 
-agent spec 描述 micro-eval 如何将你的 agent 作为子进程启动。
+**AgentSpec** 是一个 agent 的完整调用契约。它告诉 micro-eval 命令 argv、输入如何传递给 agent、输出如何收集、每次调用的超时时间、额外的环境变量，以及需要哪些 secrets。每个 configuration 在 `agent` 键下包含恰好一个 AgentSpec。
 
 ```yaml
 agent:
@@ -188,7 +193,7 @@ command: "python -m myagent.cli --mode transform"
 command: ["python", "-m", "myagent.cli", "--mode", "transform"]
 ```
 
-micro-eval 将列表直接传给 `asyncio.create_subprocess_exec`，完全绕过 shell。这可以防止 shell 注入，并确保参数边界精确无误。
+micro-eval 将列表直接传给子进程，完全绕过 shell。这可以防止 shell 注入，并确保参数边界精确无误。
 :::
 
 **`input_mode`**
