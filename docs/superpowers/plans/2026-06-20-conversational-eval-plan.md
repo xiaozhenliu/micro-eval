@@ -590,6 +590,7 @@ git commit -m "feat(adapter): add SubprocessBridge for multi-turn JSONL model_ca
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 from dataclasses import dataclass, field
@@ -661,10 +662,10 @@ async def simulate_conversation(
 
     conversation_log: list[dict[str, str]] = []
 
-    async def model_callback(user_input: str) -> Turn:
-        conversation_log.append({"role": "user", "content": user_input})
+    async def model_callback(input: str) -> Turn:
+        conversation_log.append({"role": "user", "content": input})
         try:
-            response = await bridge.send_turn(user_input)
+            response = await bridge.send_turn(input)
         except BridgeError as exc:
             response = f"[bridge error: {exc}]"
         response = redactor.redact(response)
@@ -678,15 +679,21 @@ async def simulate_conversation(
     )
 
     try:
-        # async_mode=True (default) — model_callback is async, simulator runs concurrently
+        # DeepEval's simulate() internally calls loop.run_until_complete(),
+        # which fails inside an already-running asyncio loop. Run in a
+        # separate thread with its own event loop to avoid this.
         simulator_kwargs = {"model_callback": model_callback}
         if config.simulator_model:
             simulator_kwargs["simulator_model"] = config.simulator_model
         simulator = ConversationSimulator(**simulator_kwargs)
-        test_cases = simulator.simulate(
-            conversational_goldens=[golden],
-            max_user_simulations=config.max_turns,
-        )
+
+        def _run_simulate():
+            return simulator.simulate(
+                conversational_goldens=[golden],
+                max_user_simulations=config.max_turns,
+            )
+
+        test_cases = await asyncio.get_event_loop().run_in_executor(None, _run_simulate)
     except Exception as exc:
         logger.warning("ConversationSimulator failed: %s", exc)
         return None
@@ -757,9 +764,13 @@ async def score_conversation(
         return None
 
     try:
-        eval_result = deepeval_evaluate(
-            test_cases=[test_case], metrics=metrics
-        )
+        # deepeval.evaluate() also calls loop.run_until_complete() internally
+        def _run_evaluate():
+            return deepeval_evaluate(
+                test_cases=[test_case], metrics=metrics
+            )
+
+        eval_result = await asyncio.get_event_loop().run_in_executor(None, _run_evaluate)
     except Exception as exc:
         logger.warning("DeepEval evaluate failed: %s", exc)
         return None

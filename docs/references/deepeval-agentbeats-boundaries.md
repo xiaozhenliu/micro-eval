@@ -107,6 +107,10 @@ test_cases = simulator.simulate(
 
 **model_callback 内部可以做任何事**（包括 HTTP 调用远程 agent），DeepEval 只关心返回值 `Turn`。
 
+> **4.0.5 验证的两个关键行为陷阱：**
+> 1. **参数名必须是 `input`**（不是 `user_input`）。DeepEval 内部用 `inspect.signature` 检查 callback 的参数名，然后以 `**kwargs` 形式传入 `{"input": ..., "turns": ..., "thread_id": ...}` 中匹配的子集。参数名不对会导致 callback 收到空参数。
+> 2. **`simulate()` 和 `evaluate()` 内部调用 `loop.run_until_complete()`**。如果在已运行的 asyncio event loop 中直接调用，会抛出 `RuntimeError: This event loop is already running`。解决方案：用 `asyncio.get_event_loop().run_in_executor(None, fn)` 在独立线程中运行。
+
 ### 1.4 Confident AI REST API（付费 SaaS）
 
 ```bash
