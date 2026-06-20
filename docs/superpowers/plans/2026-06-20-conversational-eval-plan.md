@@ -626,7 +626,7 @@ class ConversationalOutcome:
     conversation: list[dict[str, str]] = field(default_factory=list)
 
 
-async def evaluate_cell_conversational(
+async def simulate_conversation(
     *,
     cell: RunCell,
     config: JudgeConfig,
@@ -634,9 +634,12 @@ async def evaluate_cell_conversational(
     cwd: Path,
     env: dict[str, str],
     redactor: Redactor,
-    evidence_prefix: str,
-) -> tuple[EvaluationResult, EvidenceItem, AdapterResult, list[dict[str, str]]] | None:
-    """Run a full conversational evaluation: simulate conversation, then score."""
+) -> tuple[object, AdapterResult, list[dict[str, str]]] | None:
+    """Phase 1: Drive multi-turn conversation, return test_case + results.
+
+    Does NOT score — returns the raw ConversationalTestCase for scoring later.
+    This split enables Invariant #6: deterministic validation between simulation and scoring.
+    """
     task = cell.task
     if not task.scenario:
         return None
@@ -694,6 +697,42 @@ async def evaluate_cell_conversational(
         return None
     test_case = test_cases[0]
 
+    last_output = ""
+    for entry in reversed(conversation_log):
+        if entry["role"] == "assistant":
+            last_output = entry["content"]
+            break
+
+    adapter_result = AdapterResult(
+        status=CellStatus.passed if exit_code is None or exit_code == 0 else CellStatus.error,
+        exit_code=exit_code,
+        stdout="",
+        stderr=stderr or "",
+        output=last_output,
+        latency_s=0.0,
+        trace_id=cell.cell_id,
+    )
+
+    return test_case, adapter_result, conversation_log
+
+
+async def score_conversation(
+    *,
+    cell: RunCell,
+    config: JudgeConfig,
+    test_case: object,
+    turn_count: int,
+    redactor: Redactor,
+    evidence_prefix: str,
+) -> tuple[EvaluationResult, EvidenceItem] | None:
+    """Phase 2: Score a completed conversation using DeepEval metrics.
+
+    Called AFTER deterministic validation passes (Invariant #6).
+    """
+    deepeval_top = importlib.import_module("deepeval")
+    deepeval_metrics = importlib.import_module("deepeval.metrics")
+    deepeval_evaluate = getattr(deepeval_top, "evaluate")
+
     metric_names = config.conversational_metrics or DEFAULT_METRICS
     metrics = []
     for name in metric_names:
@@ -712,6 +751,10 @@ async def evaluate_cell_conversational(
                 threshold=config.pass_threshold,
             )
         )
+
+    if not metrics:
+        logger.warning("No valid conversational metrics configured")
+        return None
 
     try:
         eval_result = deepeval_evaluate(
@@ -749,7 +792,7 @@ async def evaluate_cell_conversational(
         source_kind="evaluation_id",
         metadata={
             "provider": "deepeval_conversational",
-            "turn_count": bridge.turn_count,
+            "turn_count": turn_count,
             "metrics": list(scores.keys()),
         },
     )
@@ -761,7 +804,7 @@ async def evaluate_cell_conversational(
         evaluator_type="conversational_judge",
         evaluator="deepeval_conversational",
         evaluator_meta={
-            "turn_count": bridge.turn_count,
+            "turn_count": turn_count,
             "simulator_model": config.simulator_model or "default",
             "metrics": ",".join(scores.keys()),
         },
@@ -775,23 +818,7 @@ async def evaluate_cell_conversational(
     )
     evidence.source_ref = evaluation_id
 
-    last_output = ""
-    for entry in reversed(conversation_log):
-        if entry["role"] == "assistant":
-            last_output = entry["content"]
-            break
-
-    adapter_result = AdapterResult(
-        status=CellStatus.passed if exit_code is None or exit_code == 0 else CellStatus.error,
-        exit_code=exit_code,
-        stdout="",
-        stderr=stderr or "",
-        output=last_output,
-        latency_s=0.0,
-        trace_id=cell.cell_id,
-    )
-
-    return evaluation, evidence, adapter_result, conversation_log
+    return evaluation, evidence
 
 
 def _rubric_text(cell: RunCell) -> str:
@@ -1147,7 +1174,8 @@ The integration point is around line 156-162 in `_execute_cell`. When conversati
             )
 
             # Branch: conversational evaluation
-            if (plan.judge.provider == "deepeval_conversational"
+            if (plan.judge.enabled
+                    and plan.judge.provider == "deepeval_conversational"
                     and cell.task.scenario is not None):
                 return await self._execute_cell_conversational(
                     cell, artifact_store, prepared, record, trace_providers, plan, cell_dir, workspace_caveats,
@@ -1178,41 +1206,34 @@ Add a new method to `ExecutionKernel`:
         If it critically fails, conversational judge result is overridden to "fail".
         """
         import json as json_mod
-        from micro_eval.evaluation.conversational_judge import evaluate_cell_conversational
+        from micro_eval.evaluation.conversational_judge import simulate_conversation, score_conversation
         from micro_eval.evaluation.validator import validate_cell
 
-        # Build env using adapter's private method (add to Modified files:
-        # expose _build_env as public build_env in adapter.py)
         agent = cell.configuration.agent
         adapter = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)
         env_base, redactor = adapter.build_env(
             agent, cell_dir, cell_dir / "output.txt", cell.cell_id,
         )
 
-        # Check required_secrets + enabled (kernel is responsible since
-        # resolve_judge_client returns None for conversational provider)
-        if not plan.judge.enabled:
-            return self._isolated_failure_result(cell, record, RuntimeError("judge not enabled"))
-
-        result = await evaluate_cell_conversational(
+        # Phase 1: Drive multi-turn conversation (no scoring yet)
+        sim_result = await simulate_conversation(
             cell=cell,
             config=plan.judge,
             agent=agent,
             cwd=prepared.path,
             env=env_base,
             redactor=redactor,
-            evidence_prefix=f"{cell.cell_id}::evidence",
         )
 
-        if result is None:
-            return self._isolated_failure_result(cell, record, RuntimeError("conversational evaluation returned None"))
+        if sim_result is None:
+            return self._isolated_failure_result(cell, record, RuntimeError("conversation simulation returned None"))
 
-        evaluation, evidence, adapter_result, conversation_log = result
+        test_case, adapter_result, conversation_log = sim_result
 
         # Redact stderr before persisting (security requirement)
         adapter_result.stderr = redactor.redact(adapter_result.stderr)
 
-        # Invariant #6: deterministic validation on final output BEFORE accepting LLM scores
+        # Phase 2: Invariant #6 — deterministic validation BEFORE LLM scoring
         validation_eval, validation_evidence = await validate_cell(
             cell=cell,
             adapter_result=adapter_result,
@@ -1222,9 +1243,20 @@ Add a new method to `ExecutionKernel`:
             workspace_dir=prepared.path,
         )
 
-        # If deterministic validation critically failed, override conversational pass_fail
-        if validation_eval.pass_fail == "fail":
-            evaluation.pass_fail = "fail"
+        # Phase 3: Conversational scoring (only if validation didn't critically fail)
+        conv_evaluation = None
+        conv_evidence = None
+        if validation_eval.pass_fail != "fail":
+            score_result = await score_conversation(
+                cell=cell,
+                config=plan.judge,
+                test_case=test_case,
+                turn_count=len(conversation_log) // 2,
+                redactor=redactor,
+                evidence_prefix=f"{cell.cell_id}::evidence",
+            )
+            if score_result is not None:
+                conv_evaluation, conv_evidence = score_result
 
         # Persist conversation log as artifact
         conv_artifact = artifact_store.write_text(
@@ -1233,7 +1265,9 @@ Add a new method to `ExecutionKernel`:
         )
 
         # Collect all evidence and evaluations
-        all_evidence = [evidence] + validation_evidence
+        all_evidence = validation_evidence[:]
+        if conv_evidence is not None:
+            all_evidence.append(conv_evidence)
         for ev in all_evidence:
             artifact_store.add_evidence(ev)
 
@@ -1243,10 +1277,15 @@ Add a new method to `ExecutionKernel`:
         if adapter_result.stderr:
             artifacts.append(artifact_store.write_text(cell.cell_id, "stderr", "stderr.txt", adapter_result.stderr))
 
-        evaluations = [validation_eval, evaluation]
+        evaluations = [validation_eval]
+        if conv_evaluation is not None:
+            evaluations.append(conv_evaluation)
         (cell_dir / "evaluation.json").write_text(
             json_mod.dumps([item.model_dump(mode="json") for item in evaluations], indent=2)
         )
+
+        # Determine final score/pass_fail: use conversational if available, else validation
+        final_eval = conv_evaluation if conv_evaluation is not None else validation_eval
 
         trace = collect_trace_with_fallback(trace_providers, cell=cell, result=adapter_result, redactor=redactor)
         trace_refs = []
@@ -1265,9 +1304,9 @@ Add a new method to `ExecutionKernel`:
             configuration_id=cell.configuration.id,
             configuration_name=cell.configuration.name,
             repetition=cell.repetition,
-            status=CellStatus.failed if evaluation.pass_fail == "fail" else adapter_result.status,
-            score=evaluation.score,
-            pass_fail=evaluation.pass_fail,
+            status=CellStatus.failed if final_eval.pass_fail == "fail" else adapter_result.status,
+            score=final_eval.score,
+            pass_fail=final_eval.pass_fail,
             output_summary=adapter_result.output[:self.SUMMARY_LIMIT],
             stderr_summary=adapter_result.stderr[:self.SUMMARY_LIMIT],
             exit_code=adapter_result.exit_code,
@@ -1354,8 +1393,10 @@ Expected: All existing tests pass + new kernel tests pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/micro_eval/evaluation/llm_judge.py src/micro_eval/engine/kernel.py tests/unit/test_conversational_kernel.py
-git commit -m "feat(kernel): integrate conversational evaluation branch into _execute_cell"
+git add src/micro_eval/evaluation/llm_judge.py src/micro_eval/engine/kernel.py src/micro_eval/engine/adapter.py tests/unit/test_conversational_kernel.py
+git commit -m "feat(kernel): integrate conversational evaluation branch into _execute_cell
+
+Also exposes adapter._build_env as public build_env (rename only)."
 ```
 
 ---
