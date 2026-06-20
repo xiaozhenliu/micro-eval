@@ -24,6 +24,7 @@ examples/**/report.html
 .vscode/
 .idea/
 .claude/
+.zed/
 
 # Plan files (local only)
 .plan/
@@ -39,3 +40,4 @@ micro-eval-prd.md
 
 # rtk (Rust Token Killer) local cache/filters — not project content
 .rtk/
+.gstack/

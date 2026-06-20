@@ -26,6 +26,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
+v0.4.0 开发中：Team Server——可信内网多成员共享 Server（workspace 隔离、串行队列、只读模板库、归属记录）。设计文档：docs/superpowers/specs/2026-06-19-team-server-design.md。
+
 v0.3.5 已完成：用户文档设计体系重组——新增 Design System 页（决策闭环、3 设计张力、7 核心对象），sidebar 从模块平铺改为旅程式四组（入门/使用/进阶/参考），core-concepts 拆分为跳转页 + 各主题页承接，guide 页去除实现细节，全站术语与 reference schema 对齐，中英双语全量同步。v0.3.4 已完成：Decision 算法单一来源（#1）——UI evaluate endpoint 通过 subprocess 委托 Python `build_decision`，删除 TS 侧 `recomputeDecision` 及全部 evaluation 构造/写入代码（净删 ~364 行），新增 `micro-eval apply-evaluation` CLI 子命令。v0.3.3 已完成：VitePress 项目文档网站（site/），中英双语 44 页；GitHub Actions 自动部署到 GitHub Pages。v0.3.2 已完成：测试覆盖率从 ~78%（224 tests）大幅提升至 91%（455 tests），关闭 CLI、engine、evaluation、store、trace 各层覆盖缺口。v0.3.1 新增两个 example（multi-task-matrix + git-workspace-isolation），example 能力覆盖从 ~50% 提升到 ~85%。v0.3.0 已完成：Phase 3 全部五个里程碑交付。P3-a WorkspaceProvider Protocol + ProviderRegistry + GitWorktreeProvider 重构（零行为变化）。P3-b Seatbelt(macOS)/Bubblewrap(Linux) Level 1 OS 策略 provider（不可用时降级 Level 0 + caveat）。P3-c E2B/Modal 远程 provider（可选，无凭证时 fail-hard 不降级）。P3-d 多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot 可比性维度。P3-e SQLite 索引（JSON 仍为 source of truth）+ 趋势分析（drift breakpoint 标注不可比断点）+ 趋势 API route。Phase 2 全部四个里程碑此前已交付。所有 GitHub issue #1–#14 已解决或关闭。Python CLI + Next.js 本地 Web UI 均可运行。455 个 pytest 测试 + 42 个 vitest 测试通过。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制。执行层通过 provider registry 选择隔离后端，由 `tests/unit/test_provider_protocol.py` + `tests/contract/test_execution_contract.py` 守护。
 
 ## 开发方法硬规则
@@ -60,7 +62,8 @@ v0.3.5 已完成：用户文档设计体系重组——新增 Design System 页�
 3. **同起点优先(P3)**:每次 run 必须有明确、可复现的起点(workspace 状态、repo commit、skill 版本、工具白名单、sandbox 配置、上下文预算)。环境不一致 = 结果不可信,这是产品要解决的头号痛点。
 4. **可解释优先(P4)**:任何结论都要能回溯到 task、trace、diff、cost。设计数据模型与 UI 时始终保留这条溯源链。
 5. **先人工后自动(P5)**:MVP 评分以人工为主,自动评分逐步增强。不要一上来就堆自动评分引擎。
-6. **MVP 不做**:多团队协作、RBAC/SSO、复杂审计、大规模任务库、高级推荐引擎。聚焦最常见的"对比 + 复盘"场景。
+6. **MVP 不做**：RBAC/SSO、复杂审计、大规模任务库、高级推荐引擎。
+   v0.4 新增：可信内网多成员共享 Server（workspace 隔离、串行队列、只读模板库、归属记录），不含认证/权限控制。
 
 ## 核心领域模型
 
