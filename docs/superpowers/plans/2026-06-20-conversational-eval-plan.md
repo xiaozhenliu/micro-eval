@@ -93,11 +93,16 @@ This section documents **why** each major design decision was made, grounded in 
 | `src/micro_eval/engine/kernel.py` | Add conversational evaluation branch in `_execute_cell` |
 | `ui/src/lib/schema.ts` | Add `conversation_turns` and `conversation_ref` to CellResult zod schema |
 
+### Modified files (continued)
+
+| File | Changes |
+|------|---------|
+| `src/micro_eval/engine/adapter.py` | Expose `_build_env` as public `build_env` (rename only, no logic change) for kernel conversational branch |
+
 ### Not modified
 
 | File | Why |
 |------|-----|
-| `src/micro_eval/engine/adapter.py` | Single-turn subprocess model unchanged; bridge uses same `_build_env` logic but through a public helper |
 | `src/micro_eval/engine/providers/` | WorkspaceProvider protocol unchanged |
 | `src/micro_eval/evaluation/validator.py` | Deterministic validation unchanged — **conversational path must still call `validate_cell()` on final output** |
 | `src/micro_eval/trace/` | Trace providers unchanged |
@@ -294,10 +299,10 @@ git commit -m "feat(models): extend JudgeConfig and CellResult for conversationa
 
 ---
 
-### Task 3: Implement agent bridges (model_callback implementations)
+### Task 3: Implement SubprocessBridge (Agent Adapter Layer)
 
 **Files:**
-- Create: `src/micro_eval/evaluation/agent_bridge.py`
+- Create: `src/micro_eval/engine/agent_bridge.py` (Agent Adapter Layer, 与 adapter.py 同级)
 - Create: `tests/unit/test_agent_bridge.py`
 
 - [ ] **Step 1: Implement SubprocessBridge**
@@ -566,8 +571,8 @@ Expected: All 8 tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/micro_eval/evaluation/agent_bridge.py tests/unit/test_agent_bridge.py
-git commit -m "feat(evaluation): add subprocess and A2A agent bridges for multi-turn model_callback"
+git add src/micro_eval/engine/agent_bridge.py tests/unit/test_agent_bridge.py
+git commit -m "feat(adapter): add SubprocessBridge for multi-turn JSONL model_callback"
 ```
 
 ---
@@ -1167,16 +1172,27 @@ Add a new method to `ExecutionKernel`:
     async def _execute_cell_conversational(
         self, cell, artifact_store, prepared, record, trace_providers, plan, cell_dir, workspace_caveats,
     ):
-        """Execute a cell using conversational evaluation (DeepEval ConversationSimulator)."""
+        """Execute a cell using conversational evaluation (DeepEval ConversationSimulator).
+
+        Invariant #6: deterministic validation runs FIRST on final output.
+        If it critically fails, conversational judge result is overridden to "fail".
+        """
         import json as json_mod
         from micro_eval.evaluation.conversational_judge import evaluate_cell_conversational
-        from micro_eval.engine.adapter import AgentAdapter
+        from micro_eval.evaluation.validator import validate_cell
 
-        adapter = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)
+        # Build env using adapter's private method (add to Modified files:
+        # expose _build_env as public build_env in adapter.py)
         agent = cell.configuration.agent
+        adapter = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)
         env_base, redactor = adapter.build_env(
             agent, cell_dir, cell_dir / "output.txt", cell.cell_id,
         )
+
+        # Check required_secrets + enabled (kernel is responsible since
+        # resolve_judge_client returns None for conversational provider)
+        if not plan.judge.enabled:
+            return self._isolated_failure_result(cell, record, RuntimeError("judge not enabled"))
 
         result = await evaluate_cell_conversational(
             cell=cell,
@@ -1194,42 +1210,43 @@ Add a new method to `ExecutionKernel`:
         evaluation, evidence, adapter_result, conversation_log = result
 
         # Redact stderr before persisting (security requirement)
-        adapter_result = adapter_result._replace(
-            stderr=redactor.redact(adapter_result.stderr),
-        ) if hasattr(adapter_result, '_replace') else AdapterResult(
-            **{**adapter_result.__dict__, "stderr": redactor.redact(adapter_result.stderr)},
+        adapter_result.stderr = redactor.redact(adapter_result.stderr)
+
+        # Invariant #6: deterministic validation on final output BEFORE accepting LLM scores
+        validation_eval, validation_evidence = await validate_cell(
+            cell=cell,
+            adapter_result=adapter_result,
+            cell_dir=cell_dir,
+            evidence_prefix=f"{cell.cell_id}::evidence",
+            redactor=redactor,
+            workspace_dir=prepared.path,
         )
 
-        # Run deterministic validation on final output (Invariant #6: deterministic before LLM)
-        from micro_eval.evaluation.validator import validate_cell
-        validation = validate_cell(cell=cell, adapter_result=adapter_result, cwd=prepared.path)
+        # If deterministic validation critically failed, override conversational pass_fail
+        if validation_eval.pass_fail == "fail":
+            evaluation.pass_fail = "fail"
 
         # Persist conversation log as artifact
-        conv_path = cell_dir / "conversation.json"
-        conv_path.write_text(json_mod.dumps(conversation_log, indent=2, ensure_ascii=False))
         conv_artifact = artifact_store.write_text(
             cell.cell_id, "conversation", "conversation.json",
             json_mod.dumps(conversation_log, indent=2, ensure_ascii=False),
         )
 
-        artifact_store.add_evidence(evidence)
+        # Collect all evidence and evaluations
+        all_evidence = [evidence] + validation_evidence
+        for ev in all_evidence:
+            artifact_store.add_evidence(ev)
+
         artifacts = [conv_artifact]
         if adapter_result.stdout:
             artifacts.append(artifact_store.write_text(cell.cell_id, "stdout", "stdout.txt", adapter_result.stdout))
         if adapter_result.stderr:
             artifacts.append(artifact_store.write_text(cell.cell_id, "stderr", "stderr.txt", adapter_result.stderr))
 
-        evaluations = [evaluation]
-        if validation is not None:
-            evaluations.append(validation)
+        evaluations = [validation_eval, evaluation]
         (cell_dir / "evaluation.json").write_text(
             json_mod.dumps([item.model_dump(mode="json") for item in evaluations], indent=2)
         )
-
-        # Invariant #6: if deterministic validation critically failed,
-        # override conversational judge pass_fail to "fail"
-        if validation and validation.pass_fail == "fail":
-            evaluation.pass_fail = "fail"
 
         trace = collect_trace_with_fallback(trace_providers, cell=cell, result=adapter_result, redactor=redactor)
         trace_refs = []
@@ -1248,7 +1265,7 @@ Add a new method to `ExecutionKernel`:
             configuration_id=cell.configuration.id,
             configuration_name=cell.configuration.name,
             repetition=cell.repetition,
-            status=adapter_result.status,
+            status=CellStatus.failed if evaluation.pass_fail == "fail" else adapter_result.status,
             score=evaluation.score,
             pass_fail=evaluation.pass_fail,
             output_summary=adapter_result.output[:self.SUMMARY_LIMIT],
@@ -1256,8 +1273,8 @@ Add a new method to `ExecutionKernel`:
             exit_code=adapter_result.exit_code,
             latency_s=adapter_result.latency_s,
             artifact_refs=[a.artifact_id for a in artifacts],
-            evidence_refs=[evidence.evidence_id],
-            evaluation_refs=[evaluation.evaluation_id],
+            evidence_refs=[ev.evidence_id for ev in all_evidence],
+            evaluation_refs=[e.evaluation_id for e in evaluations],
             trace_refs=trace_refs,
             cell_snapshot=prepared.snapshot,
             snapshot_gate_result=snapshot_gate,
