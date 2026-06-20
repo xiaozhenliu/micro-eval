@@ -2,6 +2,7 @@
 
 > 日期：2026-06-20
 > 来源：DeepEval 官方文档/源码 + AgentBeats 多个 Green Agent 实际源码
+> **实际验证版本**：deepeval 4.0.5（`uv run --extra judge` 环境，2026-06-20 验证）
 
 ---
 
@@ -69,9 +70,11 @@ class TestResult:
 
 ### 1.3 ConversationSimulator
 
+> **注意：实际 import 路径与官方文档不一致。** 官方文档示例写 `from deepeval import ConversationSimulator`，但 deepeval 4.0.5 中该类实际位于 `deepeval.simulator` 子模块。顶层 `deepeval` 命名空间不导出 `ConversationSimulator`。已在 2026-06-20 通过 `uv run --extra judge` 环境实际验证。
+
 ```python
 from deepeval.test_case import ConversationalTestCase, Turn, ConversationalGolden
-from deepeval import ConversationSimulator
+from deepeval.simulator import ConversationSimulator  # 注意：不是 from deepeval import
 
 # model_callback 三种签名重载
 async def callback(input: str) -> Turn: ...
