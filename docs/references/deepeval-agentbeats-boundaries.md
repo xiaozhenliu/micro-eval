@@ -109,7 +109,7 @@ test_cases = simulator.simulate(
 
 > **4.0.5 验证的两个关键行为陷阱：**
 > 1. **参数名必须是 `input`**（不是 `user_input`）。DeepEval 内部用 `inspect.signature` 检查 callback 的参数名，然后以 `**kwargs` 形式传入 `{"input": ..., "turns": ..., "thread_id": ...}` 中匹配的子集。参数名不对会导致 callback 收到空参数。
-> 2. **`simulate()` 和 `evaluate()` 内部调用 `loop.run_until_complete()`**。如果在已运行的 asyncio event loop 中直接调用，会抛出 `RuntimeError: This event loop is already running`。解决方案：用 `asyncio.get_event_loop().run_in_executor(None, fn)` 在独立线程中运行。
+> 2. **`simulate()` 和 `evaluate()` 内部调用 `loop.run_until_complete()`**。如果在已运行的 asyncio event loop 中直接调用，会抛出 `RuntimeError: This event loop is already running`。解决方案：用 `run_in_executor(None, fn)` 在独立线程中运行。注意：如果 model_callback 内部需要 asyncio I/O（如 subprocess 通信），callback 必须是**同步**函数，通过 `asyncio.run_coroutine_threadsafe(coro, main_loop).result()` 把 I/O 调度回主循环——因为 asyncio subprocess 流绑定创建它们的事件循环。
 
 ### 1.4 Confident AI REST API（付费 SaaS）
 

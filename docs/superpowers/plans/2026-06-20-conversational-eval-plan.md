@@ -661,12 +661,18 @@ async def simulate_conversation(
     await bridge.start()
 
     conversation_log: list[dict[str, str]] = []
+    main_loop = asyncio.get_event_loop()
 
-    async def model_callback(input: str) -> Turn:
+    # model_callback must be SYNC because simulate() runs in an executor thread.
+    # Bridge I/O is dispatched back to the main event loop via run_coroutine_threadsafe.
+    def model_callback(input: str) -> Turn:
         conversation_log.append({"role": "user", "content": input})
         try:
-            response = await bridge.send_turn(input)
+            future = asyncio.run_coroutine_threadsafe(bridge.send_turn(input), main_loop)
+            response = future.result(timeout=config.turn_timeout_s)
         except BridgeError as exc:
+            response = f"[bridge error: {exc}]"
+        except Exception as exc:
             response = f"[bridge error: {exc}]"
         response = redactor.redact(response)
         conversation_log.append({"role": "assistant", "content": response})
