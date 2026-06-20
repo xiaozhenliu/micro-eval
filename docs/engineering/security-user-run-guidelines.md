@@ -37,6 +37,15 @@ related:
 - 不允许 adapter 任意写宿主项目根目录。
 - 用户应优先使用一次性 workspace 或受控 git worktree 运行不可信 agent。
 
+## Multi-turn Subprocess (Conversational Evaluation)
+
+- SubprocessBridge keeps the agent process alive for the duration of a multi-turn conversation (unlike single-turn where the process exits after one invocation). This extends the I/O exposure window.
+- `turn_timeout_s` (per-turn) and `max_turns` (total turns) are mandatory configuration for conversational evaluation. Defaults: turn_timeout_s=60, max_turns=10.
+- Bridge shutdown must use graceful sequence: close stdin → wait(5s) → SIGTERM → wait(1s) → SIGKILL. This is enforced in `SubprocessBridge.stop()`.
+- All stdout output from every turn must pass through `Redactor` before being stored in conversation log or evidence.
+- If the agent process exits unexpectedly mid-conversation, the bridge must raise `BridgeError` (not silently continue with stale data).
+- Zombie process risk: if `stop()` is not called (e.g., due to unhandled exception in the caller), the subprocess may linger. The execution kernel must ensure `stop()` is called in a `finally` block.
+
 ## Network and External Services
 
 - MVP 不实现网络隔离。

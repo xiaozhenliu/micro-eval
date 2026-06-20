@@ -48,6 +48,8 @@ MVP 回答的核心问题：**在同一起点、同一任务集下，这次改�
 | Evaluation Layer | L0+L1 | validation + 人工评分 | EvaluationResult + evidence refs |
 | Decision Layer | L0+L1 | 矩阵视图 + evidence-linked summary | DecisionStatus taxonomy + caveats |
 
+> **Post-MVP extension (v0.4+)**：Conversational Evaluation（DeepEval ConversationSimulator 多轮会话评测）作为 Evaluation Layer L2 扩展提供。它是现有单轮评测的**可选并行路径**（provider: `deepeval_conversational`），不改变 MVP Profile 的 Level 选择。TaskSpec 增加 `scenario`/`expected_outcome`/`user_description` 三个可选字段，CellResult 增加 `conversation_turns`/`conversation_ref`，均为可选、向后兼容。Agent Adapter 增加 `SubprocessBridge`（JSONL 多轮通信）和 `A2ABridge`（可选 A2A transport）。实施 v0.4 会话评测时，Evaluation Layer 和 Agent Adapter Layer 将同步从 L1 升级到 L2。详见实施计划 `docs/superpowers/plans/2026-06-20-conversational-eval-plan.md`。
+
 ---
 
 ## 3. 用户旅程（Golden Path）
@@ -408,7 +410,9 @@ class EvaluationResult:
 其适用条件、binary-only 限制、denominator policy 见 Unicorn Design §5.7 权威定义，本文档不重述。
 MVP 的 `EvaluationResult` 结构已能支撑 pass@k 计算（每个 rep 独立记录 pass_fail）。
 
-**契约**：LLM judge 不在 MVP，但数据结构必须能容纳未来 `evaluator: "llm_judge"` + `judge_model: str`。
+**契约**：LLM judge 已在 v0.2.0 实现（provider: `deepeval`，evaluator_type: `llm_judge`）；数据结构支持未来扩展更多 evaluator 类型（如 `conversational_judge`）。
+
+**Post-MVP 会话评测扩展**：`EvaluationResult` 结构已能容纳 `evaluator_type: "conversational_judge"` + `evaluator: "deepeval_conversational"`。会话评测通过 `ConversationalOutcome`（score、scores、turn_count、conversation log）映射为标准 `EvaluationResult`，无需改变持久化格式。`CellResult` 增加可选 `conversation_turns: int` 和 `conversation_ref: str | None` 字段记录会话元数据。
 
 ---
 

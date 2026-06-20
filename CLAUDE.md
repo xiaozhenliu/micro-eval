@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前状态
 
-v0.4.0 开发中：Team Server——可信内网多成员共享 Server（workspace 隔离、串行队列、只读模板库、归属记录）。设计文档：docs/superpowers/specs/2026-06-19-team-server-design.md。
+v0.4.0 开发中：Team Server——可信内网多成员共享 Server（workspace 隔离、串行队列、只读模板库、归属记录）。设计文档：docs/superpowers/specs/2026-06-19-team-server-design.md。Conversational Evaluation——DeepEval ConversationSimulator 集成，支持多轮会话评测（SubprocessBridge JSONL 协议 + 可选 A2A transport），作为现有单轮 GEval judge 的并行路径。实施计划：docs/superpowers/plans/2026-06-20-conversational-eval-plan.md。
 
 v0.3.5 已完成：用户文档设计体系重组——新增 Design System 页（决策闭环、3 设计张力、7 核心对象），sidebar 从模块平铺改为旅程式四组（入门/使用/进阶/参考），core-concepts 拆分为跳转页 + 各主题页承接，guide 页去除实现细节，全站术语与 reference schema 对齐，中英双语全量同步。v0.3.4 已完成：Decision 算法单一来源（#1）——UI evaluate endpoint 通过 subprocess 委托 Python `build_decision`，删除 TS 侧 `recomputeDecision` 及全部 evaluation 构造/写入代码（净删 ~364 行），新增 `micro-eval apply-evaluation` CLI 子命令。v0.3.3 已完成：VitePress 项目文档网站（site/），中英双语 44 页；GitHub Actions 自动部署到 GitHub Pages。v0.3.2 已完成：测试覆盖率从 ~78%（224 tests）大幅提升至 91%（455 tests），关闭 CLI、engine、evaluation、store、trace 各层覆盖缺口。v0.3.1 新增两个 example（multi-task-matrix + git-workspace-isolation），example 能力覆盖从 ~50% 提升到 ~85%。v0.3.0 已完成：Phase 3 全部五个里程碑交付。P3-a WorkspaceProvider Protocol + ProviderRegistry + GitWorktreeProvider 重构（零行为变化）。P3-b Seatbelt(macOS)/Bubblewrap(Linux) Level 1 OS 策略 provider（不可用时降级 Level 0 + caveat）。P3-c E2B/Modal 远程 provider（可选，无凭证时 fail-hard 不降级）。P3-d 多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot 可比性维度。P3-e SQLite 索引（JSON 仍为 source of truth）+ 趋势分析（drift breakpoint 标注不可比断点）+ 趋势 API route。Phase 2 全部四个里程碑此前已交付。所有 GitHub issue #1–#14 已解决或关闭。Python CLI + Next.js 本地 Web UI 均可运行。455 个 pytest 测试 + 42 个 vitest 测试通过。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制。执行层通过 provider registry 选择隔离后端，由 `tests/unit/test_provider_protocol.py` + `tests/contract/test_execution_contract.py` 守护。
 
@@ -50,7 +50,7 @@ v0.3.5 已完成：用户文档设计体系重组——新增 Design System 页�
 
 1. **执行层自写,评分/观测委托外部**。
    - **自写执行层** = agent subprocess 编排、并行执行、超时、隔离(git worktree)、结果收集。~100 行 Python,完全可控。
-   - **DeepEval** = 仅作评分库(custom metric + 未来 GEval/LLM-as-judge),不用其 test runner。
+   - **DeepEval** = 评分库(custom metric + GEval/LLM-as-judge 单轮评分（已实现，v0.2.0）+ ConversationSimulator 多轮会话评测（v0.4 计划中）),不用其 test runner。会话评测通过 `model_callback` 桥接 micro-eval 的执行层,是单轮 judge 的并行路径(provider: `deepeval_conversational`),不替代默认行为。
    - **Langfuse** = 观测层(可选):trace、cost/latency 统计。未配置时降级运行。
    - **OpenHands** = Phase 3 真实任务执行层(MVP 不接入)。
    - 对外部底座保留**适配层**——底座迭代快,变化吸收在适配层内。
@@ -72,7 +72,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 - **Configuration** → 结果矩阵的"列"：Agent × Skill(可选) × Environment × Params × Repetitions。
 - **AgentSpec** → 被评测的完整程序(command + input_mode + output_mode + timeout)。
 - **SkillSpec** → 挂载到 Agent 的能力单元(path + version)。
-- **Task** → 评测单元(prompt + workspace + expectations + validation + scoring rubric)。
+- **Task** → 评测单元(prompt + workspace + expectations + validation + scoring rubric)。可选会话评测字段：scenario(会话场景) + expected_outcome(期望结果) + user_description(模拟用户描述),映射 DeepEval ConversationalGolden。
 - **WorkspaceSpec** → 执行环境(git_repo/blank/files + setup_commands + resource_limits)。
 - **Run** → Tasks × Configurations × Repetitions 的一次执行,产出 ResultMatrix。
 - **RunResult** → 一个 (Task, Configuration, Repetition) 的结果(scores + trace + cost + artifacts)。
@@ -101,12 +101,14 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 | 测试策略 | pytest 单元测试 + E2E 集成测试 | 用户确认 |
 | 开发方法 | 禁止使用 TDD 方法；采用 spec-driven + acceptance-first + implementation verification | 用户确认 |
 | Web UI | Next.js 本地 Web UI,API routes 读取 .micro-eval/ JSON | 设计文档 |
+| 会话评测集成 | DeepEval ConversationSimulator 作为 Python import（不封装为 A2A 服务）；model_callback 桥接执行层；A2A 仅用于 agent-to-agent transport | DeepEval/AgentBeats 调研 + 设计评审 |
+| 多轮 agent 通信 | subprocess 保持存活 + JSONL stdin/stdout 逐轮通信；复用现有 command + 安全边界 | 设计评审 2026-06-20 |
 
 ## 技术栈
 
 - Python 3.11+ / uv — CLI + 评测引擎
 - Typer — CLI 框架
-- DeepEval — 评分库(custom metric, 未来 GEval)
+- DeepEval — 评分库(custom metric, GEval 单轮 judge, ConversationSimulator 多轮评测)
 - Langfuse Python SDK — 可选,cost 数据
 - Next.js + TypeScript — 本地 Web UI
 - pytest — Python 测试

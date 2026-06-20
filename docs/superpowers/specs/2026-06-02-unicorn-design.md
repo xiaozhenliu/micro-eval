@@ -1,7 +1,7 @@
 ---
 title: "Unicorn：micro-eval 模块化架构设计"
 date: 2026-06-01
-updated: 2026-06-02
+updated: 2026-06-20
 status: draft
 type: design
 codename: Unicorn
@@ -129,10 +129,10 @@ P0 能力到稳定模块的归属（详见 §3 Module Map）：
 | **Asset Layer** (§5.1) | 管理 task/skill/rubric/fixture/preset | TaskSpec, SkillSpec, RubricSpec, FixtureRef | AssetSnapshot | 本地 YAML/Markdown，兼容 legacy task |
 | **Configuration Layer** (§5.2) | 定义被测组合、评测合同、矩阵展开 | ConfigurationSpec, EvaluationContract, RunPlan | RunPlan | baseline/candidate 投影为 2 个 Configuration |
 | **Execution Kernel** (§5.3) | 调度 RunCell，并发/超时/重试 | Run, RunCell, Attempt | ExecutionResult | 本地 asyncio subprocess runner |
-| **Agent Adapter Layer** (§5.4) | 黑盒 agent 统一调用协议 | AgentSpec, AgentInvocation | AdapterResult | 本地 CLI command adapter |
+| **Agent Adapter Layer** (§5.4) | 黑盒 agent 统一调用协议 | AgentSpec, AgentInvocation, SubprocessBridge, A2ABridge | AdapterResult | 本地 CLI command adapter（单轮 + 多轮 JSONL） |
 | **Environment / Reproducibility** (§5.5) | workspace/snapshot/sandbox/same-start | WorkspaceSpec, SameStartSnapshot | WorkspaceHandle, SnapshotGateResult | git worktree + workspace snapshot |
 | **Artifact / Trace Layer** (§5.6) | artifacts/diff/trace/cost/evidence | ArtifactRef, TraceRef, EvidenceItem | EvidenceBundle | 本地 artifact index（`.micro-eval/`） |
-| **Evaluation Layer** (§5.7) | validation→grading→annotation→aggregation | EvaluationResult, Annotation, AggregationResult | EvaluationResult | 人工评分 + 基础 validation |
+| **Evaluation Layer** (§5.7) | validation→grading→annotation→aggregation→conversational | EvaluationResult, Annotation, AggregationResult, ConversationalOutcome | EvaluationResult | 人工评分 + 基础 validation + DeepEval judge + 多轮会话评测 |
 | **Decision Layer** (§5.8) | 对比/报告/结论边界 | DecisionReport, ResultMatrix | DecisionReport | 矩阵视图 + evidence-linked summary |
 
 **依赖方向**（不可反向）：
@@ -171,6 +171,10 @@ P0 能力到稳定模块的归属（详见 §3 Module Map）：
 result_id = {run_id}::{task_id}::{configuration_id}::rep-{repetition}
 ```
 
+会话评测 ID 规则：
+- `conversation_ref`（CellResult 中）遵循 `artifact_id` 规则，指向 `conversation.json` 产物。格式：`{cell_id}::conversation::{content_digest}`。
+- `conversational_judge` 类型的 `evidence_id` 遵循标准 `evidence_id` 规则。
+
 Schema 版本：
 - 所有跨模块对象携带 `schema_version`。
 - 当前 `RunResult` 只有 `task_id + agent_name`，`schema_version="1.0"` 应保留为 **legacy run schema**，不能伪装成新 schema。
@@ -189,6 +193,7 @@ Schema 版本：
 - **Inputs**：本地 YAML/Markdown 资产文件。
 - **Outputs**：`AssetSnapshot`（锁定 task/rubric/skill/validation 资产版本）。
 - **MVP level (L0/L1)**：本地 YAML task；兼容 legacy `input_payload`/`expected_output`（投影为 deterministic expectation）；3–5 个 task 模板；schema 校验。
+- **Conversational extension**：`TaskSpec` 增加三个可选字段——`scenario`（会话场景描述）、`expected_outcome`（期望结果）、`user_description`（模拟用户描述），映射 DeepEval `ConversationalGolden` 参数。三者均为 `None` 时走单轮评测（现有行为不变）；`scenario` 非空时该 task 可进入多轮会话评测路径。
 - **Future levels**：git-backed task library、skill/rubric registry、共享 collections、LLM 辅助 task 生成；task package 目录格式（instruction.md + task.yaml + tests/ + environment/，服务 coding-agent benchmark 场景，参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.1）；deterministic subset 抽样（n_tasks + sample_seed）。
 - **Must not bypass**：`task_id`、`task_revision_id`、rubric refs。
 - **Failure modes**：模糊 task、无可验证产物、无 workspace、scope 过大 → Task Authoring 警告（Part II §4.1 [[2026-06-01-unicorn-vs-brd-research]]）。
@@ -223,13 +228,14 @@ Schema 版本：
 ### 5.4 Agent Adapter Layer
 
 - **Responsibility**：把不同 agent 的调用方式统一成稳定契约。
-- **Owns**：`AgentSpec`、`CommandAdapterSpec`、`AgentInvocation`、`AdapterResult`、`SkillInjectionSpec`。
+- **Owns**：`AgentSpec`、`CommandAdapterSpec`、`AgentInvocation`、`AdapterResult`、`SkillInjectionSpec`、`SubprocessBridge`/`A2ABridge`（多轮通信桥接具体实现）。
 - **Does not own**：是否成功（属 Evaluation）、编排（属 Execution）。
 - **Inputs**：Task input、workspace handle、secrets（仅注入，不落证据）。
 - **Outputs**：`AdapterResult`（normalized output refs、exit code、trace_id）。
 - **MVP level (L0/L1)**：本地 CLI command adapter；input `stdin|file`；output `stdout|file|directory`；timeout；exit code；安全 argv（不做 shell 字符串插值）；env allowlist；secret redaction 边界。
+- **Multi-turn extension**：`SubprocessBridge`——进程在会话期间保持存活，通过 JSONL（换行分隔 JSON）在 stdin/stdout 上逐轮通信。每轮写入 `{"turn": N, "content": "..."}` 到 stdin，读取 `{"content": "..."}` 从 stdout。保留 workspace 隔离、OS sandbox、SIGTERM timeout、env whitelist、secrets redaction 等全部执行模型约束。`A2ABridge`（可选）——对已部署为 HTTP 服务的远程 A2A agent，通过 JSON-RPC `a2a_sendMessage` 通信，仅用于 agent-to-agent transport。
 - **Future levels**：workflow adapter、skill injection、self-report trace、OpenHands/remote/container adapter；network_allowlist 字段（声明 agent 所需的网络出口域名，进入 snapshot 作为可比性维度——参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.4）。
-- **Must not bypass**：`AgentInvocation` 契约——Execution Kernel 不得硬编码某 agent 的 command 细节。
+- **Must not bypass**：`AgentInvocation` 契约——Execution Kernel 不得硬编码某 agent 的 command 细节。多轮桥接必须遵守与单轮 adapter 相同的安全边界（env whitelist、secret redaction、output cap）。
 - **详见**：Part II §3.2（AgentSpec）、§5.2、§5.3。
 
 ### 5.5 Environment / Reproducibility Layer
@@ -262,14 +268,16 @@ Schema 版本：
 ### 5.7 Evaluation Layer
 
 - **Responsibility**：把执行输出转换为 score / judgement / explanation，并聚合诚实统计。
-- **Owns**：`EvaluationContract`（执行视角）、`Expectation`、`ValidationResult`、`GradingResult`、`Annotation`、`AggregationResult`、`EvaluationResult`。
+- **Owns**：`EvaluationContract`（执行视角）、`Expectation`、`ValidationResult`、`GradingResult`、`Annotation`、`AggregationResult`、`EvaluationResult`、`ConversationalOutcome`。
 - **Does not own**：执行、workspace、最终产品推荐（属 Decision）。
-- **Inputs**：`EvidenceBundle`。
+- **Inputs**：`EvidenceBundle`。会话评测特殊路径：Evaluation Layer 通过 `model_callback` 间接驱动 `SubprocessBridge`/`A2ABridge`（Adapter Layer 类型），形成 Evaluation→Adapter 的受控反向依赖——这是 ConversationSimulator 要求"评测驱动对话"的结构性需要，不适用于单轮评测路径。
 - **Outputs**：`EvaluationResult`（score、pass/fail、rubric ref、evidence refs、evaluator identity）。
 - **MVP level (L0/L1)**：人工评分 + 基础 validation；exact match 是 deterministic validation 的 legacy form；Basic Honest Stats（n、pass rate、mean/median cost·latency、consistency、低样本警告）。
-- **Future levels**：DeepEval/GEval/LLM judge、task-adaptive rubric、多 judge 一致性、pairwise、pass@k/pass^k、校准、reward-hacking 防护（锚定任务 / absence-based rubric / 定期换 rubric，见 §15 deferred 登记）。
-- **Must not bypass**：`EvaluationResult` + evidence refs；LLM judge **不能**覆盖 deterministic 关键失败（除非人工显式 override 并记录 override evidence）。
-- **五模式评分**：Mode 1（deterministic）是核心；Mode 2–5 是成熟度增强，不阻塞 MVP（Part II §4.4）。
+- **Implemented levels (L2)**：DeepEval GEval/LLM judge（单轮，v0.2.0 起）；Decision 算法单一来源（v0.3.4）。
+- **Conversational evaluation (L2 extension)**：DeepEval `ConversationSimulator` 驱动多轮会话，`model_callback` 桥接 `SubprocessBridge`/`A2ABridge`；多轮 metric（首期注册 5 种核心 metric：ConversationCompleteness、TurnRelevancy、KnowledgeRetention、RoleAdherence、GoalAccuracy，加上 ConversationalGEval 自定义评分；DeepEval 另有 RAG Turn*、ToolUse、DAG 等 metric 可按需扩展注册）；评测结果产出 `ConversationalOutcome`（含 per-metric scores、turn_count、conversation log），映射为标准 `EvaluationResult` + `conversational_judge` 类型 `EvidenceItem`。这是现有单轮 GEval judge 的**并行路径**（provider: `deepeval_conversational`），不替代默认行为。
+- **Future levels**：task-adaptive rubric、多 judge 一致性、pairwise、pass@k/pass^k、校准、reward-hacking 防护（锚定任务 / absence-based rubric / 定期换 rubric，见 §15 deferred 登记）。
+- **Must not bypass**：`EvaluationResult` + evidence refs；LLM judge **不能**覆盖 deterministic 关键失败（除非人工显式 override 并记录 override evidence）；会话评测同样遵守此规则。
+- **五模式评分 + 会话维度**：Mode 1（deterministic）是核心；Mode 2–5 是成熟度增强，不阻塞 MVP（Part II §4.4）。会话评测是与五模式正交的维度——它改变的是"评测交互模式"（单轮 vs 多轮），而非"评分确定性光谱"。会话评测内部仍可使用 Mode 1–5 中的任一模式对最终会话结果评分。
 - **pass@k/pass^k 升级触发**：MVP 默认 repetitions=1 时 pass@k ≡ pass rate；一旦 repetitions>1 成为常态，应将 pass@k/pass^k 从 Future 提升为对比页**默认指标**（计算成本极低，矩阵已存全部 rep 结果）。依据见 [[2026-06-01-unicorn-vs-deep-agent-analysis]] §借鉴建议的采纳核查。
 - **pass@k 适用条件**（权威定义，MVP Profile 引用本节不重述）：
   1. 只对 binary pass/fail 或单一 0/1 reward 默认计算 pass@k。
@@ -321,6 +329,7 @@ EvidenceItem = 有类型、不可变、已脱敏、带来源（provenance）的�
 | `trace_event` | tool call、LLM call、duration |
 | `cost_metric` | token/cost/latency |
 | `judge_rationale` | LLM judge 结构化理由 |
+| `conversational_judge` | 多轮会话评测结果（per-metric scores、turn_count、conversation log ref） |
 | `human_annotation` | 人工评分与备注 |
 | `snapshot_gate_result` | 可比性判断 |
 | `aggregation_result` | pass rate、mean、std、pass@k |
@@ -331,7 +340,7 @@ EvidenceItem = 有类型、不可变、已脱敏、带来源（provenance）的�
 evidence:
   schema_version: "1.0"
   evidence_id: "run-42::...::rep-1::evidence::process"   # stable id（§4）
-  kind: validation | process | judge_rationale | annotation
+  kind: validation | process | judge_rationale | conversational_judge | annotation
   summary: "12 tests passed, 1 failed in auth_redirect.test.ts"  # 已脱敏摘要
   source_kind: artifact_ref | evaluation_ref | evaluation_id     # 来源种类
   source_ref: "run-42::...::stdout::abc111"                      # 指向 artifact/evaluation 的 id
@@ -391,10 +400,10 @@ MVP 行为（`warn-by-default`）：
 | Asset | local task files | versioned local assets + snapshot | git-backed library | registry / shared collections |
 | Configuration | two agents | explicit configurations + repetitions | matrix builder / sweeps | presets / 历史复用 |
 | Execution | serial subprocess | asyncio cells + timeouts | retries / cancellation / queue | remote distributed |
-| Agent Adapter | raw command | declared I/O contract | named adapters | managed remote / container |
+| Agent Adapter | raw command | declared I/O contract | named adapters + multi-turn JSONL bridge | managed remote / container + A2A transport |
 | Environment | temp dir | git worktree + snapshot | local sandbox / resource limits | remote reproducible runner |
 | Artifact/Trace | stdout summary | local artifact index + refs | Langfuse / self-report traces | full observability graph |
-| Evaluation | manual pass/fail | validation + manual rubric | DeepEval / LLM judge | calibrated / ensemble / pairwise |
+| Evaluation | manual pass/fail | validation + manual rubric | DeepEval / LLM judge + ConversationSimulator 多轮评测 | calibrated / ensemble / pairwise |
 | Decision | raw table | evidence-linked matrix summary + basic honest stats | richer stats / cost-quality | trends / confidence / recommendations |
 
 命名 Profile（每个 Profile 声明 enabled / required / deferred 与 decision strength）：
@@ -698,6 +707,35 @@ scoring:
       description: "代码质量、风格一致性"
 ```
 
+**会话评测扩展字段**（可选，与单轮字段共存）：
+
+```yaml
+id: customer-support-chat
+name: 客服多轮对话测试
+tags: [conversational, customer-support]
+
+# 单轮字段仍可用作 agent 初始上下文
+input_payload: "You are a customer support agent for an e-commerce platform."
+
+# 会话评测字段（三者均为可选；scenario 非空时启用会话评测路径）
+scenario: "客户询问退货政策，然后要求处理一个具体的退货请求"
+expected_outcome: "Agent 正确解释退货政策并成功发起退货流程"
+user_description: "一位对退货流程不熟悉的普通消费者"
+
+# workspace、expectations、validation、scoring 与单轮 task 相同
+workspace:
+  type: blank
+scoring:
+  method: hybrid
+  rubric:
+    - axis: helpfulness
+      weight: 3
+      description: "是否有效帮助用户解决问题"
+    - axis: accuracy
+      weight: 2
+      description: "提供的信息是否准确"
+```
+
 **Task 类型示例**（覆盖你的全部场景）：
 
 | 场景 | workspace.type | expectations 示例 | validation 示例 |
@@ -708,6 +746,7 @@ scoring:
 | UI 开发 | git_repo | "组件可渲染" "无 a11y 错误" | `npm run build` |
 | 文档撰写 | files | "覆盖所有章节" "无事实错误" | 无（LLM judge） |
 | Skill 测试 | git_repo | "Skill 被正确触发" "产出符合预期" | 自定义脚本 |
+| 多轮对话 | blank/files | scenario + expected_outcome 驱动 | ConversationSimulator 多轮 metric |
 
 ### 3.4 WorkspaceSpec（执行环境与沙箱框架）
 

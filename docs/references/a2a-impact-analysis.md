@@ -1,5 +1,7 @@
 # A2A 协议引入影响分析（修订版）
 
+> **注意**：本文档为早期调研产物，最终设计决策已收敛到实施计划 `docs/superpowers/plans/2026-06-20-conversational-eval-plan.md`。provider 名称（如文中的 `a2a_agent`，最终为 `deepeval_conversational`）等技术细节以实施计划为准。
+
 > 日期：2026-06-20（修订）
 > 基于：micro-eval 执行层 + 评分层完整审查 + A2A v1.0 规范调研
 
