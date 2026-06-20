@@ -532,7 +532,7 @@ async def evaluate_cell_conversational(
     ConversationSimulator = getattr(deepeval_evaluate, "ConversationSimulator", None)
     if ConversationSimulator is None:
         ConversationSimulator = getattr(
-            importlib.import_module("deepeval.conversation_simulator"), "ConversationSimulator"
+            importlib.import_module("deepeval.simulator"), "ConversationSimulator"
         )
 
     if agent_url:
@@ -545,7 +545,7 @@ async def evaluate_cell_conversational(
 
     conversation_log: list[dict[str, str]] = []
 
-    async def model_callback(user_input: str) -> object:
+    async def model_callback(user_input: str) -> Turn:
         conversation_log.append({"role": "user", "content": user_input})
         try:
             response = await bridge.send_turn(user_input)
