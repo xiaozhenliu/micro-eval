@@ -88,7 +88,7 @@
   },
   "replay_canonical": {
     "schema_version": "1.0",
-    "tool_version": "0.4.0",
+    "tool_version": "0.4.1",
     "config_hash": "config-hash",
     "task_ids": [
       "task-1"

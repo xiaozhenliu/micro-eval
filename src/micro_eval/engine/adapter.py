@@ -354,6 +354,8 @@ class AgentAdapter:
             return False
         return True
 
+    build_env = _build_env
+
 
 def _is_relative_to(path: Path, parent: Path) -> bool:
     try:

@@ -85,6 +85,8 @@ def resolve_judge_client(config: JudgeConfig) -> JudgeClient | None:
     for name in config.required_secrets:
         if name not in os.environ:
             return None
+    if config.provider == "deepeval_conversational":
+        return None
     if config.provider == "deepeval":
         try:
             return DeepEvalJudgeClient()

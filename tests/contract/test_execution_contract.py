@@ -61,7 +61,7 @@ def test_kernel_does_not_spawn_subprocesses_directly() -> None:
 # adapter.py is the sole agent spawner in the engine (the legacy AgentRunner was
 # retired in #3). Any other engine module that spawns async subprocesses is a
 # contract violation — agent execution belongs in the adapter.
-SANCTIONED_SPAWNERS = {"adapter.py"}
+SANCTIONED_SPAWNERS = {"adapter.py", "agent_bridge.py"}
 
 
 def test_only_the_adapter_spawns_agent_subprocesses_in_engine() -> None:

@@ -224,6 +224,9 @@ export const CellResultSchema = z.object({
   trace_refs: z.array(z.string()).default([]),
   cell_snapshot: CellSnapshotSchema.nullable().default(null),
   snapshot_gate_result: SnapshotGateResultSchema.nullable().default(null),
+  // Conversational evaluation metadata (backward compatible)
+  conversation_turns: z.number().int().default(0),
+  conversation_ref: z.string().nullable().default(null),
 });
 
 export const RunSchema = z.object({

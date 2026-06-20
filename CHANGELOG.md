@@ -2,6 +2,28 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.4.1 - 2026-06-20
+
+### Added
+
+- **Conversational Evaluation** — DeepEval ConversationSimulator integration for multi-turn agent evaluation.
+  - `SubprocessBridge` (`engine/agent_bridge.py`): keeps subprocess agents alive during multi-turn conversations via JSONL on stdin/stdout. Supports turn timeout, graceful shutdown (SIGTERM→SIGKILL escalation), and error recovery.
+  - `simulate_conversation()` / `score_conversation()` (`evaluation/conversational_judge.py`): two-phase evaluation — drive conversation first, then score with DeepEval metrics. Split enables Invariant #6 (deterministic validation between simulation and scoring).
+  - 5 built-in conversational metrics: `conversation_completeness`, `turn_relevancy`, `knowledge_retention`, `role_adherence`, `goal_accuracy`. Custom rubric via `ConversationalGEval`.
+  - Kernel integration: `_execute_cell_conversational()` branch in `ExecutionKernel` when `provider: deepeval_conversational` + task has `scenario` field.
+- `TaskSpec` extended with optional conversational fields: `scenario`, `expected_outcome`, `user_description` (maps 1:1 to DeepEval `ConversationalGolden`).
+- `JudgeConfig` extended with `provider: "deepeval_conversational"`, `max_turns`, `turn_timeout_s`, `simulator_model`, `conversational_metrics`.
+- `CellResult` extended with `conversation_turns` and `conversation_ref` (backward compatible).
+- Zod schema (`ui/src/lib/schema.ts`) synced with new CellResult fields.
+- New example: `examples/conversational-eval/` with echo agent and conversational eval.yaml.
+- 30 new tests: `test_agent_bridge.py` (8), `test_conversational_judge.py` (8), `test_conversational_kernel.py` (4), `test_canonical_models.py` (7 new assertions), contract test updated.
+
+### Changed
+
+- `AgentAdapter` exposes `build_env` as public alias for `_build_env`.
+- Contract test `SANCTIONED_SPAWNERS` updated to include `agent_bridge.py`.
+- Golden fixtures regenerated for new CellResult fields.
+
 ## 0.4.0 - 2026-06-19
 
 ### Added
