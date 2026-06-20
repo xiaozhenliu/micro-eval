@@ -97,7 +97,7 @@ This section documents **why** each major design decision was made, grounded in 
 
 | File | Changes |
 |------|---------|
-| `src/micro_eval/engine/adapter.py` | Expose `_build_env` as public `build_env` (rename only, no logic change) for kernel conversational branch |
+| `src/micro_eval/engine/adapter.py` | Add public `build_env` alias for `_build_env` (one line: `build_env = _build_env`). Existing internal callers of `_build_env` continue working |
 
 ### Not modified
 
@@ -852,7 +852,8 @@ from micro_eval.engine.agent_bridge import BridgeError
 from micro_eval.evaluation.conversational_judge import (
     ConversationalOutcome,
     _rubric_text,
-    evaluate_cell_conversational,
+    simulate_conversation,
+    score_conversation,
 )
 from micro_eval.models.configuration import AgentSpec, ConfigurationSpec, JudgeConfig
 from micro_eval.models.run import RunCell
@@ -911,14 +912,13 @@ async def test_evaluate_returns_none_without_scenario(tmp_path: Path) -> None:
     """Tasks without scenario field should return None immediately."""
     cell = _single_turn_cell()
     config = JudgeConfig(enabled=True, provider="deepeval_conversational")
-    result = await evaluate_cell_conversational(
+    result = await simulate_conversation(
         cell=cell,
         config=config,
         agent=cell.configuration.agent,
         cwd=tmp_path,
         env={"PATH": "/usr/bin:/bin"},
         redactor=Redactor({}),
-        evidence_prefix="test",
     )
     assert result is None
 
@@ -996,18 +996,39 @@ async def test_evaluate_cell_conversational_full_flow(tmp_path: Path) -> None:
         ),
         "deepeval": MagicMock(evaluate=MagicMock(return_value=mock_eval_result)),
     }):
-        result = await evaluate_cell_conversational(
+        sim_result = await simulate_conversation(
             cell=cell,
             config=config,
             agent=cell.configuration.agent,
             cwd=tmp_path,
             env={"PATH": "/usr/bin:/bin"},
             redactor=Redactor({}),
+        )
+
+    assert sim_result is not None
+    test_case, adapter_result, conversation_log = sim_result
+    assert isinstance(conversation_log, list)
+    assert test_case is not None
+
+    # Phase 2: score the conversation
+    with patch.dict("sys.modules", {
+        "deepeval": MagicMock(evaluate=MagicMock(return_value=mock_eval_result)),
+        "deepeval.metrics": MagicMock(
+            ConversationCompletenessMetric=mock_metric_cls,
+            TurnRelevancyMetric=mock_metric_cls,
+        ),
+    }):
+        score_result = await score_conversation(
+            cell=cell,
+            config=config,
+            test_case=test_case,
+            turn_count=len(conversation_log) // 2,
+            redactor=Redactor({}),
             evidence_prefix="test::evidence",
         )
 
-    assert result is not None
-    evaluation, evidence, adapter_result, conversation_log = result
+    assert score_result is not None
+    evaluation, evidence = score_result
 
     # EvaluationResult structure
     assert evaluation.evaluator_type == "conversational_judge"
@@ -1022,9 +1043,6 @@ async def test_evaluate_cell_conversational_full_flow(tmp_path: Path) -> None:
     assert evidence.cell_id == "cell-conv"
     assert evidence.status == "passed"
     assert evidence.metadata["provider"] == "deepeval_conversational"
-
-    # Conversation log is a list of role/content dicts
-    assert isinstance(conversation_log, list)
 
 
 @pytest.mark.asyncio
@@ -1045,21 +1063,20 @@ async def test_evaluate_cell_conversational_simulator_failure(tmp_path: Path) ->
         "deepeval.metrics": MagicMock(),
         "deepeval": MagicMock(),
     }):
-        result = await evaluate_cell_conversational(
+        result = await simulate_conversation(
             cell=cell,
             config=config,
             agent=cell.configuration.agent,
             cwd=tmp_path,
             env={"PATH": "/usr/bin:/bin"},
             redactor=Redactor({}),
-            evidence_prefix="test",
         )
 
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_evaluate_cell_redactor_applied(tmp_path: Path) -> None:
+async def test_simulate_redactor_applied(tmp_path: Path) -> None:
     """Secrets in agent output should be redacted in conversation log and rationale."""
     cell = _conversational_cell()
     config = JudgeConfig(enabled=True, provider="deepeval_conversational", turn_timeout_s=2.0)
@@ -1094,14 +1111,13 @@ async def test_evaluate_cell_redactor_applied(tmp_path: Path) -> None:
         "deepeval.metrics": MagicMock(),
         "deepeval": MagicMock(evaluate=MagicMock(return_value=mock_eval_result)),
     }):
-        result = await evaluate_cell_conversational(
+        result = await simulate_conversation(
             cell=cell,
             config=config,
             agent=cell.configuration.agent,
             cwd=tmp_path,
             env={"PATH": "/usr/bin:/bin"},
             redactor=redactor,
-            evidence_prefix="test",
         )
 
     # The redactor should have redaction values set up
