@@ -41,6 +41,7 @@ docs/_archive/
 docs/references/
 docs/bug_reports/
 docs/analysis/
+docs/security/
 
 # Local analysis/tool caches
 .understand-anything/
