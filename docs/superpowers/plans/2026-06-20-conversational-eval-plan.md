@@ -77,9 +77,10 @@ This section documents **why** each major design decision was made, grounded in 
 | File | Responsibility |
 |------|---------------|
 | `src/micro_eval/evaluation/conversational_judge.py` | ConversationSimulator integration, model_callback orchestration, multi-turn metric evaluation |
-| `src/micro_eval/evaluation/agent_bridge.py` | model_callback implementations: `SubprocessBridge` (JSONL stdin/stdout) and `A2ABridge` (httpx, optional) |
+| `src/micro_eval/engine/agent_bridge.py` | model_callback implementations: `SubprocessBridge` (JSONL stdin/stdout). **归属 Agent Adapter Layer**（Unicorn Design §5.4），放在 `engine/` 目录下与 `adapter.py` 同级 |
 | `tests/unit/test_conversational_judge.py` | Unit tests for conversational judge |
 | `tests/unit/test_agent_bridge.py` | Unit tests for agent bridges |
+| `tests/unit/test_conversational_kernel.py` | Kernel integration + resolve_judge_client tests |
 
 ### Modified files
 
@@ -90,16 +91,23 @@ This section documents **why** each major design decision was made, grounded in 
 | `src/micro_eval/models/run.py` | Add `conversation_turns` and `conversation_ref` to `CellResult` |
 | `src/micro_eval/evaluation/llm_judge.py` | Extend `resolve_judge_client` to return conversational judge |
 | `src/micro_eval/engine/kernel.py` | Add conversational evaluation branch in `_execute_cell` |
+| `ui/src/lib/schema.ts` | Add `conversation_turns` and `conversation_ref` to CellResult zod schema |
 
 ### Not modified
 
 | File | Why |
 |------|-----|
-| `src/micro_eval/engine/adapter.py` | Single-turn subprocess model unchanged |
+| `src/micro_eval/engine/adapter.py` | Single-turn subprocess model unchanged; bridge uses same `_build_env` logic but through a public helper |
 | `src/micro_eval/engine/providers/` | WorkspaceProvider protocol unchanged |
-| `src/micro_eval/evaluation/validator.py` | Deterministic validation unchanged (runs on final output) |
+| `src/micro_eval/evaluation/validator.py` | Deterministic validation unchanged — **conversational path must still call `validate_cell()` on final output** |
 | `src/micro_eval/trace/` | Trace providers unchanged |
 | `src/micro_eval/store/` | Store interfaces unchanged (Pydantic backward compatible) |
+
+### Deferred to future phase
+
+| Item | Reason |
+|------|--------|
+| `A2ABridge` implementation + tests | No config path to pass `agent_url` yet; `AgentSpec` needs URL field first. Remove from Task 3 code, add as future extension note |
 
 ---
 
@@ -260,15 +268,27 @@ def test_cell_result_conversational_fields_roundtrip():
     assert restored.conversation_ref == "c1::conversation::abc123"
 ```
 
-- [ ] **Step 4: Verify existing tests still pass**
+- [ ] **Step 4: Sync Zod schema for CellResult**
 
-Run: `uv run pytest tests/ -x -q`
-Expected: All tests pass (new fields have defaults).
+In `ui/src/lib/schema.ts`, add two fields to `CellResultSchema` before the closing `})`:
 
-- [ ] **Step 5: Commit**
+```typescript
+  snapshot_gate_result: SnapshotGateResultSchema.nullable().default(null),
+  // Conversational evaluation metadata (backward compatible)
+  conversation_turns: z.number().int().default(0),
+  conversation_ref: z.string().nullable().default(null),
+});
+```
+
+- [ ] **Step 5: Verify existing tests still pass**
+
+Run: `uv run pytest tests/ -x -q && cd ui && npx vitest run`
+Expected: All Python and vitest tests pass (new fields have defaults).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/micro_eval/models/configuration.py src/micro_eval/models/run.py tests/unit/test_canonical_models.py
+git add src/micro_eval/models/configuration.py src/micro_eval/models/run.py tests/unit/test_canonical_models.py ui/src/lib/schema.ts
 git commit -m "feat(models): extend JudgeConfig and CellResult for conversational evaluation"
 ```
 
@@ -382,77 +402,9 @@ class SubprocessBridge:
         return self._turn_count
 ```
 
-- [ ] **Step 2: Implement A2ABridge (optional transport)**
+- [ ] ~~**Step 2: Implement A2ABridge (optional transport)**~~ **DEFERRED to future phase**
 
-```python
-class A2ABridge:
-    """Bridge a remote A2A agent to DeepEval's model_callback via JSON-RPC over HTTP.
-
-    Uses minimal A2A protocol: a2a_sendMessage with text parts.
-    Does NOT depend on a2a-sdk — only httpx (already an indirect dependency).
-    """
-
-    def __init__(self, *, url: str, turn_timeout_s: float = 60.0):
-        self.url = url
-        self.turn_timeout_s = turn_timeout_s
-        self._task_id: str | None = None
-        self._context_id: str | None = None
-        self._turn_count = 0
-
-    async def send_turn(self, text: str) -> str:
-        import httpx
-        from uuid import uuid4
-
-        self._turn_count += 1
-        message: dict[str, Any] = {
-            "messageId": str(uuid4()),
-            "role": "user",
-            "parts": [{"type": "text", "text": text}],
-        }
-        if self._task_id:
-            message["taskId"] = self._task_id
-        if self._context_id:
-            message["contextId"] = self._context_id
-
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "a2a_sendMessage",
-            "id": str(uuid4()),
-            "params": {"message": message},
-        }
-        async with httpx.AsyncClient(timeout=self.turn_timeout_s) as client:
-            resp = await client.post(self.url, json=payload)
-            resp.raise_for_status()
-        result = resp.json().get("result", {})
-        task = result if "id" in result else result.get("task", result)
-        self._task_id = task.get("id", self._task_id)
-        self._context_id = task.get("contextId", self._context_id)
-        # Extract text from the last agent message
-        history = task.get("history", [])
-        for msg in reversed(history):
-            if msg.get("role") == "agent":
-                for part in msg.get("parts", []):
-                    if part.get("type") == "text":
-                        return part["text"]
-        artifacts = task.get("artifacts", [])
-        for artifact in artifacts:
-            for part in artifact.get("parts", []):
-                if part.get("type") == "text":
-                    return part["text"]
-        status_msg = task.get("status", {}).get("message", {})
-        if status_msg:
-            for part in status_msg.get("parts", []):
-                if part.get("type") == "text":
-                    return part["text"]
-        raise BridgeError(f"no text response in A2A task: {task.get('status', {}).get('state', 'unknown')}")
-
-    async def stop(self) -> tuple[None, str]:
-        return None, ""
-
-    @property
-    def turn_count(self) -> int:
-        return self._turn_count
-```
+> A2ABridge 需要先在 `AgentSpec` 中增加 URL 字段、在 kernel 中传递 `agent_url` 参数、并在 `SameStartSnapshot` 中记录远程 agent endpoint 作为可比性维度。本阶段只实现 SubprocessBridge；A2ABridge 的参考代码保留在本文档的 DR-2 设计理由中，不纳入实现范围。
 
 - [ ] **Step 3: Write tests for SubprocessBridge**
 
@@ -468,7 +420,7 @@ from pathlib import Path
 
 import pytest
 
-from micro_eval.evaluation.agent_bridge import BridgeError, SubprocessBridge
+from micro_eval.engine.agent_bridge import BridgeError, SubprocessBridge
 from micro_eval.models.configuration import AgentSpec
 
 
@@ -639,7 +591,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from micro_eval.engine.adapter import Redactor
-from micro_eval.evaluation.agent_bridge import A2ABridge, BridgeError, SubprocessBridge
+from micro_eval.engine.agent_bridge import BridgeError, SubprocessBridge
 from micro_eval.models.artifact import EvidenceItem
 from micro_eval.models.configuration import AgentSpec, JudgeConfig
 from micro_eval.models.evaluation import EvaluationResult
@@ -678,13 +630,13 @@ async def evaluate_cell_conversational(
     env: dict[str, str],
     redactor: Redactor,
     evidence_prefix: str,
-    agent_url: str | None = None,
 ) -> tuple[EvaluationResult, EvidenceItem, AdapterResult, list[dict[str, str]]] | None:
     """Run a full conversational evaluation: simulate conversation, then score."""
     task = cell.task
     if not task.scenario:
         return None
 
+    deepeval_top = importlib.import_module("deepeval")
     deepeval_test_case = importlib.import_module("deepeval.test_case")
     deepeval_dataset = importlib.import_module("deepeval.dataset")
     deepeval_simulator = importlib.import_module("deepeval.simulator")
@@ -692,14 +644,12 @@ async def evaluate_cell_conversational(
     Turn = getattr(deepeval_test_case, "Turn")
     ConversationalGolden = getattr(deepeval_dataset, "ConversationalGolden")
     ConversationSimulator = getattr(deepeval_simulator, "ConversationSimulator")
+    deepeval_evaluate = getattr(deepeval_top, "evaluate")
 
-    if agent_url:
-        bridge = A2ABridge(url=agent_url, turn_timeout_s=config.turn_timeout_s)
-    else:
-        bridge = SubprocessBridge(
-            agent=agent, cwd=cwd, env=env, turn_timeout_s=config.turn_timeout_s,
-        )
-        await bridge.start()
+    bridge = SubprocessBridge(
+        agent=agent, cwd=cwd, env=env, turn_timeout_s=config.turn_timeout_s,
+    )
+    await bridge.start()
 
     conversation_log: list[dict[str, str]] = []
 
@@ -759,7 +709,7 @@ async def evaluate_cell_conversational(
         )
 
     try:
-        eval_result = deepeval_evaluate.evaluate(
+        eval_result = deepeval_evaluate(
             test_cases=[test_case], metrics=metrics
         )
     except Exception as exc:
@@ -866,7 +816,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from micro_eval.engine.adapter import Redactor
-from micro_eval.evaluation.agent_bridge import BridgeError
+from micro_eval.engine.agent_bridge import BridgeError
 from micro_eval.evaluation.conversational_judge import (
     ConversationalOutcome,
     _rubric_text,
@@ -1122,8 +1072,8 @@ async def test_evaluate_cell_redactor_applied(tmp_path: Path) -> None:
             evidence_prefix="test",
         )
 
-    # The redactor should be used — verify it was set up
-    assert redactor._patterns  # non-empty redaction patterns
+    # The redactor should have redaction values set up
+    assert redactor.values  # non-empty redaction values dict
 ```
 
 - [ ] **Step 3: Run tests**
@@ -1155,12 +1105,13 @@ def resolve_judge_client(config: JudgeConfig) -> JudgeClient | None:
     """Resolve optional judge client, returning None for disabled or unavailable judges."""
     if not config.enabled:
         return None
-    # Conversational judge is handled separately in kernel — return None here
-    if config.provider == "deepeval_conversational":
-        return None
+    # Check required secrets for all providers (including conversational)
     for name in config.required_secrets:
         if name not in os.environ:
             return None
+    # Conversational judge is handled separately in kernel — return None here
+    if config.provider == "deepeval_conversational":
+        return None
     if config.provider == "deepeval":
         try:
             return DeepEvalJudgeClient()
@@ -1219,10 +1170,11 @@ Add a new method to `ExecutionKernel`:
         """Execute a cell using conversational evaluation (DeepEval ConversationSimulator)."""
         import json as json_mod
         from micro_eval.evaluation.conversational_judge import evaluate_cell_conversational
-        from micro_eval.engine.adapter import Redactor
+        from micro_eval.engine.adapter import AgentAdapter
 
+        adapter = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)
         agent = cell.configuration.agent
-        env_base, redactor = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)._build_env(
+        env_base, redactor = adapter.build_env(
             agent, cell_dir, cell_dir / "output.txt", cell.cell_id,
         )
 
@@ -1241,6 +1193,17 @@ Add a new method to `ExecutionKernel`:
 
         evaluation, evidence, adapter_result, conversation_log = result
 
+        # Redact stderr before persisting (security requirement)
+        adapter_result = adapter_result._replace(
+            stderr=redactor.redact(adapter_result.stderr),
+        ) if hasattr(adapter_result, '_replace') else AdapterResult(
+            **{**adapter_result.__dict__, "stderr": redactor.redact(adapter_result.stderr)},
+        )
+
+        # Run deterministic validation on final output (Invariant #6: deterministic before LLM)
+        from micro_eval.evaluation.validator import validate_cell
+        validation = validate_cell(cell=cell, adapter_result=adapter_result, cwd=prepared.path)
+
         # Persist conversation log as artifact
         conv_path = cell_dir / "conversation.json"
         conv_path.write_text(json_mod.dumps(conversation_log, indent=2, ensure_ascii=False))
@@ -1257,9 +1220,16 @@ Add a new method to `ExecutionKernel`:
             artifacts.append(artifact_store.write_text(cell.cell_id, "stderr", "stderr.txt", adapter_result.stderr))
 
         evaluations = [evaluation]
+        if validation is not None:
+            evaluations.append(validation)
         (cell_dir / "evaluation.json").write_text(
             json_mod.dumps([item.model_dump(mode="json") for item in evaluations], indent=2)
         )
+
+        # Invariant #6: if deterministic validation critically failed,
+        # override conversational judge pass_fail to "fail"
+        if validation and validation.pass_fail == "fail":
+            evaluation.pass_fail = "fail"
 
         trace = collect_trace_with_fallback(trace_providers, cell=cell, result=adapter_result, redactor=redactor)
         trace_refs = []
