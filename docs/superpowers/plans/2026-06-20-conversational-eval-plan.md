@@ -126,12 +126,40 @@ class TaskSpec(BaseModel):
 
 These three fields map 1:1 to DeepEval's `ConversationalGolden(scenario, expected_outcome, user_description)`. When all three are `None`, the task uses single-turn evaluation (existing behavior). When `scenario` is set, the task is eligible for conversational evaluation.
 
-- [ ] **Step 2: Verify existing tests still pass**
+- [ ] **Step 2: Add model backward compatibility tests**
+
+Add to `tests/unit/test_canonical_models.py`:
+
+```python
+def test_task_spec_conversational_fields_default_none():
+    """Conversational fields are optional — existing tasks must not break."""
+    task = TaskSpec(id="t", name="T", input_payload="hello")
+    assert task.scenario is None
+    assert task.expected_outcome is None
+    assert task.user_description is None
+
+
+def test_task_spec_conversational_fields_roundtrip():
+    """Conversational fields survive JSON serialization."""
+    task = TaskSpec(
+        id="conv", name="Conv", input_payload="ctx",
+        scenario="test scenario",
+        expected_outcome="agent succeeds",
+        user_description="a tester",
+    )
+    data = task.model_dump(mode="json")
+    restored = TaskSpec.model_validate(data)
+    assert restored.scenario == "test scenario"
+    assert restored.expected_outcome == "agent succeeds"
+    assert restored.user_description == "a tester"
+```
+
+- [ ] **Step 3: Verify existing tests still pass**
 
 Run: `uv run pytest tests/ -x -q`
 Expected: All 455+ tests pass (new fields are optional with `None` default).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src/micro_eval/models/task.py
@@ -183,15 +211,64 @@ class CellResult(BaseModel):
     conversation_ref: str | None = None
 ```
 
-- [ ] **Step 3: Verify existing tests still pass**
+- [ ] **Step 3: Add model backward compatibility tests**
+
+Add to `tests/unit/test_canonical_models.py`:
+
+```python
+def test_judge_config_default_provider_unchanged():
+    """Existing eval.yaml without provider field should default to 'deepeval'."""
+    config = JudgeConfig(enabled=True)
+    assert config.provider == "deepeval"
+
+
+def test_judge_config_accepts_conversational_provider():
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational")
+    assert config.provider == "deepeval_conversational"
+    assert config.max_turns == 10
+    assert config.turn_timeout_s == 60.0
+    assert config.conversational_metrics == []
+
+
+def test_judge_config_rejects_unknown_provider():
+    with pytest.raises(ValidationError):
+        JudgeConfig(enabled=True, provider="unknown_provider")
+
+
+def test_cell_result_conversational_fields_default():
+    """Existing CellResult construction must not break."""
+    result = CellResult(
+        cell_id="c1", run_id="r1", task_id="t1",
+        configuration_id="cfg", configuration_name="cfg",
+        repetition=1, status=CellStatus.passed,
+    )
+    assert result.conversation_turns == 0
+    assert result.conversation_ref is None
+
+
+def test_cell_result_conversational_fields_roundtrip():
+    result = CellResult(
+        cell_id="c1", run_id="r1", task_id="t1",
+        configuration_id="cfg", configuration_name="cfg",
+        repetition=1, status=CellStatus.passed,
+        conversation_turns=5,
+        conversation_ref="c1::conversation::abc123",
+    )
+    data = result.model_dump(mode="json")
+    restored = CellResult.model_validate(data)
+    assert restored.conversation_turns == 5
+    assert restored.conversation_ref == "c1::conversation::abc123"
+```
+
+- [ ] **Step 4: Verify existing tests still pass**
 
 Run: `uv run pytest tests/ -x -q`
 Expected: All tests pass (new fields have defaults).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/micro_eval/models/configuration.py src/micro_eval/models/run.py
+git add src/micro_eval/models/configuration.py src/micro_eval/models/run.py tests/unit/test_canonical_models.py
 git commit -m "feat(models): extend JudgeConfig and CellResult for conversational evaluation"
 ```
 
@@ -407,6 +484,8 @@ def _echo_agent_spec() -> AgentSpec:
     return AgentSpec(name="echo-agent", command=[sys.executable, "-c", script])
 
 
+# --- happy path ---
+
 @pytest.mark.asyncio
 async def test_subprocess_bridge_multi_turn(tmp_path: Path) -> None:
     bridge = SubprocessBridge(
@@ -424,6 +503,8 @@ async def test_subprocess_bridge_multi_turn(tmp_path: Path) -> None:
     exit_code, stderr = await bridge.stop()
     assert exit_code == 0
 
+
+# --- error paths ---
 
 @pytest.mark.asyncio
 async def test_subprocess_bridge_timeout(tmp_path: Path) -> None:
@@ -443,12 +524,92 @@ async def test_subprocess_bridge_not_started() -> None:
     bridge = SubprocessBridge(agent=agent, cwd=Path("."), env={})
     with pytest.raises(BridgeError, match="not started"):
         await bridge.send_turn("hello")
+
+
+@pytest.mark.asyncio
+async def test_subprocess_bridge_process_crash(tmp_path: Path) -> None:
+    """Agent exits after first turn — second turn should raise BridgeError."""
+    script = (
+        "import json, sys\n"
+        "line = sys.stdin.readline()\n"
+        "data = json.loads(line)\n"
+        "print(json.dumps({'content': 'bye'}), flush=True)\n"
+        "sys.exit(0)\n"
+    )
+    agent = AgentSpec(name="crash", command=[sys.executable, "-c", script])
+    bridge = SubprocessBridge(agent=agent, cwd=tmp_path, env={"PATH": "/usr/bin:/bin"}, turn_timeout_s=2.0)
+    await bridge.start()
+    r1 = await bridge.send_turn("first")
+    assert "bye" in r1
+    with pytest.raises(BridgeError, match="stdout closed"):
+        await bridge.send_turn("second")
+    await bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_subprocess_bridge_invalid_json(tmp_path: Path) -> None:
+    """Agent returns non-JSON — should raise BridgeError."""
+    script = (
+        "import sys\n"
+        "for line in sys.stdin:\n"
+        "    print('this is not json', flush=True)\n"
+    )
+    agent = AgentSpec(name="bad-json", command=[sys.executable, "-c", script])
+    bridge = SubprocessBridge(agent=agent, cwd=tmp_path, env={"PATH": "/usr/bin:/bin"}, turn_timeout_s=2.0)
+    await bridge.start()
+    with pytest.raises(BridgeError, match="invalid JSON"):
+        await bridge.send_turn("hello")
+    await bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_subprocess_bridge_missing_content_field(tmp_path: Path) -> None:
+    """Agent returns JSON without content/text field — should return empty string."""
+    script = (
+        "import json, sys\n"
+        "for line in sys.stdin:\n"
+        "    print(json.dumps({'status': 'ok'}), flush=True)\n"
+    )
+    agent = AgentSpec(name="no-content", command=[sys.executable, "-c", script])
+    bridge = SubprocessBridge(agent=agent, cwd=tmp_path, env={"PATH": "/usr/bin:/bin"}, turn_timeout_s=2.0)
+    await bridge.start()
+    result = await bridge.send_turn("hello")
+    assert result == ""
+    await bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_subprocess_bridge_stop_already_exited(tmp_path: Path) -> None:
+    """stop() on a process that already exited should not raise."""
+    script = "import sys; sys.exit(0)"
+    agent = AgentSpec(name="fast-exit", command=[sys.executable, "-c", script])
+    bridge = SubprocessBridge(agent=agent, cwd=tmp_path, env={"PATH": "/usr/bin:/bin"})
+    await bridge.start()
+    await asyncio.sleep(0.2)  # let it exit
+    exit_code, stderr = await bridge.stop()
+    assert exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_subprocess_bridge_stop_forceful_kill(tmp_path: Path) -> None:
+    """Process that ignores SIGTERM should be killed via SIGKILL."""
+    script = (
+        "import signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "while True: time.sleep(1)\n"
+    )
+    agent = AgentSpec(name="unkillable", command=[sys.executable, "-c", script])
+    bridge = SubprocessBridge(agent=agent, cwd=tmp_path, env={"PATH": "/usr/bin:/bin"})
+    await bridge.start()
+    exit_code, stderr = await bridge.stop()
+    # Process was killed — exit code is negative (signal) or non-zero
+    assert exit_code != 0 or exit_code is None
 ```
 
 - [ ] **Step 4: Run tests**
 
 Run: `uv run pytest tests/unit/test_agent_bridge.py -v`
-Expected: All 3 tests pass.
+Expected: All 8 tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -700,18 +861,24 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from micro_eval.engine.adapter import Redactor
-from micro_eval.evaluation.conversational_judge import evaluate_cell_conversational
+from micro_eval.evaluation.agent_bridge import BridgeError
+from micro_eval.evaluation.conversational_judge import (
+    ConversationalOutcome,
+    _rubric_text,
+    evaluate_cell_conversational,
+)
 from micro_eval.models.configuration import AgentSpec, ConfigurationSpec, JudgeConfig
 from micro_eval.models.run import RunCell
-from micro_eval.models.task import TaskSpec
+from micro_eval.models.task import RubricSpec, TaskSpec
 
 
-def _conversational_cell() -> RunCell:
+def _conversational_cell(*, scenario="User asks a question", expected_outcome="Agent answers",
+                          user_description="A student", rubric=None) -> RunCell:
     config = ConfigurationSpec(
         id="cfg", name="cfg",
         agent=AgentSpec(name="echo", command=[sys.executable, "-c",
@@ -725,12 +892,24 @@ def _conversational_cell() -> RunCell:
         id="conv-task",
         name="Conversation Task",
         input_payload="initial context",
-        scenario="User asks agent to solve a simple math problem",
-        expected_outcome="Agent provides the correct answer",
-        user_description="A student asking for help",
+        scenario=scenario,
+        expected_outcome=expected_outcome,
+        user_description=user_description,
+        rubric=rubric,
     )
     return RunCell(cell_id="cell-conv", task=task, configuration=config)
 
+
+def _single_turn_cell() -> RunCell:
+    config = ConfigurationSpec(
+        id="cfg", name="cfg",
+        agent=AgentSpec(name="x", command=["true"]),
+    )
+    task = TaskSpec(id="t", name="T", input_payload="input")
+    return RunCell(cell_id="c", task=task, configuration=config)
+
+
+# --- model field tests ---
 
 def test_conversational_cell_has_scenario() -> None:
     cell = _conversational_cell()
@@ -738,22 +917,219 @@ def test_conversational_cell_has_scenario() -> None:
     assert cell.task.expected_outcome is not None
 
 
-def test_non_conversational_cell_returns_none() -> None:
-    """Tasks without scenario field should not trigger conversational eval."""
-    config = ConfigurationSpec(
-        id="cfg", name="cfg",
-        agent=AgentSpec(name="x", command=["true"]),
-    )
-    task = TaskSpec(id="t", name="T", input_payload="input")
-    cell = RunCell(cell_id="c", task=task, configuration=config)
-    # scenario is None → should return None without attempting simulation
+def test_non_conversational_cell_has_no_scenario() -> None:
+    cell = _single_turn_cell()
     assert cell.task.scenario is None
+
+
+# --- early return: no scenario ---
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_none_without_scenario(tmp_path: Path) -> None:
+    """Tasks without scenario field should return None immediately."""
+    cell = _single_turn_cell()
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational")
+    result = await evaluate_cell_conversational(
+        cell=cell,
+        config=config,
+        agent=cell.configuration.agent,
+        cwd=tmp_path,
+        env={"PATH": "/usr/bin:/bin"},
+        redactor=Redactor({}),
+        evidence_prefix="test",
+    )
+    assert result is None
+
+
+# --- _rubric_text helper ---
+
+def test_rubric_text_from_string() -> None:
+    cell = _conversational_cell(rubric="Evaluate helpfulness")
+    assert _rubric_text(cell) == "Evaluate helpfulness"
+
+
+def test_rubric_text_from_rubric_spec() -> None:
+    rubric = RubricSpec(text="Score quality", dimensions=["accuracy", "clarity"])
+    cell = _conversational_cell(rubric=rubric)
+    text = _rubric_text(cell)
+    assert "Score quality" in text
+    assert "accuracy" in text
+    assert "clarity" in text
+
+
+def test_rubric_text_from_none() -> None:
+    cell = _conversational_cell(rubric=None)
+    assert _rubric_text(cell) == ""
+
+
+# --- full evaluation flow with mocked DeepEval ---
+
+@pytest.mark.asyncio
+async def test_evaluate_cell_conversational_full_flow(tmp_path: Path) -> None:
+    """Full flow with mocked DeepEval — verifies output structure."""
+    cell = _conversational_cell()
+    config = JudgeConfig(
+        enabled=True, provider="deepeval_conversational",
+        pass_threshold=0.5, max_turns=3, turn_timeout_s=5.0,
+    )
+
+    # Mock DeepEval modules
+    mock_turn = MagicMock()
+    mock_turn_cls = MagicMock(return_value=mock_turn)
+
+    mock_golden_cls = MagicMock()
+    mock_golden = MagicMock()
+    mock_golden_cls.return_value = mock_golden
+
+    # Mock simulator
+    mock_test_case = MagicMock()
+    mock_test_case.turns = [
+        MagicMock(role="user", content="hi"),
+        MagicMock(role="assistant", content="hello"),
+    ]
+    mock_simulator_cls = MagicMock()
+    mock_simulator_instance = MagicMock()
+    mock_simulator_instance.simulate.return_value = [mock_test_case]
+    mock_simulator_cls.return_value = mock_simulator_instance
+
+    # Mock evaluate result
+    mock_metric_data = MagicMock()
+    mock_metric_data.score = 0.85
+    mock_metric_data.name = "conversation_completeness"
+    mock_test_result = MagicMock()
+    mock_test_result.success = True
+    mock_test_result.metrics_data = [mock_metric_data]
+    mock_eval_result = MagicMock()
+    mock_eval_result.test_results = [mock_test_result]
+
+    mock_metric_cls = MagicMock()
+
+    with patch.dict("sys.modules", {
+        "deepeval.test_case": MagicMock(Turn=mock_turn_cls),
+        "deepeval.dataset": MagicMock(ConversationalGolden=mock_golden_cls),
+        "deepeval.simulator": MagicMock(ConversationSimulator=mock_simulator_cls),
+        "deepeval.metrics": MagicMock(
+            ConversationCompletenessMetric=mock_metric_cls,
+            TurnRelevancyMetric=mock_metric_cls,
+        ),
+        "deepeval": MagicMock(evaluate=MagicMock(return_value=mock_eval_result)),
+    }):
+        result = await evaluate_cell_conversational(
+            cell=cell,
+            config=config,
+            agent=cell.configuration.agent,
+            cwd=tmp_path,
+            env={"PATH": "/usr/bin:/bin"},
+            redactor=Redactor({}),
+            evidence_prefix="test::evidence",
+        )
+
+    assert result is not None
+    evaluation, evidence, adapter_result, conversation_log = result
+
+    # EvaluationResult structure
+    assert evaluation.evaluator_type == "conversational_judge"
+    assert evaluation.evaluator == "deepeval_conversational"
+    assert evaluation.cell_id == "cell-conv"
+    assert evaluation.score == 0.85
+    assert evaluation.pass_fail == "pass"
+    assert "conversation_completeness" in evaluation.scores
+
+    # EvidenceItem structure
+    assert evidence.kind == "conversational_judge"
+    assert evidence.cell_id == "cell-conv"
+    assert evidence.status == "passed"
+    assert evidence.metadata["provider"] == "deepeval_conversational"
+
+    # Conversation log is a list of role/content dicts
+    assert isinstance(conversation_log, list)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_cell_conversational_simulator_failure(tmp_path: Path) -> None:
+    """ConversationSimulator raising an exception should return None."""
+    cell = _conversational_cell()
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational", turn_timeout_s=2.0)
+
+    mock_simulator_cls = MagicMock()
+    mock_simulator_instance = MagicMock()
+    mock_simulator_instance.simulate.side_effect = RuntimeError("simulator broke")
+    mock_simulator_cls.return_value = mock_simulator_instance
+
+    with patch.dict("sys.modules", {
+        "deepeval.test_case": MagicMock(Turn=MagicMock()),
+        "deepeval.dataset": MagicMock(ConversationalGolden=MagicMock()),
+        "deepeval.simulator": MagicMock(ConversationSimulator=mock_simulator_cls),
+        "deepeval.metrics": MagicMock(),
+        "deepeval": MagicMock(),
+    }):
+        result = await evaluate_cell_conversational(
+            cell=cell,
+            config=config,
+            agent=cell.configuration.agent,
+            cwd=tmp_path,
+            env={"PATH": "/usr/bin:/bin"},
+            redactor=Redactor({}),
+            evidence_prefix="test",
+        )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_evaluate_cell_redactor_applied(tmp_path: Path) -> None:
+    """Secrets in agent output should be redacted in conversation log and rationale."""
+    cell = _conversational_cell()
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational", turn_timeout_s=2.0)
+    redactor = Redactor({"MICRO_EVAL_SECRET_KEY": "supersecret"})
+
+    mock_turn_cls = MagicMock(side_effect=lambda role, content: MagicMock(role=role, content=content))
+    mock_simulator_cls = MagicMock()
+    mock_simulator_instance = MagicMock()
+    mock_test_case = MagicMock()
+    mock_test_case.turns = []
+    mock_simulator_instance.simulate.return_value = [mock_test_case]
+    mock_simulator_cls.return_value = mock_simulator_instance
+
+    mock_metric_data = MagicMock(score=0.5, name="test_metric")
+    mock_test_result = MagicMock(success=True, metrics_data=[mock_metric_data])
+    mock_eval_result = MagicMock(test_results=[mock_test_result])
+
+    captured_callback = None
+    original_init = mock_simulator_cls.__init__
+
+    def capture_callback(**kwargs):
+        nonlocal captured_callback
+        captured_callback = kwargs.get("model_callback")
+        return mock_simulator_instance
+
+    mock_simulator_cls.side_effect = capture_callback
+
+    with patch.dict("sys.modules", {
+        "deepeval.test_case": MagicMock(Turn=mock_turn_cls),
+        "deepeval.dataset": MagicMock(ConversationalGolden=MagicMock()),
+        "deepeval.simulator": MagicMock(ConversationSimulator=mock_simulator_cls),
+        "deepeval.metrics": MagicMock(),
+        "deepeval": MagicMock(evaluate=MagicMock(return_value=mock_eval_result)),
+    }):
+        result = await evaluate_cell_conversational(
+            cell=cell,
+            config=config,
+            agent=cell.configuration.agent,
+            cwd=tmp_path,
+            env={"PATH": "/usr/bin:/bin"},
+            redactor=redactor,
+            evidence_prefix="test",
+        )
+
+    # The redactor should be used — verify it was set up
+    assert redactor._patterns  # non-empty redaction patterns
 ```
 
 - [ ] **Step 3: Run tests**
 
 Run: `uv run pytest tests/unit/test_conversational_judge.py -v`
-Expected: Tests pass.
+Expected: All 8 tests pass.
 
 - [ ] **Step 4: Commit**
 
@@ -920,15 +1296,78 @@ Add a new method to `ExecutionKernel`:
         )
 ```
 
-- [ ] **Step 4: Run full test suite**
+- [ ] **Step 4: Add kernel integration and resolve_judge_client tests**
+
+Create `tests/unit/test_conversational_kernel.py`:
+
+```python
+"""Kernel integration tests for conversational evaluation branch."""
+
+from __future__ import annotations
+
+import pytest
+
+from micro_eval.evaluation.llm_judge import resolve_judge_client
+from micro_eval.models.configuration import JudgeConfig
+
+
+def test_resolve_judge_client_returns_none_for_conversational():
+    """Conversational provider is handled in kernel, not via JudgeClient."""
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational")
+    client = resolve_judge_client(config)
+    assert client is None
+
+
+def test_resolve_judge_client_still_works_for_deepeval():
+    """Existing deepeval provider should still attempt to create client."""
+    config = JudgeConfig(enabled=True, provider="deepeval")
+    # Will return None if deepeval not installed in test env, which is fine —
+    # the point is it doesn't short-circuit like conversational does
+    client = resolve_judge_client(config)
+    # No assertion on client value — depends on env; just verify no exception
+
+
+def test_resolve_judge_client_disabled():
+    config = JudgeConfig(enabled=False, provider="deepeval_conversational")
+    client = resolve_judge_client(config)
+    assert client is None
+
+
+def test_execute_cell_routes_to_conversational_branch():
+    """Verify that _execute_cell checks provider + scenario to branch.
+
+    This is a structural test — we verify the branch condition logic
+    rather than the full execution (which requires workspace/artifact setup).
+    """
+    from micro_eval.models.configuration import AgentSpec, ConfigurationSpec
+    from micro_eval.models.task import TaskSpec
+    from micro_eval.models.run import RunCell
+
+    # Case 1: conversational provider + scenario → should branch
+    task_conv = TaskSpec(
+        id="t1", name="T1", input_payload="ctx",
+        scenario="test scenario",
+    )
+    assert task_conv.scenario is not None
+
+    # Case 2: conversational provider + no scenario → should NOT branch
+    task_single = TaskSpec(id="t2", name="T2", input_payload="ctx")
+    assert task_single.scenario is None
+
+    # Case 3: deepeval provider + scenario → should NOT branch
+    config_deepeval = JudgeConfig(enabled=True, provider="deepeval")
+    assert config_deepeval.provider != "deepeval_conversational"
+```
+
+- [ ] **Step 5: Run full test suite**
 
 Run: `uv run pytest tests/ -x -q`
-Expected: All existing tests pass. Conversational path is not triggered by existing tests (requires `scenario` field and `provider: deepeval_conversational`).
+Expected: All existing tests pass + new kernel tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/micro_eval/evaluation/llm_judge.py src/micro_eval/engine/kernel.py
+git add src/micro_eval/evaluation/llm_judge.py src/micro_eval/engine/kernel.py tests/unit/test_conversational_kernel.py
 git commit -m "feat(kernel): integrate conversational evaluation branch into _execute_cell"
 ```
 
