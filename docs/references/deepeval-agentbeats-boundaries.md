@@ -73,8 +73,9 @@ class TestResult:
 > **注意：实际 import 路径与官方文档不一致。** 官方文档示例写 `from deepeval import ConversationSimulator`，但 deepeval 4.0.5 中该类实际位于 `deepeval.simulator` 子模块。顶层 `deepeval` 命名空间不导出 `ConversationSimulator`。已在 2026-06-20 通过 `uv run --extra judge` 环境实际验证。
 
 ```python
-from deepeval.test_case import ConversationalTestCase, Turn, ConversationalGolden
-from deepeval.simulator import ConversationSimulator  # 注意：不是 from deepeval import
+from deepeval.test_case import ConversationalTestCase, Turn
+from deepeval.dataset import ConversationalGolden   # 注意：不在 test_case 模块
+from deepeval.simulator import ConversationSimulator # 注意：不在 deepeval 顶层
 
 # model_callback 三种签名重载
 async def callback(input: str) -> Turn: ...
@@ -84,14 +85,17 @@ async def callback(input: str, turns: List[Turn], thread_id: str) -> Turn: ...
 simulator = ConversationSimulator(
     model_callback=callback,        # 必选：包装被评测 agent
     simulator_model="gpt-4o",       # 可选：驱动模拟用户的 LLM
-    async_mode=True,                # 可选：并发
-    max_concurrent=100,             # 可选：并发上限
+    async_mode=True,                # 可选：并发（默认 True）
+    max_concurrent=5,               # 可选：并发上限（默认 5，非官方文档中的 100）
+    language="English",             # 可选：模拟用户语言
 )
 
 goldens = [ConversationalGolden(
-    scenario="...",
-    expected_outcome="...",
-    user_description="...",
+    scenario="...",                  # 必选：会话场景描述
+    expected_outcome="...",          # 可选：期望结果（默认 None）
+    user_description="...",          # 可选：模拟用户描述（默认 None）
+    # 其他可选字段（4.0.5 验证）：context, name, additional_metadata,
+    # comments, custom_column_key_values, turns, multimodal, images_mapping
 )]
 
 # 返回 List[ConversationalTestCase]

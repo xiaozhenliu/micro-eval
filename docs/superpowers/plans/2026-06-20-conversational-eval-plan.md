@@ -525,15 +525,12 @@ async def evaluate_cell_conversational(
         return None
 
     deepeval_test_case = importlib.import_module("deepeval.test_case")
-    deepeval_evaluate = importlib.import_module("deepeval")
+    deepeval_dataset = importlib.import_module("deepeval.dataset")
+    deepeval_simulator = importlib.import_module("deepeval.simulator")
     deepeval_metrics = importlib.import_module("deepeval.metrics")
     Turn = getattr(deepeval_test_case, "Turn")
-    ConversationalGolden = getattr(deepeval_test_case, "ConversationalGolden")
-    ConversationSimulator = getattr(deepeval_evaluate, "ConversationSimulator", None)
-    if ConversationSimulator is None:
-        ConversationSimulator = getattr(
-            importlib.import_module("deepeval.simulator"), "ConversationSimulator"
-        )
+    ConversationalGolden = getattr(deepeval_dataset, "ConversationalGolden")
+    ConversationSimulator = getattr(deepeval_simulator, "ConversationSimulator")
 
     if agent_url:
         bridge = A2ABridge(url=agent_url, turn_timeout_s=config.turn_timeout_s)
@@ -562,7 +559,8 @@ async def evaluate_cell_conversational(
     )
 
     try:
-        simulator_kwargs = {"model_callback": model_callback, "async_mode": False}
+        # async_mode=True (default) — model_callback is async, simulator runs concurrently
+        simulator_kwargs = {"model_callback": model_callback}
         if config.simulator_model:
             simulator_kwargs["simulator_model"] = config.simulator_model
         simulator = ConversationSimulator(**simulator_kwargs)
