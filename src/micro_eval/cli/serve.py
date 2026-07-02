@@ -54,7 +54,14 @@ def serve_command(
     next_dir = ui_dir / ".next"
     if not next_dir.exists():
         typer.echo("Building Next.js...")
-        build_result = subprocess.run(["npm", "run", "build"], cwd=ui_dir)
+        # Inject the same server env vars used by `next start` so build-time
+        # rendering decisions (e.g. isServerMode() checks) match runtime.
+        build_env = {
+            **os.environ,
+            "MICRO_EVAL_SERVER_MODE": "true",
+            "MICRO_EVAL_DATA_ROOT": str(data_root),
+        }
+        build_result = subprocess.run(["npm", "run", "build"], cwd=ui_dir, env=build_env)
         if build_result.returncode != 0:
             typer.echo("Error: Next.js build failed", err=True)
             worker_proc.terminate()

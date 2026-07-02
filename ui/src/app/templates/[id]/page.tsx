@@ -6,6 +6,8 @@ import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
 import { safeTemplateId } from "@/lib/server-validation";
 import type { TemplateMeta } from "@/components/TemplateCard";
 
+export const dynamic = "force-dynamic";
+
 interface FullTemplateMeta extends TemplateMeta {
   schema_version?: string;
   created_at?: string;

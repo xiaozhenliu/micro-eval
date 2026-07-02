@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getMemberName, setMemberName as persistMemberName } from "@/lib/member-identity";
 
+export const dynamic = "force-dynamic";
+
 interface Template {
   id: string;
   name: string;
