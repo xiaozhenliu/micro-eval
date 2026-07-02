@@ -1,4 +1,10 @@
+---
+status: implemented
+---
+
 # Conversational Evaluation (DeepEval ConversationSimulator) Implementation Plan
+
+> **状态注记（2026-07-02）：** 已随 v0.4.1 交付（2026-06-20）。checklist 未逐项回填，以代码与 CHANGELOG 为准。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

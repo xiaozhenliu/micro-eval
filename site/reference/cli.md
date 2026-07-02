@@ -1,6 +1,6 @@
 # CLI Commands
 
-Complete reference for all `micro-eval` commands. Current version: **0.4.0**.
+Complete reference for all `micro-eval` commands. Current version: **0.4.1**.
 
 ## Configuration Lookup Order
 
@@ -354,6 +354,59 @@ Caveats:
 | `0` | Report rendered successfully. |
 | `1` | Error — run ID not found, or output path is not writable. |
 | `2` | Run data is corrupt or missing required fields. |
+
+---
+
+## micro-eval apply-evaluation
+
+Applies a human evaluation to a single run cell and recomputes the run's decision. Reads a JSON payload from stdin and writes the resulting evaluation, evidence, and updated decision as JSON to stdout. This is the same code path the Web UI's review surface uses when a reviewer submits pass/fail judgments — it is also available directly for scripting or CI use.
+
+**Synopsis**
+
+```
+micro-eval apply-evaluation --run-id RUN_ID --cell-id CELL_ID
+```
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--run-id` | string | _(required)_ | Run identifier from `micro-eval list`. |
+| `--cell-id` | string | _(required)_ | Cell identifier within the run's ResultMatrix. |
+
+**Stdin payload**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pass_fail` | boolean | Overall pass/fail judgment for the cell. |
+| `score` | number | Optional single scalar score. |
+| `scores` | object | Optional per-dimension scores. |
+| `comment` | string | Reviewer comment. |
+| `evaluator` | string | Reviewer identity. Defaults to `"human"`. |
+
+**Examples**
+
+::: code-group
+
+```bash [Apply a pass with a comment]
+echo '{"pass_fail": true, "comment": "Matches rubric", "evaluator": "alice"}' \
+  | micro-eval apply-evaluation --run-id run-20260615-143022-a1b2c3d4 --cell-id cell-003
+```
+
+:::
+
+**Sample output**
+
+```json
+{"evaluation": {...}, "evidence": {...}, "decision": {...}}
+```
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Evaluation applied and decision recomputed successfully. |
+| `1` | Invalid JSON on stdin, or run/cell not found. |
 
 ---
 
@@ -802,7 +855,7 @@ These options are accepted by every command:
 
 ```bash
 micro-eval --version
-# micro-eval 0.4.0
+# micro-eval 0.4.1
 ```
 
 ---

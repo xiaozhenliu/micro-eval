@@ -1,4 +1,13 @@
+---
+status: partially-completed
+---
+
 # 用户文档设计体系重组计划
+
+> **状态注记（2026-07-02）：** 核实结论——Task 0–7 均有对应的 `site/` git 提交（`git log --oneline -- site/` 可见 `43b8815` 术语清理 → `1a05a63`/`d655e1f` Design System 页 → `a75d56f` sidebar 重构 → `a6124ea` core-concepts 拆分 → `3ae49ab` 锚定 → `67baf66` 实现细节清理 → `e3a0b07` 入口页链接），已完成。但 **Task 8（最终验证）未完成**：git log 中无 "final verification"/"final commit" 记录；实测发现 Task 8 Step 4（术语一致性检查）本应统一 "RunCell" → "Cell"，但 `site/guide/execution.md` 与 `site/zh/guide/execution.md` 第 26 行仍残留 `RunCells = Tasks × Configurations × range(repetitions)`。剩余项：
+> 1. `site/guide/execution.md:26` 与 `site/zh/guide/execution.md:26` 的 "RunCells" 需改为 "Cells"。
+> 2. Task 8 Step 5（Final commit）未执行——需在完成上述清理后补一次最终验证与 commit。
+> 其余 Step 4 检查项（Evidence/Evidence Chain 用词、DecisionStatus 6 值一致性、Run/ResultMatrix 定义一致性）经抽查未见问题。
 
 > **v3:** 根据 Codex re-review（2 轮）修补残余缺口：Task 0 文件列表补入 tasks.md；全文 "六个核心对象" 统一为含 Run 的 7 对象表述；anchor `#six-core-objects` → `#core-objects`；core-concepts.md 处理方式统一为"改写为跳转页"（不删除）；RunCell 术语在用户文档中统一为 Cell。
 >

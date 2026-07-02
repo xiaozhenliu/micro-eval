@@ -1,4 +1,10 @@
+---
+status: completed
+---
+
 # Issue #1: Decision 算法单一来源 — 实施方案 (v2)
+
+> **状态注记（2026-07-02）：** UI 侧 `recomputeDecision` 已删除（v0.3.4）。验证：`grep -rn recomputeDecision ui/src` 零结果。
 
 > v2: 根据 Codex review 修订。回应 6 条审查意见（2 critical, 3 important, 1 minor）。
 

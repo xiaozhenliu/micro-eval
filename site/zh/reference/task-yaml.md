@@ -64,6 +64,13 @@ revision_id: v1
 | `business_impact_tier` | `int` | 否 | `3` | 优先级层级（`1` 为最高），用于在 ResultMatrix 中对聚合分数加权。 |
 | `tags` | `string[]` | 否 | `[]` | 用于过滤 run 的任意标签（`micro-eval run --tag code-review`）。 |
 | `revision_id` | `string` | 否 | `""` | 跟踪该 task 定义的版本，存储在 run 结果中用于可比性检查。 |
+| `scenario` | `string \| null` | 否 | `null` | 仅用于会话评测：描述模拟用户在多轮对话中扮演的场景。 |
+| `expected_outcome` | `string \| null` | 否 | `null` | 仅用于会话评测：该对话到结束时应达成的结果。 |
+| `user_description` | `string \| null` | 否 | `null` | 仅用于会话评测：描述模拟用户的人设与目标。 |
+
+::: tip 会话评测字段
+`scenario`、`expected_outcome`、`user_description` 均为可选字段，仅用于多轮会话评测。三者全部为空时，任务走标准单轮路径。设置 `scenario`（通常连同另外两个字段一起）即可让该 task 进入多轮模拟——详见[会话评测](/zh/guide/conversational-evaluation)。
+:::
 
 ::: warning id 格式要求
 `id` 字段必须是路径安全的，避免使用空格、斜杠和特殊字符。推荐使用 `kebab-case` 或 `snake_case`。引擎会使用该值构造输出路径，例如 `.micro-eval/runs/<run-id>/tasks/<task-id>/`。

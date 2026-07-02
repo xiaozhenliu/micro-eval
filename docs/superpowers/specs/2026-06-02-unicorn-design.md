@@ -1,7 +1,7 @@
 ---
 title: "Unicorn：micro-eval 模块化架构设计"
 date: 2026-06-01
-updated: 2026-06-20
+updated: 2026-07-02
 status: draft
 type: design
 codename: Unicorn
@@ -177,9 +177,8 @@ result_id = {run_id}::{task_id}::{configuration_id}::rep-{repetition}
 
 Schema 版本：
 - 所有跨模块对象携带 `schema_version`。
-- 当前 `RunResult` 只有 `task_id + agent_name`，`schema_version="1.0"` 应保留为 **legacy run schema**，不能伪装成新 schema。
-- `agent_name` 迁移为 `configuration_id` 的 legacy alias（见 §10）。
-- Pydantic 与 zod schema 必须以这些 ID 作为共享契约（当前未完全对齐，见 §10）。
+- 历史注记：早期 `RunResult` 只有 `task_id + agent_name`，对应 `schema_version="1.0"` 的 **legacy run schema**，不能伪装成新 schema；`agent_name` 已迁移为 `configuration_id` 的 legacy alias（已于 v0.2.x 完成，见 §10.2）。
+- Pydantic 与 zod schema 必须以这些 ID 作为共享契约；现已通过 golden fixture + CI golden-sync 双端对齐守护（已于 v0.2.x 完成，见 §10.1、§10.2）。
 
 ## 5. Module Contracts
 
@@ -222,7 +221,7 @@ Schema 版本：
 - **MVP level (L1)**：asyncio 并发 cell、per-cell timeout、可选 1 次 retry、本地 `.micro-eval/` 结果。
 - **Future levels**：job queue、remote worker、distributed、checkpoint/resume、adaptive scheduling。
 - **Must not bypass**：RunPlan / ExecutionResult shape。
-- **Legacy risk**：当前用 `asyncio.create_subprocess_shell` + 字符串命令（见 §10），目标是安全 argv 化。
+- **历史注记**：早期实现曾用 `asyncio.create_subprocess_shell` + 字符串命令，存在注入风险；已于 v0.2.x 完成安全 argv 化（`asyncio.create_subprocess_exec`，见 §10.2）。
 - **详见**：Part II §5.1、§5.4。
 
 ### 5.4 Agent Adapter Layer
@@ -248,7 +247,7 @@ Schema 版本：
 - **MVP level (L1)**：git worktree / cwd；记录 repo commit、dirty state、config hash、Python version、setup digest；timestamp 作为观察元数据保留但不进入 comparability digest；缺关键快照时 Decision 只能给 weak/inconclusive。
 - **Future levels**：trust levels、Level 0–4 隔离、Docker、remote/E2B sandbox、deterministic replay；network_policy 字段（记录执行环境的网络策略进 SameStartSnapshot，作为可比性维度——agent A 能访问 provider X 而 agent B 不能时属于起点不一致）。
 - **Must not bypass**：`SameStartSnapshot`——没有快照的结果不能严肃比较。
-- **Legacy gap**：当前 `WorkspaceManager`（git worktree 原型）**未接入主 run 流程**；`EnvironmentSnapshot` 仅有 git/config/python/timestamp（见 §10）。
+- **历史注记**：早期 `WorkspaceManager`（git worktree 原型）曾未接入主 run 流程，`EnvironmentSnapshot` 仅有 git/config/python/timestamp；已于 v0.3.0 完成 `WorkspaceProvider` Protocol + `ProviderRegistry` 重构并接入主流程，`SameStartSnapshot` 现含多源 fixture digest + toolchain fingerprint（见 §10.2）。
 - **详见**：Part II §3.4（沙箱框架）、§10（沙盒扩展）、§11（Secrets）。
 
 ### 5.6 Artifact / Trace Layer
@@ -259,10 +258,11 @@ Schema 版本：
 - **Inputs**：AdapterResult、ValidationResult、annotation。
 - **Outputs**：`EvidenceBundle`、`ArtifactRef`、`TraceRef`。
 - **MVP level (L1)**：`.micro-eval/` 本地 artifact index；保存 stdout/stderr/diff/输出文件；每个 artifact 有稳定 ID；`output_summary` 是 artifact **excerpt**，不是完整 artifact。
-- **Future levels**：Langfuse/LangSmith/OpenTelemetry、normalized spans、cost breakdown、artifact viewer、replay；file-based trace import（agent 将 trajectory 文件写到约定位置，micro-eval 作为 trace provider 收集——支持 ATIF、OpenTelemetry JSON 等格式，不绑定特定版本）。
+- **Implemented levels**：Langfuse trace 接入已实现（v0.2.0），提供 cost/latency 观测；未配置时降级运行。
+- **Future levels**：LangSmith/OpenTelemetry、normalized spans、artifact viewer、replay；file-based trace import（agent 将 trajectory 文件写到约定位置，micro-eval 作为 trace provider 收集——支持 ATIF、OpenTelemetry JSON 等格式，不绑定特定版本）。
 - **演进方向（Event-Sourcing）**：Phase 2 起将 EvidenceBundle 从静态快照演进为 **append-only event log**。每个 agent 输出、评分、标注都是一个 event，支持增量写入与断点恢复。Session log 与上下文管理（harness）解耦——持久事件日志是可恢复的事实源，上下文工程是可替换的策略层。这使 Langfuse 接入成为自然的 event 转发而非事后拼装，也支持"回溯到某个时刻"的复盘需求。参考：[[REF:MA1]] Anthropic Managed Agents 的 Session 设计。
 - **Must not bypass**：`ArtifactRef` / `EvidenceItem`——raw stdout 不等于 evidence。
-- **Legacy gap**：当前 annotation 用 UI localStorage，应迁移为持久化 evidence（见 §10）。
+- **历史注记**：早期 annotation 曾用 UI localStorage，不回写后端；已于 v0.2.x 迁移为持久化 evidence（见 §10.2）。
 - **详见**：Part II §5.5（TraceProvider）、§7（数据存储）。
 
 ### 5.7 Evaluation Layer
@@ -275,7 +275,8 @@ Schema 版本：
 - **MVP level (L0/L1)**：人工评分 + 基础 validation；exact match 是 deterministic validation 的 legacy form；Basic Honest Stats（n、pass rate、mean/median cost·latency、consistency、低样本警告）。
 - **Implemented levels (L2)**：DeepEval GEval/LLM judge（单轮，v0.2.0 起）；Decision 算法单一来源（v0.3.4）。
 - **Conversational evaluation (L2 extension)**：DeepEval `ConversationSimulator` 驱动多轮会话，`model_callback` 桥接 `SubprocessBridge`/`A2ABridge`；多轮 metric（首期注册 5 种核心 metric：ConversationCompleteness、TurnRelevancy、KnowledgeRetention、RoleAdherence、GoalAccuracy，加上 ConversationalGEval 自定义评分；DeepEval 另有 RAG Turn*、ToolUse、DAG 等 metric 可按需扩展注册）；评测结果产出 `ConversationalOutcome`（含 per-metric scores、turn_count、conversation log），映射为标准 `EvaluationResult` + `conversational_judge` 类型 `EvidenceItem`。这是现有单轮 GEval judge 的**并行路径**（provider: `deepeval_conversational`），不替代默认行为。
-- **Future levels**：task-adaptive rubric、多 judge 一致性、pairwise、pass@k/pass^k、校准、reward-hacking 防护（锚定任务 / absence-based rubric / 定期换 rubric，见 §15 deferred 登记）。
+- **Implemented levels（追加）**：pass@k/pass^k 已在 `decision/aggregation.py` 实现（对比页可用指标，见下方"pass@k/pass^k 升级触发"）。
+- **Future levels**：task-adaptive rubric、多 judge 一致性、pairwise、校准、reward-hacking 防护（锚定任务 / absence-based rubric / 定期换 rubric，见 §15 deferred 登记）。
 - **Must not bypass**：`EvaluationResult` + evidence refs；LLM judge **不能**覆盖 deterministic 关键失败（除非人工显式 override 并记录 override evidence）；会话评测同样遵守此规则。
 - **五模式评分 + 会话维度**：Mode 1（deterministic）是核心；Mode 2–5 是成熟度增强，不阻塞 MVP（Part II §4.4）。会话评测是与五模式正交的维度——它改变的是"评测交互模式"（单轮 vs 多轮），而非"评分确定性光谱"。会话评测内部仍可使用 Mode 1–5 中的任一模式对最终会话结果评分。
 - **pass@k/pass^k 升级触发**：MVP 默认 repetitions=1 时 pass@k ≡ pass rate；一旦 repetitions>1 成为常态，应将 pass@k/pass^k 从 Future 提升为对比页**默认指标**（计算成本极低，矩阵已存全部 rep 结果）。依据见 [[2026-06-01-unicorn-vs-deep-agent-analysis]] §借鉴建议的采纳核查。
@@ -445,43 +446,62 @@ DecisionStatus taxonomy（MVP 即引入）：`improved | regressed | mixed | inc
 
 ## 10. Current State / Legacy Migration
 
-本节如实记录当前 v0.1.0 实现，避免把目标架构误读为"已实现"。当前对应 Profile `legacy.v0.1`。
+本节如实记录当前实现状态，避免把目标架构误读为"已实现"，也避免把已完成的迁移误读为"仍是 legacy"。
 
-**当前 v0.1.0 实况**（基于代码探查）：
+### 10.1 Current State（v0.4.1，2026-07-02 更新）
+
+当前实况（基于代码探查，对应 Profile 已从 `legacy.v0.1` 升级到 `local_matrix.v1` + 部分 `sandboxed_team.v1` / `trace_enhanced.v1` 能力）：
+
+- Python CLI（Typer，13 个子命令：`init` `validate` `run` `list` `report` `apply-evaluation` `ui` `build-plan` `serve` `worker` `workspace` `template` `queue`）+ 本地 JSON 持久化（SQLite 为索引层，JSON 仍是 source of truth）+ Next.js 本地 Web UI。
+- Configuration 矩阵已展开为 canonical `configurations[]`；baseline/candidate 二元对比是矩阵的 2-column 特例，不再是唯一形态。
+- Agent 调用已 argv 化：`asyncio.create_subprocess_exec` + argv 列表，不做 shell 字符串插值（无 legacy 注入风险）。
+- `WorkspaceProvider` Protocol + `ProviderRegistry`：git worktree 作为默认 provider **已接入主 run 流程**；Level 1 OS 策略 provider（macOS Seatbelt / Linux Bubblewrap，含 network_policy 强制）与远程 provider（E2B/Modal）可选接入，不可用时降级 Level 0 + caveat。
+- 评分：validation（deterministic）→ DeepEval GEval/LLM judge（单轮，v0.2.0 起）→ 人工 annotation 分层评分；Decision 算法单一来源经 `apply-evaluation` 子命令与后端 `build_decision` 收口（v0.3.4）。
+- Conversational Evaluation（v0.4.1）：judge provider `deepeval_conversational`，`SubprocessBridge`（JSONL stdin/stdout 逐轮通信，进程会话期保活）驱动 agent，`conversational_judge.py` 两阶段 `simulate_conversation()` → `score_conversation()`；是单轮 GEval judge 的并行路径，不替代默认行为。详见 §5.4、§5.7 的 Conversational extension 小节。
+- UI 是完整的 Run 对比 / trace / 报告 / 配置界面（`MatrixHeatmap.tsx`、`AnnotationPanel.tsx` 等组件）；annotation 已持久化为后端 evaluation 记录，不再依赖 localStorage。
+- Pydantic 与 zod schema 通过 golden fixture + CI golden-sync 机制双端对齐守护（`tests/contract/`）。
+- 测试规模：517 pytest + 42 vitest（2026-07-02，v0.4.1）。
+- Team Server（v0.4.0）：可信内网多成员共享 Server，workspace 隔离、串行队列、只读模板库、归属记录（`serve` / `worker` / `workspace` / `template` / `queue` 子命令）。
+- 趋势分析：SQLite 索引 + drift breakpoint 标注不可比断点（v0.3.0 起）。
+
+### 10.2 Historical: v0.1.0 legacy state（已全部迁移完成）
+
+> 以下为 v0.1.0（2026-06-02 之前）的历史实况快照，保留供追溯；**所有条目均已解决**，见每条尾注版本号。本小节不再代表当前状态，当前状态见 §10.1。
+
 - Python CLI（Typer）+ 本地 JSON 持久化 + Next.js 本地 viewer。
-- baseline/candidate 二元对比，无多 configuration 矩阵。
-- Task 仍用 `input_payload` / `expected_output` / `rubric`。
-- `RunResult` 用 `task_id + agent_name`；`EnvironmentSnapshot` 仅 git_commit/config_hash/python_version/timestamp。
-- Runner 用 `asyncio.create_subprocess_shell` + 字符串命令（**legacy 注入风险**）。
-- `WorkspaceManager`（git worktree 原型）**未接入主 run 流程**。
-- Scorer 仅 exact/contains 匹配 + pass/fail 阈值。
-- `output_mode=directory` 在 runner 中实际退回 stdout 处理（占位）。
-- UI 是 run viewer；annotation 用 **localStorage**，不回写后端。
-- Pydantic 与 zod schema **不完全对齐**（如 git_commit/config_hash 可空性不一致）。
-- UI vitest **未落地**（无 test script / 依赖 / 测试文件）。
+- baseline/candidate 二元对比，无多 configuration 矩阵。**已于 v0.3.0 解决**（canonical `configurations[]` 矩阵展开）。
+- Task 仍用 `input_payload` / `expected_output` / `rubric`。**已于 v0.2.x 解决**（`prompt` / `expectations[]` / `rubric_ref`；legacy 字段保留为 alias 兼容投影）。
+- `RunResult` 用 `task_id + agent_name`；`EnvironmentSnapshot` 仅 git_commit/config_hash/python_version/timestamp。**已于 v0.3.0 解决**（`configuration_id`、多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot）。
+- Runner 用 `asyncio.create_subprocess_shell` + 字符串命令（**legacy 注入风险**）。**已于 v0.2.x 解决**（argv-only `asyncio.create_subprocess_exec`，无 shell 插值）。
+- `WorkspaceManager`（git worktree 原型）**未接入主 run 流程**。**已于 v0.3.0 解决**（`WorkspaceProvider` Protocol + `ProviderRegistry`，git worktree 为默认 provider 并接入主流程）。
+- Scorer 仅 exact/contains 匹配 + pass/fail 阈值。**已于 v0.2.0 解决**（DeepEval GEval/LLM judge 单轮评分接入；v0.4.1 追加 conversational 评测路径）。
+- `output_mode=directory` 在 runner 中实际退回 stdout 处理（占位）。**已于 v0.2.x 解决**（directory 模式收集为独立 artifact）。
+- UI 是 run viewer；annotation 用 **localStorage**，不回写后端。**已于 v0.2.x 解决**（annotation 持久化为后端 evaluation 记录）。
+- Pydantic 与 zod schema **不完全对齐**（如 git_commit/config_hash 可空性不一致）。**已于 v0.2.x 解决**（golden fixture + CI golden-sync 双端守护）。
+- UI vitest **未落地**（无 test script / 依赖 / 测试文件）。**已于 v0.2.x 解决**（42 个 vitest 用例，v0.4.1 现状）。
 
-**Legacy → Canonical 映射**：
+**Legacy → Canonical 映射（历史参考，映射已全部完成）**：
 
-| Legacy concept | Modular target | Migration note |
-|---|---|---|
-| `baseline_agent` / `candidate_agent` | `configurations[]` | baseline/candidate 是 2-column degenerate matrix |
-| `agent_name` | `configuration_id` + `agent_id` | display name 不能作稳定 ID |
-| `Task.input_payload` | `Task.prompt` | 可先 alias 兼容 |
-| `Task.expected_output` | `expectations[]` / exact-match validation | 投影为 legacy deterministic expectation |
-| `Task.rubric` | `rubric_ref` / inline rubric snapshot | MVP 可内联，但要 hash |
-| `Run.environment` | `SameStartSnapshot` 子集 | 当前字段太少 |
-| `RunResult.output_summary` | `ArtifactRef` + `EvidenceItem.summary` | summary 不能替代 artifact |
-| localStorage annotation | 持久化 `Annotation` / `EvaluationResult` | localStorage 是 legacy-only |
-| subprocess shell command | `AgentInvocation.argv` | shell 字符串插值标为 migration risk |
-| worktree prototype | Environment Provider（接入 Execution） | 接入后才算 same-start |
+| Legacy concept | Modular target | Migration note | 状态 |
+|---|---|---|---|
+| `baseline_agent` / `candidate_agent` | `configurations[]` | baseline/candidate 是 2-column degenerate matrix | 已完成（v0.3.0） |
+| `agent_name` | `configuration_id` + `agent_id` | display name 不能作稳定 ID | 已完成（v0.2.x） |
+| `Task.input_payload` | `Task.prompt` | 可先 alias 兼容 | 已完成（v0.2.x，alias 保留兼容） |
+| `Task.expected_output` | `expectations[]` / exact-match validation | 投影为 legacy deterministic expectation | 已完成（v0.2.x） |
+| `Task.rubric` | `rubric_ref` / inline rubric snapshot | MVP 可内联，但要 hash | 已完成（v0.2.x） |
+| `Run.environment` | `SameStartSnapshot` 子集 | 当前字段太少 | 已完成（v0.3.0） |
+| `RunResult.output_summary` | `ArtifactRef` + `EvidenceItem.summary` | summary 不能替代 artifact | 已完成（v0.2.x） |
+| localStorage annotation | 持久化 `Annotation` / `EvaluationResult` | localStorage 是 legacy-only | 已完成（v0.2.x） |
+| subprocess shell command | `AgentInvocation.argv` | shell 字符串插值标为 migration risk | 已完成（v0.2.x） |
+| worktree prototype | Environment Provider（接入 Execution） | 接入后才算 same-start | 已完成（v0.3.0） |
 
-**迁移分期**（文档对齐先行，代码随后）：
+**迁移分期（全部已完成）**：
 
-- **M0 文档对齐**（本次）：把 Unicorn 重构为模块化契约，建立 legacy 映射与 MVP projection，不改代码。
-- **M1 Schema bridge**：引入 canonical 术语；定义 legacy→canonical alias；binary run 解释为 degenerate matrix。
-- **M2 Evidence/Snapshot bridge**：run JSON 引入 manifest/result/artifact；记录 git commit/dirty/config hash；annotation 持久化；snapshot gate 先 warn；run.json 增加 `replay_canonical` 子对象（记录 replay-affecting inputs，支撑 Snapshot Gate 可比性判断——参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.2 lock file 机制，不新建独立 lock.json）。
-- **M3 Adapter/Workspace hardening**：worktree 接入主流程；替换/限制 shell subprocess；output redaction + size cap；secrets 不进 artifacts。
-- **M4 Modular expansion**：多 configuration matrix；trace provider；LLM judge；richer stats；richer DecisionReport。
+- **M0 文档对齐**（2026-06-02）：把 Unicorn 重构为模块化契约，建立 legacy 映射与 MVP projection，不改代码。**已完成**。
+- **M1 Schema bridge**：引入 canonical 术语；定义 legacy→canonical alias；binary run 解释为 degenerate matrix。**已完成（v0.2.x）**。
+- **M2 Evidence/Snapshot bridge**：run JSON 引入 manifest/result/artifact；记录 git commit/dirty/config hash；annotation 持久化；snapshot gate 先 warn；run.json 增加 `replay_canonical` 子对象（记录 replay-affecting inputs，支撑 Snapshot Gate 可比性判断——参照 [[2026-06-02-pier-vs-unicorn-analysis]] §3.2 lock file 机制，不新建独立 lock.json）。**已完成（v0.2.x）**。
+- **M3 Adapter/Workspace hardening**：worktree 接入主流程；替换/限制 shell subprocess；output redaction + size cap；secrets 不进 artifacts。**已完成（v0.2.x–v0.3.0）**。
+- **M4 Modular expansion**：多 configuration matrix；trace provider；LLM judge；richer stats；richer DecisionReport。**已完成（v0.2.0–v0.3.0）**。
 
 ---
 

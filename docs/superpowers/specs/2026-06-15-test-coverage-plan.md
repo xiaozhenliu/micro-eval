@@ -1,7 +1,8 @@
 ---
 title: "micro-eval 测试覆盖规划"
 date: 2026-06-15
-status: approved
+updated: 2026-07-02
+status: completed
 type: spec
 tags:
   - testing
@@ -11,6 +12,8 @@ tags:
 
 # micro-eval 测试覆盖规划
 
+> **状态注记（2026-07-02）**：本计划已执行完毕。基线为 v0.3.1（224 pytest + 48 vitest），当前规模为 517 pytest + 42 vitest（2026-07-02，v0.4.1）。保留本文档作为覆盖规划的历史参考。
+>
 > **基线**: v0.3.1, 224 pytest + 48 vitest, 整体覆盖率 78%。
 >
 > **目标**: 核心路径 ≥ 90%, 整体 ≥ 88%, 不追求 100%。

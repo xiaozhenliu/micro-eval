@@ -1,13 +1,15 @@
 ---
 title: Team Server Implementation Plan
 codename: team_server.v1
-status: draft
+status: implemented
 author: micro-eval
 date: 2026-06-19
 authority: docs/superpowers/specs/2026-06-19-team-server-design.md
 ---
 
 # Team Server Implementation Plan
+
+> **状态注记（2026-07-02）：** 已随 v0.4.0 交付（2026-06-19，见 CHANGELOG）。checklist 未逐项回填，以代码与 CHANGELOG 为准。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

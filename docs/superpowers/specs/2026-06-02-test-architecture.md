@@ -1,7 +1,7 @@
 ---
 title: "micro-eval 测试架构设计"
 date: 2026-06-02
-updated: 2026-06-12
+updated: 2026-07-02
 status: active
 type: design
 tags:
@@ -40,14 +40,16 @@ tags:
     ╱────────╲
 ```
 
-| 层 | 测什么 | 工具 | 当前状态（2026-06-12，v0.2.1） |
+| 层 | 测什么 | 工具 | 当前状态（2026-07-02，v0.4.1） |
 |---|---|---|---|
-| Unit | 单模块逻辑、纯函数、边界 | pytest（Py）/ vitest（TS） | Py 89 个；TS 3 个（evaluation 纯函数） |
+| Unit | 单模块逻辑、纯函数、边界 | pytest（Py）/ vitest（TS） | 规模已随模块增长扩大，详见 §2 下方"总量"一行 |
 | Contract | 跨模块对象 schema、跨语言 parity | pytest + 生成/校验 | 已落地：canonical（P0 + Phase 2）与 legacy fixture 双端校验 |
-| UI Route Contract | API route 消费 Python 产物、zod 严格解析 | vitest + 共享 fixture | 已落地（§4.1，10 用例） |
-| Integration | 多模块协作、Provider 解析 | pytest + 受控 subprocess | 部分（runner、kernel、store） |
-| E2E | CLI 全流程、产物结构 | pytest + tmp project | 33 个：Phase 1 链路 + Phase 2 黄金路径 + legacy 兼容 + CLI 失败路径 |
-| UI | 组件渲染、run viewer | vitest + Testing Library | 关键断言已落地（Decision Surface 诚实性 2 用例），不做系统性组件测试 |
+| UI Route Contract | API route 消费 Python 产物、zod 严格解析 | vitest + 共享 fixture | 已落地（§4.1） |
+| Integration | 多模块协作、Provider 解析 | pytest + 受控 subprocess | 已覆盖 runner、kernel、store、providers、agent_bridge |
+| E2E | CLI 全流程、产物结构 | pytest + tmp project | 覆盖 Phase 1–3 链路 + legacy 兼容 + CLI 失败路径 + conversational 黄金路径 |
+| UI | 组件渲染、run viewer | vitest + Testing Library | 关键断言已落地（Decision Surface 诚实性等），不做系统性组件测试 |
+
+**总量（2026-07-02，v0.4.1）**：517 pytest + 42 vitest。
 
 ## 3. 按模块的测试规格（投影自 Unicorn Part I §5）
 
@@ -101,7 +103,7 @@ tags:
 | env allowlist | 只注入声明的 env vars | Unit |
 | SkillInjection decorator | 装饰后 workspace 内有 skill 文件 + invocation 不变 | Unit |
 
-**否定测试**：shell 字符串插值 → 被拒绝或标记为 legacy risk（当前仍存在，测试标记为 xfail / migration）。
+**否定测试**：shell 字符串插值 → 被拒绝（已于 v0.2.x 消除，argv-only 调用；相关测试现为回归守护，不再是 xfail）。
 
 ### 3.5 Environment / Reproducibility Layer
 
@@ -193,29 +195,30 @@ Pydantic model ──► 生成 JSON 样本 ──► zod.parse(样本) 必须�
 这一层与 §4 的 golden JSON parity 互补：parity 测 schema 形状对等，
 本层测 route handler 的真实消费路径（含文件读取、路径解析、错误分支）。
 
-## 5. 当前状态 vs 目标（对齐 Unicorn §10 M0–M4）
+## 5. 当前状态 vs 目标（对齐 Unicorn §10 M0–M4，历史快照）
 
-| 迁移阶段 | 测试状态 | 目标测试增量 |
-|---|---|---|
-| **M0 文档对齐**（现在） | ~25 pytest unit + 1 e2e；vitest 未落地 | 补本文档；不改代码 |
-| **M1 Schema bridge** | +contract tests | Pydantic↔zod parity tests；configuration_id 生成 |
-| **M2 Evidence/Snapshot bridge** | +snapshot gate tests | SameStartSnapshot 完整性；Evidence 结构 |
-| **M3 Adapter/Workspace hardening** | +integration | argv 安全；worktree 接入 run flow；secret redaction |
-| **M4 Modular expansion** | +ScoreStage pipeline | ScorePipeline 顺序；Aggregator 不翻转；multi-config |
+> 下表记录的是 M0–M4 迁移分期的历史推进过程；**M0–M4 已于 v0.2.0–v0.3.0 全部完成**（见 `2026-06-02-unicorn-design.md` §10.2）。保留作为测试规模演进的历史参照，不代表当前状态。
 
-覆盖率目标（渐进）：
+| 迁移阶段 | 测试状态（历史快照） | 目标测试增量 | 完成状态 |
+|---|---|---|---|
+| **M0 文档对齐**（2026-06-02） | ~25 pytest unit + 1 e2e；vitest 未落地 | 补本文档；不改代码 | 已完成 |
+| **M1 Schema bridge** | +contract tests | Pydantic↔zod parity tests；configuration_id 生成 | 已完成（v0.2.x） |
+| **M2 Evidence/Snapshot bridge** | +snapshot gate tests | SameStartSnapshot 完整性；Evidence 结构 | 已完成（v0.2.x） |
+| **M3 Adapter/Workspace hardening** | +integration | argv 安全；worktree 接入 run flow；secret redaction | 已完成（v0.2.x–v0.3.0） |
+| **M4 Modular expansion** | +ScoreStage pipeline | ScorePipeline 顺序；Aggregator 不翻转；multi-config | 已完成（v0.3.0） |
+
+覆盖率目标（历史设定，渐进）：
 - M1 后：Python unit ≥ 60%
 - M3 后：Python unit + integration ≥ 75%；UI ≥ 40%
 - M4 后：总体 ≥ 80%
 
-当前实际（2026-06-12，v0.2.1）：Python 总覆盖 78%（122 tests）+ vitest 18 tests；
+**当前实际（2026-07-02，v0.4.1）**：517 pytest + 42 vitest（覆盖率数字见 `docs/superpowers/specs/2026-06-15-test-coverage-plan.md` 与 CI 报告；v0.3.2 里程碑曾将整体覆盖率从 ~78% 提升至 91%）。
+
+以下为 v0.2.1 时点（2026-06-12）的历史快照，保留供追溯：Python 总覆盖 78%（122 tests）+ vitest 18 tests；
 关键模块：aggregation 97%、validator 94%、run_store 96%、langfuse_provider 80%
 （剩余为真实 SDK 路径，按 §6 mock 策略有意不测）。
 
-### 5.1 Phase 2 收口后登记的测试缺口（已实施，v0.2.1）
-
-> 登记自 `docs/bug_reports/2026-06-12-1810-e2e-integration-test-gaps.md`（已 resolved）。
-> 五项均已于 v0.2.1 交付：Python 122 tests、vitest 18 tests。
+### 5.1 Phase 2 收口后登记的测试缺口（已实施，v0.2.1，历史记录）
 
 | Issue | 层级 | 内容 | 严重度 |
 |---|---|---|---|

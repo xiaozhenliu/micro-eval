@@ -1,7 +1,8 @@
 ---
 title: "Team Server：micro-eval 多成员共享 Server 架构设计"
 date: 2026-06-19
-status: draft
+updated: 2026-07-02
+status: implemented
 type: feature-spec
 codename: TeamServer
 tags:
@@ -21,7 +22,7 @@ relates:
 
 **代号**: TeamServer
 **日期**: 2026-06-19
-**状态**: Draft
+**状态**: Implemented（已随 v0.4.0 交付，2026-06-19）
 **基于**: 方案 A（Next.js server + 现有引擎作 worker）
 **前置**: v0.3.5 Global Registry 设计（registry.json、project_key、project-scoped routing）
 

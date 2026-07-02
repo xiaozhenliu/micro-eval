@@ -35,12 +35,21 @@ tags:
 建议组件按产品对象组织：
 
 - RunList
-- ResultMatrix
+- MatrixHeatmap
 - CellDetail
-- ArtifactViewer
-- EvaluationPanel
+- TraceViewer
+- ComparisonTable
+- ConfigEditor
+- CostPanel
+- AnnotationPanel
 - DecisionSummary
 - CaveatBanner
+- WorkspaceCard（Team Server，v0.4）
+- QueueDashboard（Team Server，v0.4）
+- QueueJobCard（Team Server，v0.4）
+- RunEnqueueButton（Team Server，v0.4）
+- TemplateCard（Team Server，v0.4）
+- MemberBadge（Team Server，v0.4）
 
 组件不要重新计算业务结论。业务结论来自 Decision data。组件只负责展示、过滤、排序、下钻和人工输入。
 

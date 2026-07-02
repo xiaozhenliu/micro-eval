@@ -64,6 +64,13 @@ The root object of a `task.yaml` file.
 | `business_impact_tier` | `int` | no | `3` | Priority tier (`1` = highest). Used to weight aggregate scores in the ResultMatrix. |
 | `tags` | `string[]` | no | `[]` | Arbitrary labels for filtering runs (`micro-eval run --tag code-review`). |
 | `revision_id` | `string` | no | `""` | Tracks the version of this task definition. Stored in run results for comparability checks. |
+| `scenario` | `string \| null` | no | `null` | Conversational evaluation only: describes the scenario the simulated user acts out across multiple turns. |
+| `expected_outcome` | `string \| null` | no | `null` | Conversational evaluation only: the outcome the conversation should reach by its end. |
+| `user_description` | `string \| null` | no | `null` | Conversational evaluation only: describes the simulated user's persona and goals. |
+
+::: tip Conversational evaluation fields
+`scenario`, `expected_outcome`, and `user_description` are optional and only used for multi-turn conversational evaluation. When all three are empty, the task runs through the standard single-turn path. Set `scenario` (and typically the other two) to opt a task into multi-turn simulation — see [Conversational evaluation](/guide/conversational-evaluation).
+:::
 
 ::: warning id format
 The `id` field must be path-safe. Avoid spaces, slashes, and special characters. A good pattern is `kebab-case` or `snake_case`. The engine uses this value to construct output paths like `.micro-eval/runs/<run-id>/tasks/<task-id>/`.

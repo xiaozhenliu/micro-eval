@@ -207,6 +207,12 @@ micro-eval ui
 
 ---
 
+## 多轮会话评测
+
+以上三层评估的是单次请求/响应交互。对于需要评估多轮会话的任务——agent 是否保持话题聚焦、是否记住之前的上下文、是否达成预期结果——micro-eval 提供了一条基于 DeepEval `ConversationSimulator` 的并行评测路径。对于选择启用它的任务，这条路径会取代 Layer 2 的 LLM judge 运行，且不会改变默认的单轮行为。关于如何配置、产出哪些 metric、写入哪些产物，详见[会话评测](/zh/guide/conversational-evaluation)。
+
+---
+
 ## EvaluationResult Schema
 
 三层均输出相同的 `EvaluationResult` 结构，使它们可以组合使用：

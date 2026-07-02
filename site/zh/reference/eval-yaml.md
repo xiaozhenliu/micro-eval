@@ -358,7 +358,7 @@ judge:
 | 字段 | 类型 | 默认值 | 是否必填 | 描述 |
 |---|---|---|---|---|
 | `enabled` | `boolean` | `false` | 否 | 启用 LLM judge。为 `false` 时仅运行确定性验证。 |
-| `provider` | `"deepeval"` | `"deepeval"` | 否 | 使用的评分库，目前仅支持 `deepeval`。 |
+| `provider` | `"deepeval" \| "deepeval_conversational"` | `"deepeval"` | 否 | 使用的评分库。`deepeval` 运行下文描述的单轮 GEval judge；`deepeval_conversational` 改为运行多轮会话模拟与评分——详见[会话评测](/zh/guide/conversational-evaluation)。 |
 | `model` | `string` | — | 否 | 传给 judge provider 的模型标识符（如 `"gpt-4o"`、`"claude-sonnet-4-5"`）。 |
 | `temperature` | `float` | `0.0` | 否 | judge 模型的采样温度，推荐使用 `0.0` 以获得确定性评分。 |
 | `pass_threshold` | `float` | `0.5` | 否 | judge 判定 cell 通过的最低分数（0–1），低于该阈值的 cell 计为 judge-fail。 |

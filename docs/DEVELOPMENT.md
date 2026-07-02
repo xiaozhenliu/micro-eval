@@ -12,7 +12,7 @@
 - 设计体系页：`site/guide/design-system.md`（决策闭环、3 张力、7 核心对象）
 - 用户文档不包含实现细节；内部文档不重述用户概念。两套文档服务不同受众。
 
-Release evidence 见 `docs/releases/`。完整 release 流程见 `.codex/skills/micro-eval-release/SKILL.md`。
+Release evidence 见 `docs/releases/`。完整 release 流程见 `docs/engineering/release-process.md`，配套脚本在 `scripts/release/`。
 
 ## 开发原则
 
@@ -102,9 +102,9 @@ grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples || true
 
 ```text
 src/micro_eval/
-├── cli/                 # init / validate / run / list / report / ui / serve / worker / workspace / template / queue / build-plan
+├── cli/                 # init / validate / run / list / report / apply-evaluation / ui / serve / worker / workspace / template / queue / build-plan
 ├── config/              # loader bridge + RunPlan builder
-├── engine/              # AgentAdapter, ExecutionKernel, WorkspaceManager
+├── engine/              # AgentAdapter, ExecutionKernel, WorkspaceManager, providers/ (Seatbelt/Bubblewrap/E2B/Modal), agent_bridge.py (JSONL multi-turn bridge)
 ├── evaluation/          # deterministic validator + human evaluation + optional LLM judge helper
 ├── decision/            # guarded DecisionReport + pass@k/pass^k aggregation
 ├── trace/               # optional TraceProvider adapters (process fallback, Langfuse optional)
@@ -115,7 +115,7 @@ src/micro_eval/
 ui/src/
 ├── app/                 # pages and API routes (project-scoped + workspace-scoped)
 │   └── api/workspaces/  # server-mode workspace/run/queue/template API routes
-├── components/          # RunList, ResultMatrix, CellDetail, WorkspaceCard, QueueDashboard, etc.
+├── components/          # RunList, MatrixHeatmap, CellDetail, WorkspaceCard, QueueDashboard, etc.
 └── lib/                 # zod schema, fs data access, server-mode utilities, workspace API
 ```
 
@@ -125,6 +125,7 @@ ui/src/
 2. `build_run_plan()` 展开 `tasks × configurations × repetitions`，生成 `SameStartSnapshot` 与 `ReplayCanonical`。
 3. `ExecutionKernel` 为每个 cell 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
 4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence；如 `judge.enabled=true`，可追加 supplemental judge evaluation，但不得覆盖 deterministic cell pass/fail。
+   - 当 `judge.provider == "deepeval_conversational"` 时，kernel 走 conversational 分支（`_execute_cell_conversational`）：`SubprocessBridge` 以 JSONL 逐轮驱动 agent 进程保活，`conversational_judge` 模块两阶段 `simulate_conversation()` → `score_conversation()` 产出评分；结果写入 `conversation.json` artifact 与 `conversational_judge` 类型 evidence，CellResult 通过 `conversation_ref` 指向该产物。deterministic pass/fail 语义不被此分支覆盖。
 5. `TraceProvider` 在 `trace.enabled=true` 时收集 `TraceRef`；`process` fallback 不需要 SDK，`langfuse` 通过 optional extra/importlib 接入。
 6. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json` 和 sibling `decision.json`，`ArtifactStore` 写入 `manifest.json`（含 artifacts/evidence/traces）。
 7. `build_decision()` 基于 pass@k/pass^k、latency、cost source 与 caveat 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
@@ -198,4 +199,4 @@ Before claiming a release-ready MVP:
 4. Install the wheel in a Python `>=3.11` virtual environment and run a CLI smoke.
 5. Run or review UltraQA adversarial scenarios for normal path, malformed argv, misleading exit code, timeout, secret leakage, artifact traversal, and binary artifact handling.
 6. Get independent code-review and architecture review evidence when the release risk warrants it.
-7. Record final evidence in `docs/releases/`, generate dependency inventory with `.codex/skills/micro-eval-release/scripts/generate-dependency-inventory.py --version <version>`, and follow `.codex/skills/micro-eval-release/SKILL.md` for version, commit, tag, and dev→main projection gates.
+7. Record final evidence in `docs/releases/`, generate dependency inventory with `scripts/release/generate-dependency-inventory.py --version <version>`, and follow `docs/engineering/release-process.md` for version, commit, tag, and dev→main projection gates.

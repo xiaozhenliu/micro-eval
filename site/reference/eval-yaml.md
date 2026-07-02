@@ -358,7 +358,7 @@ judge:
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
 | `enabled` | `boolean` | `false` | No | Enable the LLM judge. When `false`, only deterministic validation runs. |
-| `provider` | `"deepeval"` | `"deepeval"` | No | Scoring library to use. Currently only `deepeval` is supported. |
+| `provider` | `"deepeval" \| "deepeval_conversational"` | `"deepeval"` | No | Scoring library to use. `deepeval` runs the single-turn GEval judge described below. `deepeval_conversational` runs multi-turn conversation simulation and scoring instead — see [Conversational evaluation](/guide/conversational-evaluation). |
 | `model` | `string` | — | No | Model identifier passed to the judge provider (e.g. `"gpt-4o"`, `"claude-sonnet-4-5"`). |
 | `temperature` | `float` | `0.0` | No | Sampling temperature for the judge model. `0.0` is recommended for deterministic scoring. |
 | `pass_threshold` | `float` | `0.5` | No | Minimum score (0–1) for the judge to consider a cell passing. Cells below this threshold count as judge-fail. |

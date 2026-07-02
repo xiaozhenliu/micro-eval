@@ -1,7 +1,8 @@
 ---
  title: "MVP Profile: mvp.local_pairwise.v1"
 date: 2026-06-02
-status: active
+updated: 2026-07-02
+status: superseded
 type: implementation-guide
 parent: "[[2026-06-02-unicorn-design]]"
 profile: mvp.local_pairwise.v1
@@ -12,6 +13,8 @@ tags:
 ---
 
 # MVP Profile: `mvp.local_pairwise.v1`
+
+> **状态注记（2026-07-02）**：本文档描述的 legacy v0.1.0 → MVP 迁移已于 v0.2.x 全部完成（详见 `2026-06-02-unicorn-design.md` §10.1/§10.2 的 Current State 与历史映射）。保留本文档作为 MVP 阶段设计决策的历史参考，不再代表当前实现状态。
 
 本文档是 Unicorn 模块化架构在 MVP 阶段的**可执行投影**。它不重新定义架构，
 而是声明每个模块的选择等级、实现范围、必须遵守的契约，以及从当前 legacy v0.1.0 迁移的具体步骤。
@@ -590,17 +593,19 @@ class ReplayCanonical:
 
 ## 8. 从 legacy v0.1.0 迁移
 
-| 变更项 | legacy v0.1.0 | MVP target | 优先级 |
-|--------|---------------|------------|:------:|
-| Agent 调用 | `subprocess_shell` + 字符串 | `subprocess_exec` + argv 列表 | P0 |
-| 数据模型 | baseline/candidate 二元 | Configuration 矩阵；MVP 默认 2-column pairwise | P0 |
-| Workspace | WorkspaceManager 未接入 | git worktree 接入主流程 | P0 |
-| Task 格式 | input_payload/expected_output | prompt/expectations/rubric | P0 |
-| Artifact | output_summary 字段 | ArtifactRef + 文件存储 | P0 |
-| 评分 | exact/contains 匹配 | validation + human scoring | P1 |
-| Annotation | localStorage | 持久化 evaluation.json | P1 |
-| Snapshot | 4 字段 | SameStartSnapshot + CellSnapshot 完整 | P0* |
-| Schema | Pydantic/zod 不对齐 | 共享 schema，版本标记 | P2 |
+> 下表全部条目已完成（见"完成状态"列）；核验依据为 `2026-06-02-unicorn-design.md` §10.1 Current State。
+
+| 变更项 | legacy v0.1.0 | MVP target | 优先级 | 完成状态 |
+|--------|---------------|------------|:------:|---|
+| Agent 调用 | `subprocess_shell` + 字符串 | `subprocess_exec` + argv 列表 | P0 | 已完成（v0.2.x） |
+| 数据模型 | baseline/candidate 二元 | Configuration 矩阵；MVP 默认 2-column pairwise | P0 | 已完成（v0.3.0） |
+| Workspace | WorkspaceManager 未接入 | git worktree 接入主流程 | P0 | 已完成（v0.3.0） |
+| Task 格式 | input_payload/expected_output | prompt/expectations/rubric | P0 | 已完成（v0.2.x） |
+| Artifact | output_summary 字段 | ArtifactRef + 文件存储 | P0 | 已完成（v0.2.x） |
+| 评分 | exact/contains 匹配 | validation + human scoring | P1 | 已完成（v0.2.0 起 DeepEval judge 增强） |
+| Annotation | localStorage | 持久化 evaluation.json | P1 | 已完成（v0.2.x） |
+| Snapshot | 4 字段 | SameStartSnapshot + CellSnapshot 完整 | P0* | 已完成（v0.3.0） |
+| Schema | Pydantic/zod 不对齐 | 共享 schema，版本标记 | P2 | 已完成（v0.2.x，golden + CI golden-sync） |
 
 **迁移依赖关系**：
 - P0 依赖链：Configuration 模型 → Execution Kernel → Agent Adapter → Workspace/Snapshot → Artifact 基础存储。这是一条不可分割的链路。

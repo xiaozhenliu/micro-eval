@@ -3,7 +3,7 @@ title: micro-eval 用户 run 安全规范
 doc_type: reference
 status: active
 created_at: 2026-06-03T09:28+08:00
-updated_at: 2026-06-03T18:08+08:00
+updated_at: 2026-07-02T18:08+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -48,10 +48,16 @@ related:
 
 ## Network and External Services
 
-- MVP 不实现网络隔离。
-- 如果 agent 需要外部服务，这属于当前环境事实，必须进入 caveat 或 snapshot context。
+- **Level 0（默认，`logical`）**：不实现任何网络隔离。agent 与宿主机拥有相同的网络访问能力。如果 agent 需要外部服务，这属于当前环境事实，必须进入 caveat 或 snapshot context。
+- **Level 1（`os_policy`，可选，v0.3.0）**：macOS Seatbelt（`sandbox-exec`）与 Linux Bubblewrap（`bwrap`）provider 支持按 `network_policy` 字段做进程级网络限制，但两者的实际强制能力不完全等价，措辞不得夸大：
+  - `network_policy=full`：两个 provider 均放行全部网络访问，等同 Level 0 的网络行为。
+  - `network_policy=none`：Seatbelt 生成的 sandbox profile 拒绝全部 `network*` 操作；Bubblewrap 使用 `--unshare-net` 移除整个网络命名空间。两者均为**阻断式拒绝**，而非细粒度过滤。
+  - `network_policy=allowlist`：**不是真正意义上的域名/地址白名单**。Seatbelt 会在 deny 规则前插入一条 `(allow network* (remote ip "localhost:*"))`，实际效果是"仅放行 localhost，其余全部拒绝"；Bubblewrap 对 `allowlist` 与 `none` 采取完全相同的处理（同样是 `--unshare-net` 整体断网），**不做任何按地址的放行**。也就是说在 Linux 上配置 `allowlist` 目前等价于 `none`。
+  - 文件系统侧：两个 provider 允许读取系统路径（Seatbelt `allow file-read*`；Bubblewrap 只读绑定 `/usr` `/bin` `/lib` `/lib64` `/etc`），写入被限制在 workspace 目录内。这是进程级 OS 策略隔离，不是容器或虚拟机级别的强隔离。
+  - **降级行为**：当 task 请求 `isolation_level=os_policy` 但当前平台不满足 provider 可用性（找不到 `sandbox-exec` / `bwrap` 二进制、或非 macOS/Linux）时，`WorkspaceManager` 会静默降级为 Level 0（`logical`，无隔离）并追加 caveat，而不是 fail-hard。使用 Level 1 时应确认 caveat 是否触发了降级。
+- **远程 provider（E2B/Modal，可选）**：E2B 提供 VM 级隔离（`isolation_level=vm`），Modal 提供容器级隔离（`isolation_level=container`），均需通过 `MICRO_EVAL_SECRET_*` 声明凭据。与 Level 1 不同，缺少凭据或 SDK 时这两个 provider **fail-hard**（抛出 `WorkspaceProviderError`），不会静默降级为 Level 0。
 - Langfuse / DeepEval / LLM judge 是未来或可选能力，不得成为 MVP run 成功的必要条件。
-- 用户不应把高权限网络凭据默认暴露给被评测 agent。
+- 用户不应把高权限网络凭据默认暴露给被评测 agent；即便配置了 Level 1/远程 provider，也不应把网络限制当作可以放心暴露高权限凭据的理由。
 
 ## Artifacts and Evidence
 

@@ -41,7 +41,7 @@ micro-eval 是本地评测工作台，不是营销网站。UI 要帮助用户快
 
 ## Result Matrix UX
 
-ResultMatrix 是 MVP 的核心界面。
+MatrixHeatmap 是 MVP 的核心界面。
 
 - 行：Task。
 - 列：Configuration。
