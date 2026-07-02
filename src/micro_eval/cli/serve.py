@@ -54,6 +54,30 @@ def serve_command(
     (data_root / "workspaces").mkdir(exist_ok=True)
     (data_root / "templates").mkdir(exist_ok=True)
 
+    # Seed a demo template on first start so a fresh server has something to
+    # run immediately. Only runs when the template registry is empty, so it
+    # never clobbers templates an admin has already created or removed.
+    from micro_eval.server.template import TemplateRegistry
+
+    registry = TemplateRegistry(data_root)
+    if not registry.list_templates():
+        seed_dir = Path(__file__).resolve().parent.parent / "server" / "seed_template"
+        if seed_dir.exists():
+            try:
+                registry.create(
+                    source_dir=seed_dir,
+                    template_id="demo-codefix",
+                    name="Demo: Codefix Showdown (mock agents, free)",
+                    description=(
+                        "Deterministic mock agents for testing the evaluation "
+                        "pipeline. Zero API cost."
+                    ),
+                    author="micro-eval",
+                )
+                typer.echo("Seeded demo template: demo-codefix")
+            except Exception as exc:
+                typer.echo(f"Warning: could not seed demo template: {exc}", err=True)
+
     typer.echo("Starting worker...")
     worker_proc = subprocess.Popen(
         [sys.executable, "-m", "micro_eval.cli.main", "worker", "--data-root", str(data_root)],
