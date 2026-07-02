@@ -66,6 +66,24 @@ def serve_command(
             typer.echo("Error: Next.js build failed", err=True)
             worker_proc.terminate()
             raise typer.Exit(1)
+    else:
+        # Warn (but don't auto-rebuild) if the existing build looks stale
+        # relative to the UI sources, so startup stays predictable.
+        build_id = next_dir / "BUILD_ID"
+        if build_id.exists():
+            build_mtime = build_id.stat().st_mtime
+            ui_src = ui_dir / "src"
+            if ui_src.exists():
+                latest_src = max(
+                    (p.stat().st_mtime for p in ui_src.rglob("*") if p.is_file()),
+                    default=0,
+                )
+                if latest_src > build_mtime:
+                    typer.echo(
+                        "Warning: UI sources are newer than the last build. "
+                        "Run 'cd ui && npm run build' to update.",
+                        err=True,
+                    )
 
     env = {
         **os.environ,
