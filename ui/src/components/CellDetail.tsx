@@ -2,6 +2,32 @@ import type { Run } from "@/lib/schema";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 
+// Minimal shape needed to derive a plain-language explanation for a failed cell.
+// Kept structurally compatible with CellResult so it can be reused/tested standalone.
+type ExplainableResult = {
+  status: string;
+  exit_code?: number | null;
+};
+
+// Maps a cell's raw status/exit_code into a one-line human-readable explanation.
+// Returns null when the cell passed cleanly and no explanation is needed.
+export function cellExplanation(result: ExplainableResult): string | null {
+  const { status, exit_code: exitCode } = result;
+
+  if (status === "timeout") {
+    return "The agent hit the per-cell timeout.";
+  }
+  if (status === "error" || (exitCode != null && exitCode !== 0)) {
+    return `The agent process exited with an error (exit code ${exitCode ?? "unknown"}).`;
+  }
+  // Process ran to completion but validation/scoring rejected the output.
+  if (status === "fail") {
+    return "Process exited normally, but the output failed validation (expected text missing).";
+  }
+  // status === "pass" (or unrecognized) — nothing to explain.
+  return null;
+}
+
 export function CellDetail({ run, artifactBasePath }: { run: Run; artifactBasePath?: string }) {
   if (run.results.length === 0) return null;
   const basePath = artifactBasePath ?? `/run/${run.id}/artifact`;
@@ -18,6 +44,11 @@ export function CellDetail({ run, artifactBasePath }: { run: Run; artifactBasePa
             <summary className="cursor-pointer font-mono text-xs">
               {result.task_id} / {result.configuration_id} / rep {result.repetition} — {result.status}
             </summary>
+            {cellExplanation(result) ? (
+              <p className="mt-3 px-3 py-2 rounded bg-amber-950/30 border border-amber-900/40 text-sm text-amber-200">
+                {cellExplanation(result)}
+              </p>
+            ) : null}
             <div className="mt-4 grid gap-4 md:grid-cols-2 text-sm">
               <div>
                 <p className="text-neutral-400 mb-1">Snapshot gate</p>
