@@ -35,7 +35,7 @@ def build_decision(record: RunRecord) -> DecisionReport:
             caveats.append(f"low sample size for {config_id}: repetitions < 3")
 
     verdict = DecisionStatus.inconclusive
-    recommended = "review evidence and complete P0-b comparability gate"
+    recommended = "review the evidence for each cell and confirm the runs are comparable before acting"
     if snapshot_mismatches:
         verdict = DecisionStatus.not_comparable
         recommended = "fix same-start snapshot mismatches before comparing configurations"

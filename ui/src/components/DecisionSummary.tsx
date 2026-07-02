@@ -7,23 +7,23 @@ export function DecisionSummary({ run }: { run: Run }) {
     <section className="bg-neutral-900 border border-neutral-800 rounded-lg p-4 mb-6">
       <div className="flex flex-wrap gap-4 items-center justify-between">
         <div>
-          <p className="text-xs text-neutral-400 mb-1">Decision</p>
+          <p className="text-xs text-neutral-400 mb-1" title="Overall verdict for this run — based on evidence, comparability, and statistical confidence">Decision</p>
           <h3 className="text-lg font-semibold">{decision?.verdict ?? "inconclusive"}</h3>
         </div>
         <div>
-          <p className="text-xs text-neutral-400 mb-1">Confidence</p>
+          <p className="text-xs text-neutral-400 mb-1" title="Statistical confidence level of the verdict">Confidence</p>
           <p>{decision?.confidence ?? "low"}</p>
         </div>
         <div>
-          <p className="text-xs text-neutral-400 mb-1">Evidence refs</p>
+          <p className="text-xs text-neutral-400 mb-1" title="Number of evidence items backing this decision">Evidence refs</p>
           <p>{decision?.evidence_refs.length ?? 0}</p>
         </div>
         <div>
-          <p className="text-xs text-neutral-400 mb-1">Decision report</p>
+          <p className="text-xs text-neutral-400 mb-1" title="Identifier for the decision report that produced this verdict">Decision report</p>
           <p className="font-mono text-xs">{decision?.decision_report_id ? decision.decision_report_id.split("::").slice(-1)[0] : "embedded"}</p>
         </div>
         <div>
-          <p className="text-xs text-neutral-400 mb-1">Replay digest</p>
+          <p className="text-xs text-neutral-400 mb-1" title="Fingerprint of replay-affecting inputs; equal digests mean comparable runs">Replay digest</p>
           <p className="font-mono text-xs">{run.replay_canonical?.digest.slice(0, 12) ?? "missing"}</p>
         </div>
       </div>
@@ -34,7 +34,15 @@ export function DecisionSummary({ run }: { run: Run }) {
               <div className="font-mono text-xs text-neutral-300">{configuration}</div>
               <div className="mt-1 text-neutral-400">
                 pass {formatRate(row.pass_rate)} · n={row.n_cells} · latency {formatMs(row.mean_latency_ms)}
-                {row.caveats.includes("low_sample") && <span className="text-amber-300"> · low sample</span>}
+                {row.caveats.includes("low_sample") && (
+                  <span
+                    className="text-amber-300"
+                    title="Fewer than 3 repetitions — treat differences as noise until rerun"
+                  >
+                    {" "}
+                    · low sample
+                  </span>
+                )}
               </div>
               {!hasOnlyPassAt1(row.pass_at_k) && (
                 <div className="mt-1 text-xs text-neutral-500">pass@k {formatPassAtK(row.pass_at_k)}</div>
