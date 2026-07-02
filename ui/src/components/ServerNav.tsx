@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MemberIdentity } from "@/components/MemberIdentity";
 
 const NAV_ITEMS = [
   { label: "Workspaces", href: "/workspaces" },
@@ -20,8 +21,7 @@ export function ServerNav() {
           </Link>
         ))}
       </div>
-      {/* Identity slot — filled by Task 13 MemberIdentity component */}
-      <div id="member-identity-slot" />
+      <MemberIdentity />
     </nav>
   );
 }
