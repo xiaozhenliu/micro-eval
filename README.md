@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.4.1](https://img.shields.io/badge/version-0.4.1-6f42c1)](VERSION)
+[![Version: 0.4.2](https://img.shields.io/badge/version-0.4.2-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.4.1`
+Current version: `0.4.2`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-The bilingual [documentation site](https://xiaozhenliu.github.io/micro-eval/) is organized around a clear design system — decision loop, three design tensions, and seven core objects — with guides structured by user journey (Get Started → Using → Advanced → Reference). Phase 3 provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints remain fully available. A shared **Team Server** (`micro-eval serve`) adds per-member workspace isolation, a serial run queue, a read-only template library, and attribution records for trusted-LAN teams (v0.4.0). **Conversational evaluation** adds multi-turn agent evaluation via DeepEval's ConversationSimulator over a JSONL subprocess bridge, as a parallel path to the single-turn GEval judge (v0.4.1). Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
+The bilingual [documentation site](https://xiaozhenliu.github.io/micro-eval/) is organized around a clear design system — decision loop, three design tensions, and seven core objects — with guides structured by user journey (Get Started → Using → Advanced → Reference). Phase 3 provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints remain fully available. A shared **Team Server** (`micro-eval serve`) adds per-member workspace isolation, a serial run queue, a read-only template library, and attribution records for trusted-LAN teams (v0.4.0). **Conversational evaluation** adds multi-turn agent evaluation via DeepEval's ConversationSimulator over a JSONL subprocess bridge, as a parallel path to the single-turn GEval judge (v0.4.2). Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
 
 ## Why micro-eval?
 
@@ -42,7 +42,7 @@ Small AI engineering teams often compare prompt, skill, agent, or tool changes w
 - **Cross-run trend analysis**: SQLite-indexed run data enables time-series trend queries per configuration, with drift-aware breakpoints when configuration content changes across runs.
 - **Local review UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, trace, cost, trend, and decision data through zod schemas.
 - **Team Server** — shared server for trusted LANs: per-member workspace isolation, serial run queue, read-only template library, attribution records (v0.4.0)
-- **Conversational evaluation** — multi-turn agent evaluation via DeepEval ConversationSimulator with a JSONL subprocess bridge; parallel path to the single-turn GEval judge (v0.4.1)
+- **Conversational evaluation** — multi-turn agent evaluation via DeepEval ConversationSimulator with a JSONL subprocess bridge; parallel path to the single-turn GEval judge (v0.4.2)
 
 ## Quick Start
 

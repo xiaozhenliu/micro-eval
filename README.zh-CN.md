@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.4.1](https://img.shields.io/badge/version-0.4.1-6f42c1)](VERSION)
+[![Version: 0.4.2](https://img.shields.io/badge/version-0.4.2-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-当前版本：`0.4.1`
+当前版本：`0.4.2`
 
 **一个本地优先的 Agent / Skill 评测助手，帮助小型 AI 团队用证据而不是体感做对比。**
 
 `micro-eval` 把“candidate 感觉更强”转化为可复现对比：同一批任务、同一起点、同一证据链，并基于受保护的决策逻辑判断 baseline / candidate 在哪些 cell 上更强、更弱、样本不足、不可比或需要人工判断。
 
-中英双语[项目文档网站](https://xiaozhenliu.github.io/micro-eval/)（VitePress 构建）按决策闭环、三个设计张力、七个核心对象组织，指南按用户旅程（入门 → 使用 → 进阶 → 参考）结构化。Phase 3 provider 化沙箱隔离（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal）、多源 fixture digest + toolchain fingerprint、SQLite 索引 + drift-aware 趋势分析均完全可用。面向可信内网团队的共享 **Team Server**（`micro-eval serve`）提供成员级 workspace 隔离、串行 run 队列、只读模板库和归属记录（v0.4.0）。**Conversational evaluation** 通过 DeepEval ConversationSimulator 和 JSONL subprocess 桥接实现多轮会话评测，是单轮 GEval judge 的并行路径（v0.4.1）。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
+中英双语[项目文档网站](https://xiaozhenliu.github.io/micro-eval/)（VitePress 构建）按决策闭环、三个设计张力、七个核心对象组织，指南按用户旅程（入门 → 使用 → 进阶 → 参考）结构化。Phase 3 provider 化沙箱隔离（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal）、多源 fixture digest + toolchain fingerprint、SQLite 索引 + drift-aware 趋势分析均完全可用。面向可信内网团队的共享 **Team Server**（`micro-eval serve`）提供成员级 workspace 隔离、串行 run 队列、只读模板库和归属记录（v0.4.0）。**Conversational evaluation** 通过 DeepEval ConversationSimulator 和 JSONL subprocess 桥接实现多轮会话评测，是单轮 GEval judge 的并行路径（v0.4.2）。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
 
 ## 为什么使用 micro-eval？
 
@@ -41,7 +41,7 @@
 - **跨 run 趋势分析**：SQLite 索引的 run 数据支持按 configuration 做时间序列趋势查询，configuration 内容变化时会标注 drift-aware breakpoint。
 - **本地 review UI/API**：Next.js UI 通过 zod 读取 canonical run、cell、artifact、evaluation、trace、cost、trend 和 decision 数据。
 - **Team Server** —— 面向可信内网团队的共享 server：成员级 workspace 隔离、串行 run 队列、只读模板库、归属记录（v0.4.0）
-- **Conversational evaluation** —— 通过 DeepEval ConversationSimulator 和 JSONL subprocess 桥接实现多轮会话评测，是单轮 GEval judge 的并行路径（v0.4.1）
+- **Conversational evaluation** —— 通过 DeepEval ConversationSimulator 和 JSONL subprocess 桥接实现多轮会话评测，是单轮 GEval judge 的并行路径（v0.4.2）
 
 ## 快速开始
 

@@ -2,6 +2,45 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## 0.4.2 - 2026-07-02
+
+### Fixed
+
+- **Team Server member journey** — 15 issues resolved to enable a new team member to complete the full evaluation journey in a browser within 10 minutes, without CLI or external help.
+  - **A1**: Server-mode home page redirects to `/workspaces`; persistent global navigation (Workspaces / Queue / Templates) in header.
+  - **A2/A3**: Server-mode pages (`/workspaces`, `/queue`, `/templates`, `/templates/[id]`) use `force-dynamic` rendering; `micro-eval serve` injects server env vars during `npm run build`.
+  - **A4**: Workspace creation form sends `X-Micro-Eval-Member` header alongside `owner` body field; member name is required with clear prompt; error messages humanized.
+  - **A5**: `RunEnqueueButton` wired into workspace detail page (replacing `onClick={undefined}` placeholder); component self-reads identity from shared util.
+  - **A6**: Artifact links in `CellDetail` scoped to workspace routes (`/workspace/{id}/run/{runId}/artifact/...`); new workspace-scoped artifact page.
+  - **B7**: `micro-eval serve` warns on stderr when `.next` build is older than `ui/src/` sources.
+  - **B8**: `serve` signal handler terminates child processes (Next.js + worker) with SIGTERM→SIGKILL escalation; worker takes over stale `worker.pid` files.
+  - **B9/F4**: Template packaging excludes `.micro-eval/`, `.git/`, `node_modules/`, `__pycache__/`, `.next/`, `.DS_Store`; symlinks skipped with warning (closes security audit F4).
+  - **B10**: Workspace creation rolls back partial directory on failure; CLI prints readable error instead of traceback.
+  - **C12**: Decision `recommended_action` uses plain language instead of internal codename "P0-b"; decision card fields have tooltips.
+  - **C13**: Per-cell failure explanation line: timeout / process error with exit code / validation failure.
+- Shared `member-identity.ts` util is the single source for browser-side member identity (`localStorage`); all consumers use it instead of scattered `localStorage` calls.
+
+### Added
+
+- **Enqueue confirmation card** (C14): clicking "Enqueue Run" first fetches a plan summary (task × config × rep counts + agent commands) and shows a preview card; the run is only enqueued on explicit confirmation.
+- **Seed demo template** (C14): on first `micro-eval serve` start with an empty template registry, a `demo-codefix` template is auto-seeded from deterministic mock agents (zero API cost).
+- **Member identity widget** (C11): persistent identity display/editor in the server navigation bar.
+- New API route: `GET /api/workspaces/[id]/plan-summary` — read-only plan preview.
+- New workspace-scoped artifact page: `/workspace/[id]/run/[runId]/artifact/[artifactId]`.
+- 24 new vitest tests (member-identity, RunEnqueueButton, CellDetail, MemberIdentity); 7 new pytest tests (stale PID, template excludes/symlinks, workspace rollback).
+
+### Changed
+
+- Version bump to 0.4.2 (Python `__init__.py`, UI `package.json`, VERSION).
+- Team server documentation (`site/guide/team-server.md`, `site/zh/guide/team-server.md`) corrected: `template create` syntax fixed, new features documented.
+
+### Security
+
+- Template packaging symlink protection (audit F4): symlinks at any nesting depth are skipped, not followed.
+- Shell interpolation zero-match: `grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples` — clean.
+- All new subprocess calls use argv-only execution.
+- Workspace creation rollback removes only the freshly created directory path (not user-controlled).
+
 ## 0.4.1 - 2026-06-20
 
 ### Added
