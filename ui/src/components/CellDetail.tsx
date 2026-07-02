@@ -2,8 +2,9 @@ import type { Run } from "@/lib/schema";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 
-export function CellDetail({ run }: { run: Run }) {
+export function CellDetail({ run, artifactBasePath }: { run: Run; artifactBasePath?: string }) {
   if (run.results.length === 0) return null;
+  const basePath = artifactBasePath ?? `/run/${run.id}/artifact`;
   const artifactsById = new Map(run.artifacts.map((artifact) => [artifact.artifact_id, artifact]));
   const evidenceById = new Map(run.evidence.map((evidence) => [evidence.evidence_id, evidence]));
   const tracesByRef = new Map(run.traces.map((trace) => [`${trace.provider}:${trace.trace_id}`, trace]));
@@ -58,7 +59,7 @@ export function CellDetail({ run }: { run: Run }) {
                       {artifact ? (
                         <Link
                           className="text-blue-400 hover:underline"
-                          href={`/run/${run.id}/artifact/${encodeURIComponent(artifact.artifact_id)}`}
+                          href={`${basePath}/${encodeURIComponent(artifact.artifact_id)}`}
                         >
                           {artifact.kind}: {artifact.path}
                         </Link>

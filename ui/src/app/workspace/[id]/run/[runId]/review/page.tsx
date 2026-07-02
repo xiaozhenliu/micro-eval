@@ -80,7 +80,7 @@ export default async function WorkspaceRunReviewPage({ params }: PageProps) {
         />
         <CostPanel decision={run.decision} />
       </div>
-      <CellDetail run={run} />
+      <CellDetail run={run} artifactBasePath={`/workspace/${id}/run/${runId}/artifact`} />
     </div>
   );
 }
