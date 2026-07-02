@@ -28,16 +28,22 @@ def _utcnow() -> str:
 def _write_pid(data_root: Path) -> None:
     pid_path = data_root / PID_FILENAME
     if pid_path.exists():
-        old_pid = int(pid_path.read_text().strip())
         try:
-            os.kill(old_pid, 0)
-            logger.error("Another worker is already running (PID: %d)", old_pid)
-            sys.exit(1)
-        except ProcessLookupError:
-            logger.info("Removing stale worker PID file (PID: %d no longer exists)", old_pid)
+            old_pid = int(pid_path.read_text().strip())
+        except (ValueError, OSError):
+            logger.warning("Corrupt PID file, removing: %s", pid_path)
             pid_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+            old_pid = None
+        else:
+            try:
+                os.kill(old_pid, 0)
+                logger.error("Another worker is already running (PID: %d)", old_pid)
+                sys.exit(1)
+            except ProcessLookupError:
+                logger.info("Removing stale worker PID file (PID: %d no longer exists)", old_pid)
+                pid_path.unlink(missing_ok=True)
+            except OSError:
+                pass
     pid_path.write_text(str(os.getpid()))
 
 
