@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getMemberName, setMemberName as persistMemberName } from "@/lib/member-identity";
 
-export const dynamic = "force-dynamic";
-
 interface Template {
   id: string;
   name: string;
@@ -18,16 +16,10 @@ export default function NewWorkspacePage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [memberName, setMemberName] = useState("");
+  const [memberName, setMemberName] = useState(() => getMemberName());
   const [templates, setTemplates] = useState<Template[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Load member name from localStorage on mount
-  useEffect(() => {
-    const stored = getMemberName();
-    if (stored) setMemberName(stored);
-  }, []);
 
   // Fetch available templates
   useEffect(() => {
