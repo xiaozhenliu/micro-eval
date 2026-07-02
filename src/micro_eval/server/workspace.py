@@ -63,12 +63,20 @@ class WorkspaceManager:
                     from micro_eval.server.models import TemplateMeta
                     tpl_meta = TemplateMeta.model_validate_json(tpl_meta_path.read_text())
                     template_version = tpl_meta.version
+                from micro_eval.server.template import (
+                    TEMPLATE_EXCLUDE_NAMES,
+                    _template_ignore,
+                )
                 for item in tpl_dir.iterdir():
                     if item.name == "template.json":
                         continue
+                    if item.name in TEMPLATE_EXCLUDE_NAMES:
+                        continue
+                    if item.is_symlink():
+                        continue
                     dest = ws_dir / item.name
                     if item.is_dir():
-                        shutil.copytree(item, dest)
+                        shutil.copytree(item, dest, ignore=_template_ignore, symlinks=False)
                     else:
                         shutil.copy2(item, dest)
             else:
