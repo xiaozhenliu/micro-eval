@@ -2,11 +2,63 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from micro_eval.server.models import TemplateMeta
+
+logger = logging.getLogger(__name__)
+
+# Runtime artifacts and OS cruft that must never be packaged into a template.
+TEMPLATE_EXCLUDE_NAMES = frozenset(
+    {
+        ".micro-eval",
+        ".git",
+        "__pycache__",
+        ".next",
+        "node_modules",
+        "report.html",
+        ".DS_Store",
+    }
+)
+
+TEMPLATE_EXCLUDES = shutil.ignore_patterns(*TEMPLATE_EXCLUDE_NAMES)
+
+
+def _template_ignore(directory: str, contents: list[str]) -> set[str]:
+    """`shutil.copytree` ignore callback: excludes runtime artifacts and symlinks.
+
+    Symlinks are excluded (rather than followed) per security guidance (F4):
+    a template source directory must not let an attacker smuggle in a link
+    that copies files from outside the source tree.
+    """
+    ignored = set(TEMPLATE_EXCLUDES(directory, contents))
+    dir_path = Path(directory)
+    for name in contents:
+        if name in ignored:
+            continue
+        item = dir_path / name
+        if item.is_symlink():
+            ignored.add(name)
+            logger.warning("Skipping symlink in template source: %s", item)
+    return ignored
+
+
+def _copy_template_source(source_dir: Path, tpl_dir: Path) -> None:
+    """Copy template source contents into tpl_dir, excluding runtime artifacts and symlinks."""
+    for item in source_dir.iterdir():
+        if item.name in TEMPLATE_EXCLUDE_NAMES:
+            continue
+        if item.is_symlink():
+            logger.warning("Skipping symlink in template source: %s", item)
+            continue
+        dest = tpl_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest, ignore=_template_ignore, symlinks=False)
+        else:
+            shutil.copy2(item, dest)
 
 
 class TemplateError(Exception):
@@ -32,12 +84,7 @@ class TemplateRegistry:
             raise TemplateError(f"template already exists: {template_id}")
         tpl_dir.mkdir(parents=True, exist_ok=False)
 
-        for item in source_dir.iterdir():
-            dest = tpl_dir / item.name
-            if item.is_dir():
-                shutil.copytree(item, dest)
-            else:
-                shutil.copy2(item, dest)
+        _copy_template_source(source_dir, tpl_dir)
 
         now = datetime.now(timezone.utc).isoformat()
         includes = {}
@@ -94,12 +141,7 @@ class TemplateRegistry:
                 shutil.rmtree(item)
             else:
                 item.unlink()
-        for item in source_dir.iterdir():
-            dest = tpl_dir / item.name
-            if item.is_dir():
-                shutil.copytree(item, dest)
-            else:
-                shutil.copy2(item, dest)
+        _copy_template_source(source_dir, tpl_dir)
 
         parts = meta.version.split(".")
         parts[-1] = str(int(parts[-1]) + 1)
