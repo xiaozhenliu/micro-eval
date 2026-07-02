@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from micro_eval.server.workspace import WorkspaceManager
+from micro_eval.server.workspace import WorkspaceError, WorkspaceManager
 
 workspace_app = typer.Typer(name="workspace", help="Manage server workspaces.")
 
@@ -25,7 +25,11 @@ def workspace_create(
 ) -> None:
     """Create a new workspace."""
     manager = WorkspaceManager(data_root)
-    meta = manager.create(name=name, owner=owner, template_id=template, description=description)
+    try:
+        meta = manager.create(name=name, owner=owner, template_id=template, description=description)
+    except WorkspaceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     typer.echo(meta.model_dump_json(indent=2))
 
 

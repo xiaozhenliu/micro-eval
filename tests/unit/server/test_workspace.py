@@ -2,6 +2,7 @@
 
 import os
 import re
+from unittest.mock import patch
 
 import pytest
 
@@ -49,6 +50,27 @@ def test_create_from_template(manager, data_root):
 def test_create_template_not_found(manager):
     with pytest.raises(WorkspaceError, match="template not found"):
         manager.create(name="fail", owner="alice", template_id="no-such")
+    # Template-not-found is a domain error hit before any copy happens;
+    # the partially created workspace dir must not survive it.
+    assert list(manager.workspaces_dir.iterdir()) == []
+
+
+def test_create_rollback_on_copy_failure(manager, data_root):
+    """A mid-copy failure (e.g. stale template with .micro-eval/ conflicts,
+    or any OSError during shutil.copytree/copy2) must not leave a partial
+    workspace directory behind, and must surface a readable WorkspaceError."""
+    tpl_dir = data_root / "templates" / "tpl-bad"
+    tpl_dir.mkdir(parents=True)
+    (tpl_dir / "eval.yaml").write_text("project_name: tpl-bad\n")
+    (tpl_dir / "template.json").write_text(
+        '{"schema_version":"1.0","template_id":"tpl-bad","name":"Bad","version":"1.0.0","created_at":"","updated_at":""}'
+    )
+
+    with patch("shutil.copy2", side_effect=OSError("disk full")):
+        with pytest.raises(WorkspaceError, match="workspace creation failed"):
+            manager.create(name="fail", owner="alice", template_id="tpl-bad")
+
+    assert list(manager.workspaces_dir.iterdir()) == []
 
 
 def test_workspace_id_format(manager):
