@@ -57,6 +57,16 @@ On first start, `micro-eval serve` creates the data root directory and initialis
 
 To stop the server, send `SIGINT` (Ctrl-C). The Next.js process will exit immediately; the Python worker finishes the current run cell before stopping, so no run data is lost.
 
+::: tip Build freshness check
+If a Next.js build already exists under `ui/.next`, `micro-eval serve` compares its `BUILD_ID` timestamp against the UI source files. If any source file is newer than the build, it prints a warning to stderr:
+
+```
+Warning: UI sources are newer than the last build. Run 'cd ui && npm run build' to update.
+```
+
+This is non-blocking — the server still starts with the existing (stale) build. If no build exists at all, `micro-eval serve` builds it automatically before starting and fails hard if that build fails.
+:::
+
 ## Workspaces
 
 A **workspace** is an isolated directory under `~/.micro-eval-server/workspaces/<ws-id>/`. It acts as a `project_root` for `ExecutionKernel` — it has its own `eval.yaml`, `.micro-eval/runs/`, and `tasks/` directory, completely independent from every other workspace.
@@ -75,7 +85,7 @@ Members create workspaces from the browser or CLI. Each workspace is owned by th
 
 ```bash
 # Create a workspace (optionally from a template)
-micro-eval workspace create --name "agent-comparison-q3" --template baseline-eval
+micro-eval workspace create --name "agent-comparison-q3" --owner alice --template baseline-eval
 
 # List all workspaces
 micro-eval workspace list
@@ -108,13 +118,13 @@ Templates are managed via CLI only, not through the browser.
 
 ```bash
 # Register a directory as a template
-micro-eval template create --name baseline-eval --source ./my-eval-config/
+micro-eval template create ./my-eval-config --id baseline-eval --name "Baseline Eval"
 
 # List available templates
 micro-eval template list
 
 # Update a template (does not affect existing workspaces)
-micro-eval template update baseline-eval --source ./my-eval-config-v2/
+micro-eval template update baseline-eval ./my-eval-config-v2
 
 # Remove a template (does not affect existing workspaces)
 micro-eval template delete baseline-eval
@@ -124,9 +134,15 @@ micro-eval template delete baseline-eval
 Updating a template has no effect on workspaces already created from it. If you want existing workspaces to pick up new task files, copy them into each workspace manually or create new workspaces from the updated template.
 :::
 
+### Demo template
+
+On first start with an empty template registry, `micro-eval serve` automatically seeds a demo template named `demo-codefix` ("Demo: Codefix Showdown (mock agents, free)"). It only seeds when the registry has zero templates, so it never overwrites or duplicates templates an admin has already created.
+
+The demo template uses a deterministic mock agent (a plain Python script, no LLM calls) to fix a rounding bug in a small ledger function — a self-contained task that runs end to end with **zero API cost**. It's meant as a working example: create a workspace from `demo-codefix` and enqueue a run to see the whole pipeline (workspace → queue → `ExecutionKernel` → results) without needing any API keys or spending any money.
+
 ## Run Queue
 
-Runs are enqueued from the browser (or CLI) and executed serially by the Python worker. This prevents the machine from being overloaded when multiple members submit runs simultaneously.
+Runs are enqueued from the browser and executed serially by the Python worker. This prevents the machine from being overloaded when multiple members submit runs simultaneously.
 
 ### Job statuses
 
@@ -140,13 +156,18 @@ Runs are enqueued from the browser (or CLI) and executed serially by the Python 
 
 ### Enqueueing a run
 
-From the browser, navigate to a workspace and click **Run**. The UI shows a live queue position and progress indicator while the job is `queued` or `running`. The page polls the server for status updates — no WebSocket connection is required.
+Runs are enqueued from the browser only — there is no CLI equivalent. Navigate to a workspace and click **Enqueue Run**. If you haven't set your member name yet (see [Member Identity](#member-identity)), the UI asks for it first.
 
-From the CLI:
+Before the run is actually submitted, a confirmation card ("Run Preview") shows what is about to be enqueued:
 
-```bash
-micro-eval queue submit --workspace <ws-id>
-```
+- The cell count as `{tasks} task(s) × {configurations} config(s) × {repetitions} rep(s) = {total} cell(s)`
+- The agent commands that will be executed
+
+Review the preview and click **Confirm & Enqueue** to submit, or **Cancel** to back out without enqueueing anything. If the preview data can't be loaded, the card still lets you proceed — it shows a note that you can enqueue without a preview.
+
+Once submitted, the UI shows a live queue position and progress indicator while the job is `queued` or `running`. The page polls the server for status updates — no WebSocket connection is required.
+
+The CLI's `queue` subcommand only supports read/administrative operations — checking status and cancelling jobs (see [Cancellation semantics](#cancellation-semantics)) — not submitting new runs.
 
 ### Cancellation semantics
 
@@ -160,6 +181,12 @@ If the Python worker crashes while a job is `running`, the worker marks the job 
 ## Member Identity
 
 The server uses a self-reported identity for attribution. Members send their identity in the `X-Micro-Eval-Member` HTTP header with every write request.
+
+### Identity widget
+
+The browser UI shows a persistent identity widget in the navigation bar, next to the Workspaces / Queue / Templates links. Before you set a name it reads "Set your name"; clicking it switches to an inline edit field where you can type a name and save it. The name is stored in the browser's `localStorage` and reused automatically on future visits — there's no server-side account or login.
+
+This stored name is what the UI sends as the `X-Micro-Eval-Member` header for every write request (creating a workspace, enqueueing or cancelling a run, creating or updating a template). If you haven't set a name yet, actions that require one (like enqueueing a run) will prompt you for it first.
 
 ### Format
 

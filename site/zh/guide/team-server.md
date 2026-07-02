@@ -57,6 +57,16 @@ micro-eval serve --data-root /data/eval-server --port 8080
 
 停止服务器时，发送 `SIGINT`（Ctrl-C）。Next.js 进程立即退出；Python worker 在完成当前运行单元格后停止，不会丢失任何运行数据。
 
+::: tip 构建新鲜度检查
+如果 `ui/.next` 下已存在 Next.js 构建产物，`micro-eval serve` 会比较其 `BUILD_ID` 时间戳与 UI 源文件的时间戳。如果任何源文件比构建产物更新，会在 stderr 打印警告：
+
+```
+Warning: UI sources are newer than the last build. Run 'cd ui && npm run build' to update.
+```
+
+这个检查不会阻塞启动——服务器仍会使用现有（过期）的构建产物启动。如果完全没有构建产物，`micro-eval serve` 会在启动前自动构建，构建失败时会直接报错退出。
+:::
+
 ## 工作区
 
 **工作区**是 `~/.micro-eval-server/workspaces/<ws-id>/` 下的一个隔离目录。它作为 `ExecutionKernel` 的 `project_root`——拥有自己的 `eval.yaml`、`.micro-eval/runs/` 和 `tasks/` 目录，与其他所有工作区完全独立。
@@ -75,7 +85,7 @@ micro-eval serve --data-root /data/eval-server --port 8080
 
 ```bash
 # 创建工作区（可选择从模板创建）
-micro-eval workspace create --name "agent-comparison-q3" --template baseline-eval
+micro-eval workspace create --name "agent-comparison-q3" --owner alice --template baseline-eval
 
 # 列出所有工作区
 micro-eval workspace list
@@ -108,13 +118,13 @@ micro-eval workspace delete <ws-id>
 
 ```bash
 # 将一个目录注册为模板
-micro-eval template create --name baseline-eval --source ./my-eval-config/
+micro-eval template create ./my-eval-config --id baseline-eval --name "Baseline Eval"
 
 # 列出可用模板
 micro-eval template list
 
 # 更新模板（不影响已有工作区）
-micro-eval template update baseline-eval --source ./my-eval-config-v2/
+micro-eval template update baseline-eval ./my-eval-config-v2
 
 # 删除模板（不影响已有工作区）
 micro-eval template delete baseline-eval
@@ -124,9 +134,15 @@ micro-eval template delete baseline-eval
 更新模板对已从该模板创建的工作区没有影响。如果希望现有工作区获取新的 task 文件，需手动将文件复制到每个工作区，或从更新后的模板创建新工作区。
 :::
 
+### Demo 模板
+
+首次启动且模板注册表为空时，`micro-eval serve` 会自动创建一个名为 `demo-codefix` 的 demo 模板（"Demo: Codefix Showdown (mock agents, free)"）。仅当注册表中一个模板都没有时才会创建，因此不会覆盖或重复创建管理员已经建好的模板。
+
+该 demo 模板使用一个确定性的 mock agent（一段普通的 Python 脚本，不调用任何 LLM）来修复一个小型 ledger 函数中的四舍五入 bug——这是一个可以端到端跑通、**零 API 成本**的自包含任务。它的作用是提供一个可直接体验的示例：从 `demo-codefix` 创建工作区并提交一次运行任务，即可看到完整流程（工作区 → 队列 → `ExecutionKernel` → 结果），无需任何 API key，也不产生任何费用。
+
 ## 运行队列
 
-运行任务从浏览器（或 CLI）提交，由 Python worker 串行执行。当多个成员同时提交运行任务时，这能防止机器过载。
+运行任务从浏览器提交，由 Python worker 串行执行。当多个成员同时提交运行任务时，这能防止机器过载。
 
 ### 任务状态
 
@@ -140,13 +156,18 @@ micro-eval template delete baseline-eval
 
 ### 提交运行任务
 
-在浏览器中，导航到一个工作区并点击**运行**。任务处于 `queued` 或 `running` 状态时，UI 会显示实时队列位置和进度指示。页面通过轮询获取状态更新——不需要 WebSocket 连接。
+提交运行任务只能通过浏览器操作，没有对应的 CLI 命令。导航到一个工作区并点击**提交运行任务**。如果你还没有设置成员名称（见[成员身份](#成员身份)），UI 会先要求你设置。
 
-通过 CLI 提交：
+在真正提交之前，一张确认卡片（"Run Preview"）会展示即将提交的内容：
 
-```bash
-micro-eval queue submit --workspace <ws-id>
-```
+- 单元格数量，格式为 `{task 数} task(s) × {配置数} config(s) × {重复次数} rep(s) = {总数} cell(s)`
+- 将要执行的 agent 命令
+
+确认预览内容后点击**确认并提交（Confirm & Enqueue）**即可提交，或点击**取消（Cancel）**放弃本次提交。如果预览数据加载失败，卡片仍允许你继续提交——它会提示你可以在没有预览的情况下提交。
+
+提交成功后，任务处于 `queued` 或 `running` 状态时，UI 会显示实时队列位置和进度指示。页面通过轮询获取状态更新——不需要 WebSocket 连接。
+
+CLI 的 `queue` 子命令只支持只读/管理类操作——查看状态和取消任务（见[取消语义](#取消语义)）——不支持提交新的运行任务。
 
 ### 取消语义
 
@@ -160,6 +181,12 @@ micro-eval queue submit --workspace <ws-id>
 ## 成员身份
 
 服务器使用自报身份进行归因。成员在每个写操作请求中通过 `X-Micro-Eval-Member` HTTP 头发送自己的身份标识。
+
+### 身份组件
+
+浏览器 UI 在导航栏中提供一个持久化的身份组件，紧挨着"工作区 / 队列 / 模板"链接。设置名称前它显示"Set your name"；点击后会切换为一个内联编辑框，输入名称并保存。名称保存在浏览器的 `localStorage` 中，之后访问会自动带出——不涉及服务端账号或登录。
+
+这个保存的名称就是 UI 在每个写操作请求（创建工作区、提交或取消运行任务、创建或更新模板）中发送的 `X-Micro-Eval-Member` header 值。如果你还没设置名称，需要该 header 的操作（例如提交运行任务）会先提示你设置。
 
 ### 格式
 
