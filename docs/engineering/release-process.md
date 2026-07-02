@@ -23,7 +23,7 @@ related:
 
 # micro-eval Release Process
 
-This document is the human-readable release reference. The executable release automation lives in repository `scripts/release/*` and `scripts/release-to-main.sh`. (The former project-level skill `.codex/skills/micro-eval-release/` was lost in the 2026-06-15 branch-rebuild incident — see `docs/releases/2026-07-02-release-backfill-record.md`; its restoration is a pending decision. Until then, this document plus the repository scripts are the release workflow.)
+This document is the human-readable release reference. The release scripts live in repository `scripts/release/*` and `scripts/release-to-main.sh` (single copy, tracked on both branches). The release checklist skill is `.codex/skills/micro-eval-release/SKILL.md` (restored 2026-07-02 after being lost in the 2026-06-15 branch-rebuild incident — see `docs/releases/2026-07-02-release-backfill-record.md`). If this document and the skill disagree, fix both in the same change.
 
 ## Goals
 
@@ -54,7 +54,7 @@ scripts/release-to-main.sh dev main
   - `docs/bug_reports/`
   - `micro-eval-brd.md`
   - `micro-eval-prd.md`
-- `main` `AGENTS.md` and `CLAUDE.md` must stay the sanitized publish variants (the original templates in `.codex/skills/micro-eval-release/assets/templates/` were lost in the 2026-06-15 incident; until they are restored, treat the current `main` copies as the reference variants and review any change to them during release).
+- `main` `AGENTS.md` and `CLAUDE.md` must be generated from `.codex/skills/micro-eval-release/assets/templates/` (templates restored 2026-07-02).
 
 ## Version source strategy
 

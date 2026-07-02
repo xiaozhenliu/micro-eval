@@ -125,6 +125,7 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 - 测试计划、contract tests、flaky 控制 → 读 `docs/engineering/testing-guidelines.md`
 - ResultMatrix、Decision、Artifact/Evidence 展示 → 读 `docs/engineering/ux-guidelines.md`
 - secrets、workspace、subprocess 安全、网络边界 → 读 `docs/engineering/security-guidelines.md`
+- 发布、版本号 bump、tag、dev→main 投影 → 必须先读 `docs/engineering/release-process.md`，并按 `.codex/skills/micro-eval-release/SKILL.md` 的清单逐步执行；发布脚本唯一副本在 `scripts/release/` 与 `scripts/release-to-main.sh`
 - 不确定该读哪个工程规范 → 只读 `docs/engineering/README.md`
 
 **安全规范例外于上面的按需路由**：`docs/engineering/security-guidelines.md` 是 cross-cutting 规范，不受"命中场景才读"约束。任何开发里程碑 / vertical slice（涉及 subprocess 调用、env 注入、stdout/stderr 捕获、artifact 持久化、workspace 写入的，几乎覆盖所有执行层改动）在动手前都必须读它，完成后必须逐条过它末尾的「Code Review Checklist」，并在交付报告中说明 secrets redaction、workspace 边界、shell interpolation 三项的处理方式。安全要求与功能需求同级，不是加分项。
