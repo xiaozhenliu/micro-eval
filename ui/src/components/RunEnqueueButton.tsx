@@ -1,19 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getMemberName, setMemberName as persistMemberName } from "@/lib/member-identity";
 
 interface RunEnqueueButtonProps {
   workspaceId: string;
-  memberName: string;
+  memberName?: string;
 }
 
-export function RunEnqueueButton({ workspaceId, memberName }: RunEnqueueButtonProps) {
+export function RunEnqueueButton({ workspaceId, memberName: memberNameProp }: RunEnqueueButtonProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [memberName, setMemberNameState] = useState(memberNameProp ?? "");
+  const [showNameInput, setShowNameInput] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
 
-  async function handleClick() {
+  // Read the persisted member name on mount (client-only, localStorage).
+  useEffect(() => {
+    if (memberNameProp) return;
+    const stored = getMemberName();
+    if (stored) setMemberNameState(stored);
+  }, [memberNameProp]);
+
+  async function enqueue(name: string) {
     setLoading(true);
     setError(null);
 
@@ -22,7 +33,7 @@ export function RunEnqueueButton({ workspaceId, memberName }: RunEnqueueButtonPr
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Micro-Eval-Member": memberName,
+          "X-Micro-Eval-Member": name,
         },
       });
 
@@ -43,6 +54,27 @@ export function RunEnqueueButton({ workspaceId, memberName }: RunEnqueueButtonPr
     }
   }
 
+  function handleClick() {
+    if (!memberName.trim()) {
+      setShowNameInput(true);
+      setError("Set your name first");
+      return;
+    }
+    enqueue(memberName.trim());
+  }
+
+  function handleSaveName(e: React.SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+
+    persistMemberName(trimmed);
+    setMemberNameState(trimmed);
+    setShowNameInput(false);
+    setError(null);
+    enqueue(trimmed);
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <button
@@ -57,6 +89,24 @@ export function RunEnqueueButton({ workspaceId, memberName }: RunEnqueueButtonPr
       </button>
       {error && (
         <p className="text-xs text-red-400">{error}</p>
+      )}
+      {showNameInput && (
+        <form onSubmit={handleSaveName} className="flex items-center gap-2">
+          <input
+            type="text"
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            placeholder="Your name"
+            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100"
+          />
+          <button
+            type="submit"
+            className="rounded bg-neutral-700 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-600 transition-colors"
+          >
+            Save &amp; Enqueue
+          </button>
+        </form>
       )}
     </div>
   );
