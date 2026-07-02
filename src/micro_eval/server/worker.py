@@ -33,6 +33,9 @@ def _write_pid(data_root: Path) -> None:
             os.kill(old_pid, 0)
             logger.error("Another worker is already running (PID: %d)", old_pid)
             sys.exit(1)
+        except ProcessLookupError:
+            logger.info("Removing stale worker PID file (PID: %d no longer exists)", old_pid)
+            pid_path.unlink(missing_ok=True)
         except OSError:
             pass
     pid_path.write_text(str(os.getpid()))

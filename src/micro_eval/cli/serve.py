@@ -17,6 +17,20 @@ def _default_data_root() -> Path:
     return Path.home() / ".micro-eval-server"
 
 
+def _terminate_proc(proc: subprocess.Popen, name: str, timeout: int = 5) -> None:
+    """Terminate a subprocess, escalating to kill after timeout."""
+    if proc.poll() is not None:
+        return
+    typer.echo(f"  Stopping {name}...")
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        typer.echo(f"  Force-killing {name}...")
+        proc.kill()
+        proc.wait(timeout=5)
+
+
 def serve_command(
     port: int = typer.Option(3000, "--port", help="HTTP port"),
     host: str = typer.Option("0.0.0.0", "--host", help="Bind host"),
@@ -93,32 +107,35 @@ def serve_command(
 
     typer.echo(f"Starting Next.js on {host}:{port}...")
     next_proc = None
+    cleaned_up = False
+
+    def cleanup() -> None:
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
+        typer.echo("\nShutting down...")
+        if next_proc is not None:
+            _terminate_proc(next_proc, "Next.js")
+        _terminate_proc(worker_proc, "worker")
+
+    def shutdown(signum, frame):
+        cleanup()
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
     try:
         next_proc = subprocess.Popen(
             ["npx", "next", "start", "--port", str(port), "--hostname", host],
             cwd=ui_dir,
             env=env,
         )
-
-        def shutdown(signum, frame):
-            typer.echo("\nShutting down...")
-            worker_proc.terminate()
-            if next_proc:
-                next_proc.terminate()
-            worker_proc.wait(timeout=10)
-            if next_proc:
-                next_proc.wait(timeout=10)
-
-        signal.signal(signal.SIGINT, shutdown)
-        signal.signal(signal.SIGTERM, shutdown)
-
         next_proc.wait()
     except KeyboardInterrupt:
-        worker_proc.terminate()
-        if next_proc:
-            next_proc.terminate()
+        pass
     finally:
-        worker_proc.wait(timeout=10)
+        cleanup()
 
 
 def worker_command(
