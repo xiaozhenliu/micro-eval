@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getMemberName, setMemberName as persistMemberName } from "@/lib/member-identity";
 
@@ -13,7 +13,7 @@ export function RunEnqueueButton({ workspaceId, memberName: memberNameProp }: Ru
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [memberName, setMemberNameState] = useState(memberNameProp ?? "");
+  const [memberName, setMemberNameState] = useState(() => memberNameProp ?? getMemberName());
   const [showNameInput, setShowNameInput] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [planSummary, setPlanSummary] = useState<{
@@ -24,13 +24,6 @@ export function RunEnqueueButton({ workspaceId, memberName: memberNameProp }: Ru
     agent_commands: string[];
   } | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
-
-  // Read the persisted member name on mount (client-only, localStorage).
-  useEffect(() => {
-    if (memberNameProp) return;
-    const stored = getMemberName();
-    if (stored) setMemberNameState(stored);
-  }, [memberNameProp]);
 
   async function enqueue(name: string) {
     setLoading(true);

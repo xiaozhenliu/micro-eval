@@ -5,17 +5,13 @@
 // localStorage directly — so this stays in sync with RunEnqueueButton (Task 3)
 // and any other consumer of the X-Micro-Eval-Member identity.
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getMemberName, setMemberName } from "@/lib/member-identity";
 
 export function MemberIdentity() {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => getMemberName());
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState("");
-
-  useEffect(() => {
-    setName(getMemberName());
-  }, []);
 
   function handleSave() {
     const trimmed = input.trim();
