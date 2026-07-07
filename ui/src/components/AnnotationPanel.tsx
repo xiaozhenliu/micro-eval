@@ -6,23 +6,24 @@ import type { CellResult } from "@/lib/schema";
 interface AnnotationPanelProps {
   runId: string;
   cells: CellResult[];
+  workspaceId?: string;
 }
 
-export function AnnotationPanel({ runId, cells }: AnnotationPanelProps) {
+export function AnnotationPanel({ runId, cells, workspaceId }: AnnotationPanelProps) {
   if (cells.length === 0) return null;
   return (
     <section className="mt-8 border border-neutral-800 rounded-lg p-6">
       <h3 className="text-base font-semibold mb-4">Human Evaluation</h3>
       <div className="space-y-4">
         {cells.map((cell) => (
-          <EvaluationForm key={cell.cell_id} runId={runId} cell={cell} />
+          <EvaluationForm key={cell.cell_id} runId={runId} cell={cell} workspaceId={workspaceId} />
         ))}
       </div>
     </section>
   );
 }
 
-function EvaluationForm({ runId, cell }: { runId: string; cell: CellResult }) {
+function EvaluationForm({ runId, cell, workspaceId }: { runId: string; cell: CellResult; workspaceId?: string }) {
   const [passFail, setPassFail] = useState<"pass" | "fail">(cell.pass_fail ?? "pass");
   const [score, setScore] = useState(cell.score ?? 1);
   const [comment, setComment] = useState("");
@@ -32,9 +33,23 @@ function EvaluationForm({ runId, cell }: { runId: string; cell: CellResult }) {
   function submit() {
     startTransition(async () => {
       setStatus(null);
-      const response = await fetch(`/api/runs/${runId}/cells/${encodeURIComponent(cell.cell_id)}/evaluate`, {
+      const cellParam = encodeURIComponent(cell.cell_id);
+      const url = workspaceId
+        ? `/api/workspaces/${workspaceId}/runs/${runId}/cells/${cellParam}/evaluate`
+        : `/api/runs/${runId}/cells/${cellParam}/evaluate`;
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (workspaceId) {
+        const { getMemberName } = await import("@/lib/member-identity");
+        const member = getMemberName();
+        if (!member) {
+          setStatus("Set your member name first (top-right)");
+          return;
+        }
+        headers["X-Micro-Eval-Member"] = member;
+      }
+      const response = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ pass_fail: passFail, score, scores: {}, comment, evaluator: "human" }),
       });
       if (!response.ok) {

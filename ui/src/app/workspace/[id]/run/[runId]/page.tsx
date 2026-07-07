@@ -76,7 +76,7 @@ export default async function WorkspaceRunPage({ params }: PageProps) {
         decision={run.decision}
       />
       <CellDetail run={run} artifactBasePath={`/workspace/${id}/run/${runId}/artifact`} />
-      <AnnotationPanel runId={run.id} cells={run.results} />
+      <AnnotationPanel runId={run.id} cells={run.results} workspaceId={id} />
     </div>
   );
 }

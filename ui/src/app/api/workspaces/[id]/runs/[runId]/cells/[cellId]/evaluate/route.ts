@@ -27,6 +27,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const validation = validateWriteRequest(request);
   if (validation instanceof NextResponse) return validation;
+  const { member } = validation;
 
   const { id, runId, cellId } = await context.params;
   if (!RUN_ID_RE.test(runId)) {
@@ -57,7 +58,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   let input: z.infer<typeof HumanEvaluationRequestSchema>;
   try {
-    input = HumanEvaluationRequestSchema.parse(await request.json());
+    const parsed = HumanEvaluationRequestSchema.parse(await request.json());
+    input = { ...parsed, evaluator: member };
   } catch (err) {
     return NextResponse.json({ error: "invalid evaluation payload", detail: String(err) }, { status: 400 });
   }
