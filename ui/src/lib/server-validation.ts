@@ -12,7 +12,8 @@ export function validateWriteRequest(
   request: Request,
 ): { member: string } | NextResponse {
   const contentType = request.headers.get("content-type");
-  if (contentType && !contentType.includes("application/json")) {
+  const mediaType = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  if (mediaType !== "application/json") {
     return NextResponse.json(
       { error: "content type must be application/json" },
       { status: 400 },

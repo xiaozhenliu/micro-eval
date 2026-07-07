@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getMemberName } from "@/lib/member-identity";
 
 interface ConfigEditorProps {
   workspaceId: string;
@@ -17,10 +18,19 @@ export function ConfigEditor({ workspaceId, initialContent }: ConfigEditorProps)
     setStatus(null);
 
     try {
+      const member = getMemberName();
+      if (!member) {
+        setStatus({ kind: "error", message: "Set your member name first (top-right)" });
+        setSaving(false);
+        return;
+      }
       const res = await fetch(`/api/workspaces/${workspaceId}/config`, {
         method: "PUT",
-        headers: { "Content-Type": "application/yaml" },
-        body: content,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Micro-Eval-Member": member,
+        },
+        body: JSON.stringify({ content }),
       });
 
       if (!res.ok) {
