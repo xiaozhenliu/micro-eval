@@ -71,6 +71,9 @@ def _template_ignore(directory: str, contents: list[str]) -> set[str]:
         if item.is_symlink():
             ignored.add(name)
             logger.warning("Skipping symlink in template source: %s", item)
+        elif item.is_file() and item.stat().st_nlink > 1:
+            ignored.add(name)
+            logger.warning("Skipping hardlink in template source: %s", item)
     return ignored
 
 
@@ -86,6 +89,9 @@ def _copy_template_source(source_dir: Path, tpl_dir: Path) -> None:
         if item.is_dir():
             shutil.copytree(item, dest, ignore=_template_ignore, symlinks=False)
         else:
+            if item.stat().st_nlink > 1:
+                logger.warning("Skipping hardlink in template source: %s", item)
+                continue
             shutil.copy2(item, dest)
 
 

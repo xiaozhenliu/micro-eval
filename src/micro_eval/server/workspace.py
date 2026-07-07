@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from micro_eval.server.models import WorkspaceMeta, new_workspace_id
+
+logger = logging.getLogger(__name__)
 
 _WS_ID_RE = re.compile(r"^ws-\d{8}T\d{6}Z-[a-f0-9]{8}$")
 
@@ -74,11 +77,15 @@ class WorkspaceManager:
                     if item.name in TEMPLATE_EXCLUDE_NAMES:
                         continue
                     if item.is_symlink():
+                        logger.warning("Skipping symlink in template source: %s", item)
                         continue
                     dest = ws_dir / item.name
                     if item.is_dir():
                         shutil.copytree(item, dest, ignore=_template_ignore, symlinks=False)
                     else:
+                        if item.stat().st_nlink > 1:
+                            logger.warning("Skipping hardlink in template source: %s", item)
+                            continue
                         shutil.copy2(item, dest)
             else:
                 (ws_dir / "eval.yaml").write_text("# micro-eval configuration\nproject_name: unnamed\n")
