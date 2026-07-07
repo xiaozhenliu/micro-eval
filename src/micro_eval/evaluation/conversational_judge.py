@@ -108,6 +108,9 @@ async def simulate_conversation(
         return None
     test_case = test_cases[0]
 
+    for entry in conversation_log:
+        entry["content"] = redactor.redact(entry["content"])
+
     last_output = ""
     for entry in reversed(conversation_log):
         if entry["role"] == "assistant":

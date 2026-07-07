@@ -168,9 +168,10 @@ class ExecutionKernel:
                 trace_id=cell.cell_id,
             )
         except (WorkspaceError, AdapterError) as exc:
+            redactor = Redactor.from_env()
             adapter_result = AdapterResult(
                 status=CellStatus.error,
-                stderr=str(exc),
+                stderr=redactor.redact(str(exc)),
                 failure_mode=exc.__class__.__name__,
                 trace_id=cell.cell_id,
             )

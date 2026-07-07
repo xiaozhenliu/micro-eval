@@ -180,7 +180,9 @@ async def worker_loop(
             logger.error("Job %s timed out", job_id)
 
         except Exception as exc:
-            db.update_status(job_id, "failed", finished_at=_utcnow(), error=str(exc))
+            from micro_eval.engine.adapter import Redactor
+            redacted_err = Redactor.from_env().redact(str(exc))
+            db.update_status(job_id, "failed", finished_at=_utcnow(), error=redacted_err)
             logger.exception("Job %s failed: %s", job_id, exc)
 
     db.close()
