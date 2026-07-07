@@ -59,29 +59,29 @@ async def simulate_conversation(
     )
     await bridge.start()
 
-    conversation_log: list[dict[str, str]] = []
-    main_loop = asyncio.get_running_loop()
-
-    def model_callback(input: str) -> object:
-        conversation_log.append({"role": "user", "content": input})
-        try:
-            future = asyncio.run_coroutine_threadsafe(bridge.send_turn(input), main_loop)
-            response = future.result(timeout=config.turn_timeout_s)
-        except BridgeError as exc:
-            response = f"[bridge error: {exc}]"
-        except Exception as exc:
-            response = f"[bridge error: {exc}]"
-        response = redactor.redact(response)
-        conversation_log.append({"role": "assistant", "content": response})
-        return Turn(role="assistant", content=response)
-
-    golden = ConversationalGolden(
-        scenario=task.scenario,
-        expected_outcome=task.expected_outcome or "",
-        user_description=task.user_description or "",
-    )
-
     try:
+        conversation_log: list[dict[str, str]] = []
+        main_loop = asyncio.get_running_loop()
+
+        def model_callback(input: str) -> object:
+            conversation_log.append({"role": "user", "content": input})
+            try:
+                future = asyncio.run_coroutine_threadsafe(bridge.send_turn(input), main_loop)
+                response = future.result(timeout=config.turn_timeout_s)
+            except BridgeError as exc:
+                response = f"[bridge error: {exc}]"
+            except Exception as exc:
+                response = f"[bridge error: {exc}]"
+            response = redactor.redact(response)
+            conversation_log.append({"role": "assistant", "content": response})
+            return Turn(role="assistant", content=response)
+
+        golden = ConversationalGolden(
+            scenario=task.scenario,
+            expected_outcome=task.expected_outcome or "",
+            user_description=task.user_description or "",
+        )
+
         simulator_kwargs = {"model_callback": model_callback}
         if config.simulator_model:
             simulator_kwargs["simulator_model"] = config.simulator_model
