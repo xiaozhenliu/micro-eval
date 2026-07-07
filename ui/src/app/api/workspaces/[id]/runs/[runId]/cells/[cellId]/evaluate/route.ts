@@ -6,7 +6,7 @@ import { z } from "zod";
 import { isServerMode } from "@/lib/server-mode";
 import { getWorkspaceRunsDir, resolveWorkspacePath } from "@/lib/workspace-api";
 import { RunSchema } from "@/lib/schema";
-import { uvBin, validateWriteRequest } from "@/lib/server-validation";
+import { uvBin, validateWriteRequest, sanitizeErrorDetail } from "@/lib/server-validation";
 
 interface RouteContext {
   params: Promise<{ id: string; runId: string; cellId: string }>;
@@ -53,7 +53,7 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "cell not found" }, { status: 404 });
     }
   } catch (err) {
-    return NextResponse.json({ error: "failed to parse run", detail: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "failed to parse run", detail: sanitizeErrorDetail(String(err)) }, { status: 500 });
   }
 
   let input: z.infer<typeof HumanEvaluationRequestSchema>;
@@ -61,7 +61,7 @@ export async function POST(request: Request, context: RouteContext) {
     const parsed = HumanEvaluationRequestSchema.parse(await request.json());
     input = { ...parsed, evaluator: member };
   } catch (err) {
-    return NextResponse.json({ error: "invalid evaluation payload", detail: String(err) }, { status: 400 });
+    return NextResponse.json({ error: "invalid evaluation payload", detail: sanitizeErrorDetail(String(err)) }, { status: 400 });
   }
 
   const args = [
@@ -79,7 +79,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
     return NextResponse.json(JSON.parse(stdout));
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "evaluation backend failed", detail }, { status: 502 });
   }
 }

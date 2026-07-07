@@ -335,7 +335,10 @@ def test_undeclared_micro_eval_secret_in_task_input_is_redacted(tmp_path: Path, 
     assert "[REDACTED:MICRO_EVAL_SECRET_UNDECLARED]" in persisted_text
 
 
-def test_short_micro_eval_secret_value_is_redacted(tmp_path: Path, monkeypatch) -> None:
+def test_short_micro_eval_secret_value_is_not_over_redacted(tmp_path: Path, monkeypatch) -> None:
+    """Secrets shorter than 4 chars are intentionally NOT redacted to avoid
+    over-replacement (GRO-188). A 2-char secret like "xy" would replace all
+    occurrences of that substring in all output, corrupting results."""
     monkeypatch.setenv("MICRO_EVAL_SECRET_SHORT", "xy")
     task = TaskSpec(id="short-secret-task", name="Short secret task", input_payload="xy")
     config = ProjectConfigV2(
@@ -355,8 +358,8 @@ def test_short_micro_eval_secret_value_is_redacted(tmp_path: Path, monkeypatch) 
     run_dir = tmp_path / ".micro-eval" / "runs" / record.id
     persisted_text = "\n".join(path.read_text(errors="ignore") for path in run_dir.rglob("*.txt"))
 
-    assert "xy" not in persisted_text
-    assert "[REDACTED:MICRO_EVAL_SECRET_SHORT]" in persisted_text
+    # Short secrets are preserved — no [REDACTED] replacement for short values
+    assert "[REDACTED:MICRO_EVAL_SECRET_SHORT]" not in persisted_text
 
 
 def test_binary_directory_artifact_records_redaction_warning(tmp_path: Path) -> None:

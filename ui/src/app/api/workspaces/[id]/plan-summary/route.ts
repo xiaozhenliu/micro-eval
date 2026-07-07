@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
 import { resolveWorkspacePath } from "@/lib/workspace-api";
-import { uvBin } from "@/lib/server-validation";
+import { uvBin, sanitizeErrorDetail } from "@/lib/server-validation";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -64,7 +64,7 @@ export async function GET(_request: Request, context: RouteContext) {
       agent_commands: agentCommands,
     });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "failed to build plan summary", detail }, { status: 502 });
   }
 }

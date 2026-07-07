@@ -53,6 +53,6 @@ def build_human_evaluation(
 def _redact_env_secrets(text: str) -> str:
     redacted = text
     for name, value in os.environ.items():
-        if name.startswith("MICRO_EVAL_SECRET_") and value:
+        if name.startswith("MICRO_EVAL_SECRET_") and value and len(value) >= 4:
             redacted = redacted.replace(value, f"[REDACTED:{name}]")
     return redacted

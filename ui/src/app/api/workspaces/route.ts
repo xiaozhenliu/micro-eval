@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
 import { listWorkspaces } from "@/lib/workspace-api";
-import { validateWriteRequest, uvBin, TEMPLATE_ID_RE } from "@/lib/server-validation";
+import { validateWriteRequest, uvBin, TEMPLATE_ID_RE, sanitizeErrorDetail } from "@/lib/server-validation";
 
 const CreateWorkspaceSchema = z.object({
   name: z.string().min(1).max(120),
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(JSON.parse(stdout), { status: 201 });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "workspace creation failed", detail }, { status: 502 });
   }
 }

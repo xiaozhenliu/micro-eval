@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { validateWriteRequest, queryQueue, safeJobId } from "@/lib/server-validation";
+import { validateWriteRequest, queryQueue, safeJobId, sanitizeErrorDetail } from "@/lib/server-validation";
 
 interface RouteContext {
   params: Promise<{ jobId: string }>;
@@ -19,7 +19,9 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const result = queryQueue(
-      `result = db.request_cancel(${JSON.stringify(safe)}, ${JSON.stringify(member)})\nprint(json.dumps(result))`,
+      `result = db.request_cancel(os.environ['_JOB_ID'], os.environ['_MEMBER'])\nprint(json.dumps(result))`,
+      undefined,
+      { _JOB_ID: safe, _MEMBER: member },
     ) as Record<string, unknown> | null;
 
     if (result === null) {
@@ -30,7 +32,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
     return NextResponse.json(result);
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "cancel failed", detail }, { status: 502 });
   }
 }

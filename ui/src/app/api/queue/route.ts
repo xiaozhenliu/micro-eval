@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { queryQueue } from "@/lib/server-validation";
+import { queryQueue, sanitizeErrorDetail } from "@/lib/server-validation";
 
 export async function GET() {
   if (!isServerMode()) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -17,7 +17,7 @@ export async function GET() {
       return NextResponse.json({ running: null, queued: [], recent_completed: [] });
     }
     return NextResponse.json(
-      { error: "queue read failed", detail: msg },
+      { error: "queue read failed", detail: sanitizeErrorDetail(msg) },
       { status: 502 },
     );
   }

@@ -174,10 +174,9 @@ class RunStore:
                     if decision_path.exists():
                         record.decision = DecisionReport.model_validate_json(decision_path.read_text())
                     runs.append(record)
-                elif path.is_file() and path.suffix == ".json":
-                    import json
-
-                    runs.append(json.loads(path.read_text()))
+                # Legacy flat .json files at the runs root are ignored (GRO-194).
+                # Only the canonical subdirectory layout (run-id/run.json) is
+                # parsed to prevent loading arbitrary JSON files.
             except Exception:
                 continue
         runs.sort(key=lambda item: _run_sort_key(item), reverse=True)
