@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
 import { listWorkspaces } from "@/lib/workspace-api";
-import { validateWriteRequest, uvBin } from "@/lib/server-validation";
+import { validateWriteRequest, uvBin, TEMPLATE_ID_RE } from "@/lib/server-validation";
 
 const CreateWorkspaceSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).default(""),
-  template_id: z.string().min(1).max(64).nullable().default(null),
+  template_id: z.string().regex(TEMPLATE_ID_RE, "invalid template_id").nullable().default(null),
 });
 
 export async function GET() {

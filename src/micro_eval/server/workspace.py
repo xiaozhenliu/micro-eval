@@ -55,18 +55,19 @@ class WorkspaceManager:
 
             template_version = None
             if template_id:
-                tpl_dir = self.data_root / "templates" / template_id
-                if not tpl_dir.exists():
+                from micro_eval.server.template import (
+                    TEMPLATE_EXCLUDE_NAMES,
+                    _template_ignore,
+                    resolve_template_dir,
+                )
+                tpl_dir = resolve_template_dir(self.data_root / "templates", template_id)
+                if tpl_dir is None or not tpl_dir.exists():
                     raise WorkspaceError(f"template not found: {template_id}")
                 tpl_meta_path = tpl_dir / "template.json"
                 if tpl_meta_path.exists():
                     from micro_eval.server.models import TemplateMeta
                     tpl_meta = TemplateMeta.model_validate_json(tpl_meta_path.read_text())
                     template_version = tpl_meta.version
-                from micro_eval.server.template import (
-                    TEMPLATE_EXCLUDE_NAMES,
-                    _template_ignore,
-                )
                 for item in tpl_dir.iterdir():
                     if item.name == "template.json":
                         continue

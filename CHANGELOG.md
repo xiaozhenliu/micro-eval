@@ -2,6 +2,14 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## Unreleased
+
+### Security
+
+Resolving the 2026-07-07 security audit (`docs/security/2026-07-07-security-audit.md`).
+
+- **H1 / GRO-172 — `template_id` path traversal (HIGH)**: `POST /api/workspaces` accepted an unvalidated `template_id` (`z.string().min(1).max(64)`, no charset limit) that flowed as `--template <id>` into `templates_dir / template_id` with only an `exists()` check. Under pathlib, `template_id="/etc"` replaces the base path entirely and `"../.."` traverses up, so any server-readable directory could be copied into a member workspace — an arbitrary file read chain running as the server process user. Fixed at the authoritative Python boundary: new `resolve_template_dir()` in `server/template.py` enforces a charset allowlist (`[A-Za-z0-9._-]{1,64}`, pure-dot names rejected, `\Z`-anchored against trailing-newline bypass) plus a `resolve()` + prefix check mirroring `WorkspaceManager.resolve_path`; `WorkspaceManager.create` and `TemplateRegistry.get/create/update/delete` all route through it (covers both the CLI and UI entry points). UI defense-in-depth: shared `TEMPLATE_ID_RE` in `server-validation.ts` (tightened `safeTemplateId` to also reject `.`/`..`) is now enforced on the `POST /api/workspaces` zod schema. Adds 40 pytest + 25 vitest regression assertions. Reviewed by codex (gpt-5.5, xhigh): APPROVE, no bypass found.
+
 ## 0.4.2 - 2026-07-02
 
 ### Fixed

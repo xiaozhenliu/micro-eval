@@ -77,8 +77,17 @@ export function safeJobId(id: string): string | null {
 }
 
 /**
- * Sanitises a template_id: alphanumeric, hyphens, underscores, 1-64 chars.
+ * Allowed template_id charset: alphanumerics plus dot/hyphen/underscore, 1-64
+ * chars, and never a pure-dot name — the negative lookahead rejects `.`/`..`
+ * so a caller-supplied id cannot escape the templates root (H1). JS `$` (no `m`
+ * flag) anchors the true end of input, so a trailing newline cannot slip through.
+ */
+export const TEMPLATE_ID_RE = /^(?!\.+$)[a-zA-Z0-9._-]{1,64}$/;
+
+/**
+ * Sanitises a template_id: alphanumeric, dot, hyphen, underscore, 1-64 chars,
+ * excluding pure-dot names. Returns null if invalid.
  */
 export function safeTemplateId(id: string): string | null {
-  return /^[a-zA-Z0-9._-]{1,64}$/.test(id) ? id : null;
+  return TEMPLATE_ID_RE.test(id) ? id : null;
 }

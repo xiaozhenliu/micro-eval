@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +12,32 @@ from pathlib import Path
 from micro_eval.server.models import TemplateMeta
 
 logger = logging.getLogger(__name__)
+
+# template_id charset: alphanumerics plus dot/hyphen/underscore, 1-64 chars, and
+# never a pure-dot name. Excludes '/' and rejects '.'/'..' so a caller-supplied
+# id cannot escape the templates root via path traversal (H1). `\Z` (not `$`)
+# anchors the end so a trailing newline cannot slip through.
+_TEMPLATE_ID_RE = re.compile(r"(?!\.+\Z)[A-Za-z0-9._-]{1,64}\Z")
+
+
+def resolve_template_dir(templates_dir: Path, template_id: str) -> Path | None:
+    """Validate ``template_id`` and resolve it strictly inside ``templates_dir``.
+
+    Returns the resolved template directory (which may or may not exist yet), or
+    ``None`` when the id is malformed or would resolve outside the templates
+    root. Mirrors ``WorkspaceManager.resolve_path``: the charset check rejects
+    traversal payloads (``/etc``, ``..``, ``../../x``) and the resolve + prefix
+    check is defence-in-depth. Callers decide whether non-existence is an error.
+    """
+    if not _TEMPLATE_ID_RE.match(template_id):
+        return None
+    templates_dir = Path(templates_dir)
+    templates_root = templates_dir.resolve()
+    tpl_dir = (templates_dir / template_id).resolve()
+    if not str(tpl_dir).startswith(str(templates_root) + os.sep):
+        return None
+    return tpl_dir
+
 
 # Runtime artifacts and OS cruft that must never be packaged into a template.
 TEMPLATE_EXCLUDE_NAMES = frozenset(
@@ -79,7 +107,9 @@ class TemplateRegistry:
     ) -> TemplateMeta:
         if not source_dir.is_dir():
             raise TemplateError(f"source directory not found: {source_dir}")
-        tpl_dir = self.templates_dir / template_id
+        tpl_dir = resolve_template_dir(self.templates_dir, template_id)
+        if tpl_dir is None:
+            raise TemplateError(f"invalid template id: {template_id}")
         if tpl_dir.exists():
             raise TemplateError(f"template already exists: {template_id}")
         tpl_dir.mkdir(parents=True, exist_ok=False)
@@ -108,7 +138,10 @@ class TemplateRegistry:
         return meta
 
     def get(self, template_id: str) -> TemplateMeta | None:
-        meta_path = self.templates_dir / template_id / "template.json"
+        tpl_dir = resolve_template_dir(self.templates_dir, template_id)
+        if tpl_dir is None:
+            return None
+        meta_path = tpl_dir / "template.json"
         if not meta_path.exists():
             return None
         return TemplateMeta.model_validate_json(meta_path.read_text())
@@ -130,10 +163,12 @@ class TemplateRegistry:
         return result
 
     def update(self, template_id: str, source_dir: Path) -> TemplateMeta:
+        tpl_dir = resolve_template_dir(self.templates_dir, template_id)
+        if tpl_dir is None:
+            raise TemplateError(f"template not found: {template_id}")
         meta = self.get(template_id)
         if meta is None:
             raise TemplateError(f"template not found: {template_id}")
-        tpl_dir = self.templates_dir / template_id
         for item in tpl_dir.iterdir():
             if item.name == "template.json":
                 continue
@@ -151,8 +186,8 @@ class TemplateRegistry:
         return meta
 
     def delete(self, template_id: str) -> bool:
-        tpl_dir = self.templates_dir / template_id
-        if not tpl_dir.exists():
+        tpl_dir = resolve_template_dir(self.templates_dir, template_id)
+        if tpl_dir is None or not tpl_dir.exists():
             return False
         shutil.rmtree(tpl_dir)
         return True

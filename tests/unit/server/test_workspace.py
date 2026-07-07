@@ -55,6 +55,34 @@ def test_create_template_not_found(manager):
     assert list(manager.workspaces_dir.iterdir()) == []
 
 
+@pytest.mark.parametrize(
+    "bad_id",
+    ["..", ".", "/etc", "../../../etc/ssh", "../evil", "a/b", "x" * 65, "tpl\n"],
+)
+def test_create_rejects_traversal_template_id(manager, bad_id):
+    """A traversal template_id must be rejected before any copy, leaving no
+    workspace behind (GRO-172 / H1)."""
+    with pytest.raises(WorkspaceError, match="template not found"):
+        manager.create(name="evil", owner="mallory", template_id=bad_id)
+    assert list(manager.workspaces_dir.iterdir()) == []
+
+
+def test_create_traversal_does_not_copy_external_dir(manager, data_root):
+    """The classic exploit: `../evil` would resolve to a sibling of templates/
+    and copy its contents into the member workspace. The charset guard rejects
+    it, so the secret file must never land in any workspace."""
+    evil = data_root / "evil"
+    evil.mkdir()
+    (evil / "secret.txt").write_text("id_rsa contents")
+
+    with pytest.raises(WorkspaceError):
+        manager.create(name="pwn", owner="mallory", template_id="../evil")
+
+    assert list(manager.workspaces_dir.iterdir()) == []
+    # The external secret was never copied anywhere under workspaces/.
+    assert not any(manager.workspaces_dir.rglob("secret.txt"))
+
+
 def test_create_rollback_on_copy_failure(manager, data_root):
     """A mid-copy failure (e.g. stale template with .micro-eval/ conflicts,
     or any OSError during shutil.copytree/copy2) must not leave a partial
