@@ -115,11 +115,11 @@ async def worker_loop(
 ) -> None:
     db = QueueDB(data_root / "queue.db")
 
+    from micro_eval.server.workspace import WorkspaceManager
+    ws_manager = WorkspaceManager(data_root)
+
     def workspace_resolver(ws_id: str) -> Path | None:
-        ws_path = data_root / "workspaces" / ws_id
-        if ws_path.exists():
-            return ws_path
-        return None
+        return ws_manager.resolve_path(ws_id)
 
     recovered = db.recover_stale_jobs(workspace_resolver)
     if recovered:
@@ -143,7 +143,11 @@ async def worker_loop(
 
         job_id = job["job_id"]
         ws_id = job["workspace_id"]
-        ws_path = data_root / "workspaces" / ws_id
+        ws_path = ws_manager.resolve_path(ws_id)
+        if ws_path is None:
+            db.update_status(job_id, "failed", finished_at=_utcnow(), error=f"workspace not found or invalid: {ws_id}")
+            logger.error("Job %s failed: workspace %s not found or invalid", job_id, ws_id)
+            continue
         logger.info("Executing job %s for workspace %s", job_id, ws_id)
 
         try:
