@@ -18,7 +18,7 @@ DRY_RUN=false
 # ─── Dev-only paths: tracked on dev, MUST NOT appear on main ─────────
 # Update this list when adding new dev-only directories or files.
 DEV_ONLY_PATTERNS=(
-  "CLAUDE.md"
+  "*CLAUDE.md"
   "TODOS.md"
   "micro-eval-brd.md"
   "micro-eval-prd.md"
@@ -28,6 +28,7 @@ DEV_ONLY_PATTERNS=(
   "docs/references"
   "docs/bug_reports"
   "docs/analysis"
+  "docs/security"
   ".codex"
 )
 
@@ -47,6 +48,7 @@ docs/_archive/
 docs/references/
 docs/bug_reports/
 docs/analysis/
+docs/security/
 .codex/
 GITIGNORE_EOF
 
