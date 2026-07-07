@@ -8,6 +8,8 @@ from pathlib import Path
 
 from micro_eval.models.configuration import AgentSpec
 
+STDERR_CAP_BYTES = 10 * 1024 * 1024
+
 
 class BridgeError(Exception):
     """Raised when agent bridge communication fails."""
@@ -34,6 +36,22 @@ class SubprocessBridge:
         self.turn_timeout_s = turn_timeout_s
         self._proc: asyncio.subprocess.Process | None = None
         self._turn_count = 0
+        self._stderr_buf = bytearray()
+        self._stderr_task: asyncio.Task | None = None
+
+    async def _drain_stderr(self) -> None:
+        """Background task: consume stderr to prevent OS pipe buffer from blocking the agent."""
+        assert self._proc is not None and self._proc.stderr is not None
+        try:
+            while True:
+                chunk = await self._proc.stderr.read(8192)
+                if not chunk:
+                    break
+                remaining = STDERR_CAP_BYTES - len(self._stderr_buf)
+                if remaining > 0:
+                    self._stderr_buf.extend(chunk[:remaining])
+        except Exception:
+            pass
 
     async def start(self) -> None:
         self._proc = await asyncio.create_subprocess_exec(
@@ -44,6 +62,7 @@ class SubprocessBridge:
             cwd=str(self.cwd),
             env=self.env,
         )
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
 
     async def send_turn(self, text: str) -> str:
         if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
@@ -83,10 +102,12 @@ class SubprocessBridge:
             except asyncio.TimeoutError:
                 self._proc.kill()
                 await self._proc.wait()
-        stderr = b""
-        if self._proc.stderr:
-            stderr = await self._proc.stderr.read()
-        return self._proc.returncode, stderr.decode(errors="replace")
+        if self._stderr_task is not None:
+            try:
+                await asyncio.wait_for(self._stderr_task, timeout=2)
+            except asyncio.TimeoutError:
+                self._stderr_task.cancel()
+        return self._proc.returncode, bytes(self._stderr_buf).decode(errors="replace")
 
     @property
     def turn_count(self) -> int:
