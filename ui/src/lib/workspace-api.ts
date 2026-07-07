@@ -1,4 +1,5 @@
 import path from "node:path";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import { getServerDataRoot } from "./server-mode";
 
@@ -66,4 +67,49 @@ export function listWorkspaces(includeArchived = false): WorkspaceMeta[] {
     }
   }
   return result.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/**
+ * Safely read eval.yaml from a workspace. Returns null if the file is missing,
+ * a symlink, or resolves outside the workspace (GRO-180 / L1).
+ */
+export function readEvalYaml(wsPath: string): string | null {
+  const evalYamlPath = path.join(wsPath, "eval.yaml");
+  try {
+    const stat = fs.lstatSync(evalYamlPath);
+    if (!stat.isFile()) return null;
+  } catch {
+    return null;
+  }
+  const real = fs.realpathSync(evalYamlPath);
+  if (!real.startsWith(wsPath + path.sep)) return null;
+  return fs.readFileSync(real, "utf-8");
+}
+
+/**
+ * Safely write eval.yaml in a workspace. Uses temp-file + rename to prevent
+ * TOCTOU races and symlink write-through (GRO-180 / L1). Returns an error
+ * string on failure, or null on success.
+ */
+export function writeEvalYaml(wsPath: string, content: string): string | null {
+  const evalYamlPath = path.join(wsPath, "eval.yaml");
+  try {
+    const stat = fs.lstatSync(evalYamlPath);
+    if (!stat.isFile()) return "eval.yaml is not a regular file";
+    const real = fs.realpathSync(evalYamlPath);
+    if (!real.startsWith(wsPath + path.sep)) return "eval.yaml escapes workspace";
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      return `cannot stat eval.yaml: ${err}`;
+    }
+  }
+  const tmpPath = evalYamlPath + `.tmp.${crypto.randomUUID()}`;
+  try {
+    fs.writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx", mode: 0o600 });
+  } catch (writeErr) {
+    try { fs.unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
+    return `failed to write temp file: ${writeErr}`;
+  }
+  fs.renameSync(tmpPath, evalYamlPath);
+  return null;
 }
