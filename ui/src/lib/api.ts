@@ -14,7 +14,7 @@ export function getRunsDir(): string {
 }
 
 function safeId(id: string): string | null {
-  return /^[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
+  return /^(?!\.+$)[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
 }
 
 export async function listRuns(): Promise<Run[]> {

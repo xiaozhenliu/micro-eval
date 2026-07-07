@@ -71,6 +71,13 @@ export function uvBin(): string {
 }
 
 /**
+ * Safe path-segment ID regex: alphanumerics + dot/hyphen/underscore/colon,
+ * 1+ chars, excluding pure-dot names (`.`, `..`). Used for runId, cellId, etc.
+ * Prevents path traversal when the ID is used in path.join().
+ */
+export const SAFE_SEGMENT_RE = /^(?!\.+$)[A-Za-z0-9_.:-]+$/;
+
+/**
  * Sanitises a job_id: only hex-safe chars and hyphens (job-YYYYMMDDTHHMMSSZ-xxxxxxxx).
  */
 export function safeJobId(id: string): string | null {

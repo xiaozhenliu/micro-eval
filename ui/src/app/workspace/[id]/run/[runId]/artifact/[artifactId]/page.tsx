@@ -10,7 +10,7 @@ interface PageProps {
   params: Promise<{ id: string; runId: string; artifactId: string }>;
 }
 
-const RUN_ID_RE = /^[A-Za-z0-9_.:-]+$/;
+const RUN_ID_RE = /^(?!\.+$)[A-Za-z0-9_.:-]+$/;
 
 function loadWorkspaceArtifact(
   workspaceId: string,

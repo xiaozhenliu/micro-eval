@@ -12,7 +12,7 @@ interface RouteContext {
   params: Promise<{ id: string; runId: string; cellId: string }>;
 }
 
-const RUN_ID_RE = /^[A-Za-z0-9_.:-]+$/;
+const RUN_ID_RE = /^(?!\.+$)[A-Za-z0-9_.:-]+$/;
 
 const HumanEvaluationRequestSchema = z.object({
   pass_fail: z.enum(["pass", "fail"]).nullable().default(null),

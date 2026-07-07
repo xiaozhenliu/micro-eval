@@ -16,7 +16,7 @@ interface PageProps {
 }
 
 function safeRunId(id: string): string | null {
-  return /^[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
+  return /^(?!\.+$)[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
 }
 
 function loadWorkspaceRun(workspaceId: string, runId: string): Run | null {

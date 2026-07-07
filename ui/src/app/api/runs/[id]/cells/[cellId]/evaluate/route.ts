@@ -22,7 +22,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (isServerMode()) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const { id, cellId } = await context.params;
-  if (!/^[A-Za-z0-9_.:-]+$/.test(id)) return NextResponse.json({ error: "invalid run id" }, { status: 400 });
+  if (!/^(?!\.+$)[A-Za-z0-9_.:-]+$/.test(id)) return NextResponse.json({ error: "invalid run id" }, { status: 400 });
   const decodedCellId = decodeURIComponent(cellId);
   const run = await getRun(id);
   if (!run) return NextResponse.json({ error: "run not found" }, { status: 404 });

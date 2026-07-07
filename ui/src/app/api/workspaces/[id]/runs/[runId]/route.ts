@@ -9,7 +9,7 @@ interface RouteContext {
   params: Promise<{ id: string; runId: string }>;
 }
 
-const RUN_ID_RE = /^[A-Za-z0-9_.:-]+$/;
+const RUN_ID_RE = /^(?!\.+$)[A-Za-z0-9_.:-]+$/;
 
 export async function GET(_request: Request, context: RouteContext) {
   if (!isServerMode()) return NextResponse.json({ error: "not found" }, { status: 404 });
