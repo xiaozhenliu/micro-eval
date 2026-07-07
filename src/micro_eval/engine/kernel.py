@@ -431,7 +431,7 @@ class ExecutionKernel:
 
         conv_evaluation = None
         conv_evidence = None
-        if validation_eval.pass_fail != "fail":
+        if validation_eval.pass_fail != "fail" and adapter_result.status != CellStatus.error:
             score_result = await score_conversation(
                 cell=cell,
                 config=plan.judge,
@@ -457,6 +457,16 @@ class ExecutionKernel:
 
         final_eval = conv_evaluation if conv_evaluation is not None else validation_eval
 
+        # Bridge-error cells must not produce strong conclusions (Decision Safety).
+        if adapter_result.status == CellStatus.error:
+            cell_pass_fail = None
+            cell_score = None
+            cell_status = CellStatus.error
+        else:
+            cell_pass_fail = final_eval.pass_fail
+            cell_score = final_eval.score
+            cell_status = CellStatus.failed if final_eval.pass_fail == "fail" else adapter_result.status
+
         return CellResult(
             cell_id=cell.cell_id,
             run_id=record.id,
@@ -464,9 +474,9 @@ class ExecutionKernel:
             configuration_id=cell.configuration.id,
             configuration_name=cell.configuration.name,
             repetition=cell.repetition,
-            status=CellStatus.failed if final_eval.pass_fail == "fail" else adapter_result.status,
-            score=final_eval.score,
-            pass_fail=final_eval.pass_fail,
+            status=cell_status,
+            score=cell_score,
+            pass_fail=cell_pass_fail,
             output_summary=adapter_result.output[:self.SUMMARY_LIMIT],
             stdout_summary=adapter_result.stdout[:self.SUMMARY_LIMIT],
             stderr_summary=adapter_result.stderr[:self.SUMMARY_LIMIT],

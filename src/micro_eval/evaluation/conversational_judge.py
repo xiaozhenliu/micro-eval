@@ -61,16 +61,20 @@ async def simulate_conversation(
 
     try:
         conversation_log: list[dict[str, str]] = []
+        bridge_failed = False
         main_loop = asyncio.get_running_loop()
 
         def model_callback(input: str) -> object:
+            nonlocal bridge_failed
             conversation_log.append({"role": "user", "content": input})
             try:
                 future = asyncio.run_coroutine_threadsafe(bridge.send_turn(input), main_loop)
                 response = future.result(timeout=config.turn_timeout_s)
             except BridgeError as exc:
+                bridge_failed = True
                 response = f"[bridge error: {exc}]"
             except Exception as exc:
+                bridge_failed = True
                 response = f"[bridge error: {exc}]"
             response = redactor.redact(response)
             conversation_log.append({"role": "assistant", "content": response})
@@ -110,8 +114,15 @@ async def simulate_conversation(
             last_output = entry["content"]
             break
 
+    if bridge_failed:
+        status = CellStatus.error
+    elif exit_code is None or exit_code == 0:
+        status = CellStatus.passed
+    else:
+        status = CellStatus.error
+
     adapter_result = AdapterResult(
-        status=CellStatus.passed if exit_code is None or exit_code == 0 else CellStatus.error,
+        status=status,
         exit_code=exit_code,
         stdout="",
         stderr=stderr or "",
