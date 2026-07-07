@@ -25,26 +25,78 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _pid_content() -> str:
+    """PID file payload: ``<pid> <boot-epoch>`` for identity verification."""
+    import time
+    return f"{os.getpid()} {time.monotonic_ns()}"
+
+
+def _is_worker_alive(pid_path: Path) -> bool:
+    """Check if the PID file references a live micro_eval worker.
+
+    Returns True when we should refuse to start (another worker owns the lock).
+    Returns False when the PID file is stale and can be replaced.
+    """
+    try:
+        raw = pid_path.read_text().strip()
+    except PermissionError:
+        logger.error("Cannot read PID file (permission denied) — treating as occupied")
+        return True
+    except OSError:
+        return False
+    parts = raw.split()
+    if not parts:
+        return False
+    try:
+        old_pid = int(parts[0])
+    except ValueError:
+        logger.warning("Corrupt PID file, will replace: %s", pid_path)
+        return False
+    try:
+        os.kill(old_pid, 0)
+    except ProcessLookupError:
+        logger.info("Removing stale PID file (PID %d no longer exists)", old_pid)
+        return False
+    except PermissionError:
+        logger.error("PID %d exists but belongs to another user — treating as occupied", old_pid)
+        return True
+    except OSError:
+        return False
+    # PID exists and we can signal it. On macOS there's no /proc; use a
+    # heuristic: if the PID file has a boot timestamp AND was written by the
+    # current binary, the process is likely ours. Without /proc, fall back to
+    # "alive = occupied" (safe: blocks startup rather than allowing parallel
+    # workers, which is the worse failure mode).
+    logger.error("Another worker appears to be running (PID %d)", old_pid)
+    return True
+
+
 def _write_pid(data_root: Path) -> None:
+    import fcntl
+
     pid_path = data_root / PID_FILENAME
-    if pid_path.exists():
+    lock_path = data_root / (PID_FILENAME + ".lock")
+
+    lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
         try:
-            old_pid = int(pid_path.read_text().strip())
-        except (ValueError, OSError):
-            logger.warning("Corrupt PID file, removing: %s", pid_path)
-            pid_path.unlink(missing_ok=True)
-            old_pid = None
-        else:
-            try:
-                os.kill(old_pid, 0)
-                logger.error("Another worker is already running (PID: %d)", old_pid)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            logger.error("Another worker is acquiring the PID lock")
+            sys.exit(1)
+
+        # Under the exclusive lock, safe to check→unlink→create without race.
+        if pid_path.exists():
+            if _is_worker_alive(pid_path):
                 sys.exit(1)
-            except ProcessLookupError:
-                logger.info("Removing stale worker PID file (PID: %d no longer exists)", old_pid)
-                pid_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-    pid_path.write_text(str(os.getpid()))
+            pid_path.unlink(missing_ok=True)
+
+        fd = os.open(str(pid_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.write(fd, _pid_content().encode())
+        os.close(fd)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
 
 
 def _clear_pid(data_root: Path) -> None:
