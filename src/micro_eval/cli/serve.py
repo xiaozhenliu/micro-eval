@@ -127,9 +127,19 @@ def serve_command(
         **os.environ,
         "MICRO_EVAL_SERVER_MODE": "true",
         "MICRO_EVAL_DATA_ROOT": str(data_root),
+        # Host header allowlist (CSRF layer 4, anti DNS-rebinding). The proxy
+        # (ui/src/proxy.ts) adds localhost defaults for this port; here we pass
+        # the port and any admin-configured allowed_hosts from server.json.
+        "MICRO_EVAL_BIND_PORT": str(port),
+        "MICRO_EVAL_ALLOWED_HOSTS": ",".join(config.allowed_hosts),
     }
 
     typer.echo(f"Starting Next.js on {host}:{port}...")
+    if not config.allowed_hosts:
+        typer.echo(
+            "  Host allowlist: localhost / 127.0.0.1 only (anti DNS-rebinding). "
+            "For LAN access add hostnames to 'allowed_hosts' in server.json.",
+        )
     next_proc = None
     cleaned_up = False
 
