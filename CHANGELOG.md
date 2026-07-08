@@ -4,6 +4,8 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+## 0.4.3 - 2026-07-08
+
 ### Security
 
 Resolving the 2026-07-07 security audit (`docs/security/2026-07-07-security-audit.md`).

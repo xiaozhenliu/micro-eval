@@ -17,6 +17,9 @@ site/.vitepress/cache/
 .micro-eval/
 examples/**/report.html
 
+# Playwright MCP runtime artifacts (console/page logs)
+.playwright-mcp/
+
 # OS
 .DS_Store
 
