@@ -125,7 +125,24 @@ info "Merging dev ($dev_sha) into main (--no-commit)..."
 # --no-ff ensures a merge commit even for fast-forward cases.
 git merge dev --no-commit --no-ff || true
 # "|| true" because --no-commit makes git exit 0 on success but the merge
-# may report conflicts. Check for conflicts explicitly:
+# may report conflicts.
+#
+# Auto-resolve modify/delete conflicts for dev-only paths. main never tracks
+# these files, so we always take the delete side. dev routinely edits them
+# (CLAUDE.md, docs/superpowers, docs/dev, ...); because main's copy is deleted,
+# git reports each as a modify/delete conflict. Their dev-side content is
+# irrelevant to main and is stripped below anyway, so removing them here clears
+# the conflict without dropping anything main should keep.
+for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
+  while IFS= read -r conflicted; do
+    [[ -n "$conflicted" ]] || continue
+    info "Auto-resolving dev-only conflict (delete): $conflicted"
+    git rm -f --quiet "$conflicted" 2>/dev/null \
+      || git rm -f --cached --quiet "$conflicted" 2>/dev/null || true
+  done < <(git diff --name-only --diff-filter=U -- "$pattern")
+done
+
+# Any conflict left now is a real content conflict on a file main keeps.
 if git ls-files -u | grep -q .; then
   abort_merge "Merge conflicts detected. Resolve manually."
 fi
