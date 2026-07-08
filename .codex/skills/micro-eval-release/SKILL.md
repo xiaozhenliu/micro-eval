@@ -19,10 +19,13 @@ All release scripts live in the repository (single copy, tracked on both `dev` a
 
 This skill does not carry its own script copies. History note: it used to, and when this skill file was lost in the 2026-06-15 branch rebuild, the repository copies turned out to be non-functional stubs — see `docs/releases/2026-07-02-release-backfill-record.md`. Keeping one real copy in `scripts/` prevents that failure mode.
 
-Publish templates live beside this file:
+The publish template lives beside this file:
 
-- `assets/templates/agents-publish-template.md`
-- `assets/templates/claude-publish-template.md`
+- `assets/templates/agents-publish-template.md` — projected to `main` as `AGENTS.md`.
+
+`CLAUDE.md` is dev-only (a `@AGENTS.md` stub matched by the `*CLAUDE.md`
+exclusion) and is intentionally NOT projected to `main`; `main` has never
+tracked a root `CLAUDE.md`. `main` tooling reads `AGENTS.md` directly.
 
 The human-readable reference is `docs/engineering/release-process.md`; if it and this file disagree, fix both in the same change.
 
@@ -66,7 +69,7 @@ If code changes touch subprocess, env, artifacts, workspace, report, or UI/API e
     scripts/release-to-main.sh dev main
     ```
     This is the only supported way to publish `main`.
-11. Verify `main` excludes dev-only release exclusions and generated publish templates match the skill assets.
+11. Verify `main` excludes dev-only release exclusions, that `main` `AGENTS.md` matches the skill asset template, and that no root `CLAUDE.md` is tracked on `main`.
 12. Create a local annotated tag only if approved. Do not push unless explicitly approved.
 
 ## Hard gates
@@ -98,8 +101,12 @@ if git ls-tree -r --name-only main | grep -E '^(\.codex/|\.understand-anything/|
 fi
 tmpdir=$(mktemp -d)
 git show main:AGENTS.md > "$tmpdir/AGENTS.md"
-git show main:CLAUDE.md > "$tmpdir/CLAUDE.md"
 cmp "$tmpdir/AGENTS.md" .codex/skills/micro-eval-release/assets/templates/agents-publish-template.md
-cmp "$tmpdir/CLAUDE.md" .codex/skills/micro-eval-release/assets/templates/claude-publish-template.md
+# CLAUDE.md is dev-only (a @AGENTS.md stub matched by the *CLAUDE.md exclusion)
+# and must stay absent from main; main tooling reads AGENTS.md directly.
+if git ls-tree -r --name-only main | grep -qx 'CLAUDE.md'; then
+  echo 'unexpected root CLAUDE.md tracked on main' >&2
+  exit 1
+fi
 rm -rf "$tmpdir"
 ```
