@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import stat
 import sys
@@ -18,13 +19,29 @@ class AdapterError(Exception):
     """Raised when adapter setup fails before process execution."""
 
 
+_logger = logging.getLogger(__name__)
+
+_MIN_SECRET_LENGTH = 4
+
+
 class Redactor:
     """Named text redactor for declared environment values."""
 
     SECRET_ENV_PREFIX = "MICRO_EVAL_SECRET_"
 
     def __init__(self, values: dict[str, str]):
-        self.values = {name: value for name, value in values.items() if value}
+        self.values: dict[str, str] = {}
+        for name, value in values.items():
+            if not value:
+                continue
+            if len(value) < _MIN_SECRET_LENGTH:
+                _logger.warning(
+                    "secret %s is shorter than %d chars; skipping redaction to avoid over-replacement",
+                    name,
+                    _MIN_SECRET_LENGTH,
+                )
+                continue
+            self.values[name] = value
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Redactor":
@@ -353,6 +370,8 @@ class AgentAdapter:
             path.unlink(missing_ok=True)
             return False
         return True
+
+    build_env = _build_env
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

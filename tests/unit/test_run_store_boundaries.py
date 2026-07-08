@@ -21,7 +21,9 @@ def test_run_dir_rejects_output_dir_escaping_project_root(tmp_path: Path) -> Non
         store.run_dir("run-1", "../outside")
 
 
-def test_list_runs_includes_legacy_flat_json_and_skips_broken_files(tmp_path: Path) -> None:
+def test_list_runs_ignores_flat_json_files_and_broken_files(tmp_path: Path) -> None:
+    """Flat .json files at the runs root are ignored (GRO-194); only the
+    canonical subdirectory layout (run-id/run.json) is parsed."""
     store = RunStore(tmp_path)
     store.write_run(_record("run-new", "2026-06-12T10:00:00Z"))
     runs_dir = tmp_path / ".micro-eval/runs"
@@ -30,7 +32,8 @@ def test_list_runs_includes_legacy_flat_json_and_skips_broken_files(tmp_path: Pa
 
     runs = store.list_runs()
     ids = [run.id if isinstance(run, RunRecord) else run["id"] for run in runs]
-    assert ids == ["run-new", "run-legacy"]
+    # Only the canonical subdirectory run is listed; flat .json files are ignored
+    assert ids == ["run-new"]
 
 
 def test_latest_run_id(tmp_path: Path) -> None:

@@ -25,17 +25,78 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _pid_content() -> str:
+    """PID file payload: ``<pid> <boot-epoch>`` for identity verification."""
+    import time
+    return f"{os.getpid()} {time.monotonic_ns()}"
+
+
+def _is_worker_alive(pid_path: Path) -> bool:
+    """Check if the PID file references a live micro_eval worker.
+
+    Returns True when we should refuse to start (another worker owns the lock).
+    Returns False when the PID file is stale and can be replaced.
+    """
+    try:
+        raw = pid_path.read_text().strip()
+    except PermissionError:
+        logger.error("Cannot read PID file (permission denied) — treating as occupied")
+        return True
+    except OSError:
+        return False
+    parts = raw.split()
+    if not parts:
+        return False
+    try:
+        old_pid = int(parts[0])
+    except ValueError:
+        logger.warning("Corrupt PID file, will replace: %s", pid_path)
+        return False
+    try:
+        os.kill(old_pid, 0)
+    except ProcessLookupError:
+        logger.info("Removing stale PID file (PID %d no longer exists)", old_pid)
+        return False
+    except PermissionError:
+        logger.error("PID %d exists but belongs to another user — treating as occupied", old_pid)
+        return True
+    except OSError:
+        return False
+    # PID exists and we can signal it. On macOS there's no /proc; use a
+    # heuristic: if the PID file has a boot timestamp AND was written by the
+    # current binary, the process is likely ours. Without /proc, fall back to
+    # "alive = occupied" (safe: blocks startup rather than allowing parallel
+    # workers, which is the worse failure mode).
+    logger.error("Another worker appears to be running (PID %d)", old_pid)
+    return True
+
+
 def _write_pid(data_root: Path) -> None:
+    import fcntl
+
     pid_path = data_root / PID_FILENAME
-    if pid_path.exists():
-        old_pid = int(pid_path.read_text().strip())
+    lock_path = data_root / (PID_FILENAME + ".lock")
+
+    lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
         try:
-            os.kill(old_pid, 0)
-            logger.error("Another worker is already running (PID: %d)", old_pid)
-            sys.exit(1)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            pass
-    pid_path.write_text(str(os.getpid()))
+            logger.error("Another worker is acquiring the PID lock")
+            sys.exit(1)
+
+        # Under the exclusive lock, safe to check→unlink→create without race.
+        if pid_path.exists():
+            if _is_worker_alive(pid_path):
+                sys.exit(1)
+            pid_path.unlink(missing_ok=True)
+
+        fd = os.open(str(pid_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.write(fd, _pid_content().encode())
+        os.close(fd)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
 
 
 def _clear_pid(data_root: Path) -> None:
@@ -54,11 +115,11 @@ async def worker_loop(
 ) -> None:
     db = QueueDB(data_root / "queue.db")
 
+    from micro_eval.server.workspace import WorkspaceManager
+    ws_manager = WorkspaceManager(data_root)
+
     def workspace_resolver(ws_id: str) -> Path | None:
-        ws_path = data_root / "workspaces" / ws_id
-        if ws_path.exists():
-            return ws_path
-        return None
+        return ws_manager.resolve_path(ws_id)
 
     recovered = db.recover_stale_jobs(workspace_resolver)
     if recovered:
@@ -82,7 +143,11 @@ async def worker_loop(
 
         job_id = job["job_id"]
         ws_id = job["workspace_id"]
-        ws_path = data_root / "workspaces" / ws_id
+        ws_path = ws_manager.resolve_path(ws_id)
+        if ws_path is None:
+            db.update_status(job_id, "failed", finished_at=_utcnow(), error=f"workspace not found or invalid: {ws_id}")
+            logger.error("Job %s failed: workspace %s not found or invalid", job_id, ws_id)
+            continue
         logger.info("Executing job %s for workspace %s", job_id, ws_id)
 
         try:
@@ -119,7 +184,9 @@ async def worker_loop(
             logger.error("Job %s timed out", job_id)
 
         except Exception as exc:
-            db.update_status(job_id, "failed", finished_at=_utcnow(), error=str(exc))
+            from micro_eval.engine.adapter import Redactor
+            redacted_err = Redactor.from_env().redact(str(exc))
+            db.update_status(job_id, "failed", finished_at=_utcnow(), error=redacted_err)
             logger.exception("Job %s failed: %s", job_id, exc)
 
     db.close()

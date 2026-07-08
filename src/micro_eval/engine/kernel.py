@@ -153,6 +153,13 @@ class ExecutionKernel:
                 workspace=cell.task.workspace,
                 caveats=workspace_caveats,
             )
+            # Branch: conversational evaluation
+            if (plan.judge.enabled
+                    and plan.judge.provider == "deepeval_conversational"
+                    and cell.task.scenario is not None):
+                return await self._execute_cell_conversational(
+                    cell, artifact_store, prepared, record, trace_providers, plan, cell_dir, workspace_caveats,
+                )
             adapter_result, redactor = await adapter.invoke(
                 agent=cell.configuration.agent,
                 input_payload=cell.task.input_payload,
@@ -161,9 +168,10 @@ class ExecutionKernel:
                 trace_id=cell.cell_id,
             )
         except (WorkspaceError, AdapterError) as exc:
+            redactor = Redactor.from_env()
             adapter_result = AdapterResult(
                 status=CellStatus.error,
-                stderr=str(exc),
+                stderr=redactor.redact(str(exc)),
                 failure_mode=exc.__class__.__name__,
                 trace_id=cell.cell_id,
             )
@@ -313,6 +321,177 @@ class ExecutionKernel:
             snapshot_gate_result=snapshot_gate,
         )
 
+
+    async def _execute_cell_conversational(
+        self,
+        cell: RunCell,
+        artifact_store: ArtifactStore,
+        prepared: PreparedWorkspace,
+        record: RunRecord,
+        trace_providers: list[TraceProvider],
+        plan: RunPlan,
+        cell_dir: Path,
+        workspace_caveats: list[str],
+    ) -> CellResult:
+        """Execute a cell using conversational evaluation (DeepEval ConversationSimulator)."""
+        import json as json_mod
+        import time
+
+        from micro_eval.evaluation.conversational_judge import simulate_conversation, score_conversation
+
+        agent = cell.configuration.agent
+        adapter = AgentAdapter(output_cap_bytes=plan.guardrails.output_cap_bytes)
+        env_base, redactor = adapter.build_env(
+            agent, cell_dir, cell_dir / "output.txt", cell.cell_id,
+        )
+
+        start = time.monotonic()
+        sim_result = await simulate_conversation(
+            cell=cell,
+            config=plan.judge,
+            agent=agent,
+            cwd=prepared.path,
+            env=env_base,
+            redactor=redactor,
+        )
+        latency = time.monotonic() - start
+
+        if sim_result is None:
+            return self._isolated_failure_result(cell, record, RuntimeError("conversation simulation returned None"))
+
+        test_case, adapter_result, conversation_log = sim_result
+        adapter_result.latency_s = latency
+        adapter_result.stderr = redactor.redact(adapter_result.stderr)
+
+        evidence_prefix = f"{cell.cell_id}::evidence"
+
+        artifacts = [
+            artifact_store.write_text(cell.cell_id, "stdout", "stdout.txt", adapter_result.stdout),
+            artifact_store.write_text(cell.cell_id, "stderr", "stderr.txt", adapter_result.stderr),
+        ]
+        conv_artifact = artifact_store.write_text(
+            cell.cell_id, "conversation", "conversation.json",
+            json_mod.dumps(conversation_log, indent=2, ensure_ascii=False),
+        )
+        artifacts.append(conv_artifact)
+
+        process_evidence = EvidenceItem(
+            evidence_id=f"{evidence_prefix}::process",
+            kind="process",
+            source_kind="artifact_ref",
+            source_ref=artifacts[0].artifact_id if artifacts else None,
+            cell_id=cell.cell_id,
+            status="passed" if adapter_result.status == CellStatus.passed else "error",
+            severity="info" if adapter_result.status == CellStatus.passed else "warning",
+            summary=f"status={adapter_result.status.value} exit_code={adapter_result.exit_code}",
+            artifact_refs=[a.artifact_id for a in artifacts],
+            metadata={
+                "exit_code": adapter_result.exit_code,
+                "latency_s": adapter_result.latency_s,
+                "timed_out": adapter_result.timed_out,
+                "trace_id": adapter_result.trace_id,
+            },
+        )
+        artifact_store.add_evidence(process_evidence)
+
+        trace = collect_trace_with_fallback(trace_providers, cell=cell, result=adapter_result, redactor=redactor)
+        trace_refs: list[str] = []
+        if trace is not None:
+            artifact_store.add_trace(trace)
+            trace_refs.append(f"{trace.provider}:{trace.trace_id}")
+
+        snapshot_gate = evaluate_snapshot_gate(record.same_start_snapshot, prepared.snapshot, task_id=cell.task.id)
+        if workspace_caveats:
+            snapshot_gate.caveats.extend(workspace_caveats)
+            if snapshot_gate.status == "pass":
+                snapshot_gate.status = "warn"
+        snapshot_evidence = EvidenceItem(
+            evidence_id=f"{evidence_prefix}::snapshot-gate",
+            kind="snapshot",
+            cell_id=cell.cell_id,
+            status="passed" if snapshot_gate.status == "pass" else "failed",
+            severity="info" if snapshot_gate.status == "pass" else "critical",
+            summary=redactor.redact(
+                "snapshot gate "
+                f"{snapshot_gate.status}; mismatches={','.join(snapshot_gate.mismatch_fields) or 'none'}"
+            )[:500],
+            metadata={"gate_status": snapshot_gate.status, "mismatch_count": len(snapshot_gate.mismatch_fields)},
+        )
+        artifact_store.add_evidence(snapshot_evidence)
+
+        validation_eval, validation_evidence = await validate_cell(
+            cell=cell,
+            adapter_result=adapter_result,
+            cell_dir=cell_dir,
+            evidence_prefix=evidence_prefix,
+            redactor=redactor,
+            workspace_dir=prepared.path,
+        )
+        for ev in validation_evidence:
+            artifact_store.add_evidence(ev)
+
+        conv_evaluation = None
+        conv_evidence = None
+        if validation_eval.pass_fail != "fail" and adapter_result.status != CellStatus.error:
+            score_result = await score_conversation(
+                cell=cell,
+                config=plan.judge,
+                test_case=test_case,
+                turn_count=len(conversation_log) // 2,
+                redactor=redactor,
+                evidence_prefix=evidence_prefix,
+            )
+            if score_result is not None:
+                conv_evaluation, conv_evidence = score_result
+
+        all_evidence = [process_evidence, snapshot_evidence] + validation_evidence[:]
+        if conv_evidence is not None:
+            all_evidence.append(conv_evidence)
+            artifact_store.add_evidence(conv_evidence)
+
+        evaluations = [validation_eval]
+        if conv_evaluation is not None:
+            evaluations.append(conv_evaluation)
+        (cell_dir / "evaluation.json").write_text(
+            json_mod.dumps([item.model_dump(mode="json") for item in evaluations], indent=2)
+        )
+
+        final_eval = conv_evaluation if conv_evaluation is not None else validation_eval
+
+        # Bridge-error cells must not produce strong conclusions (Decision Safety).
+        if adapter_result.status == CellStatus.error:
+            cell_pass_fail = None
+            cell_score = None
+            cell_status = CellStatus.error
+        else:
+            cell_pass_fail = final_eval.pass_fail
+            cell_score = final_eval.score
+            cell_status = CellStatus.failed if final_eval.pass_fail == "fail" else adapter_result.status
+
+        return CellResult(
+            cell_id=cell.cell_id,
+            run_id=record.id,
+            task_id=cell.task.id,
+            configuration_id=cell.configuration.id,
+            configuration_name=cell.configuration.name,
+            repetition=cell.repetition,
+            status=cell_status,
+            score=cell_score,
+            pass_fail=cell_pass_fail,
+            output_summary=adapter_result.output[:self.SUMMARY_LIMIT],
+            stdout_summary=adapter_result.stdout[:self.SUMMARY_LIMIT],
+            stderr_summary=adapter_result.stderr[:self.SUMMARY_LIMIT],
+            exit_code=adapter_result.exit_code,
+            latency_s=adapter_result.latency_s,
+            artifact_refs=[a.artifact_id for a in artifacts],
+            evidence_refs=[ev.evidence_id for ev in all_evidence],
+            evaluation_refs=[e.evaluation_id for e in evaluations],
+            trace_refs=trace_refs,
+            cell_snapshot=prepared.snapshot,
+            snapshot_gate_result=snapshot_gate,
+            conversation_turns=len(conversation_log) // 2,
+            conversation_ref=conv_artifact.artifact_id,
+        )
 
     def _trace_providers(self, plan: RunPlan) -> list[TraceProvider]:
         """Resolve optional trace providers with process fallback."""

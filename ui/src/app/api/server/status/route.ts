@@ -34,7 +34,7 @@ export async function GET() {
 
   return NextResponse.json({
     server_mode: true,
-    data_root: dataRoot,
+    configured: true,
     workspace_count: workspaces.length,
     template_count: templateCount,
     queue: queueStats,

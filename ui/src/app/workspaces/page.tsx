@@ -2,6 +2,8 @@ import Link from "next/link";
 import { listWorkspaces } from "@/lib/workspace-api";
 import type { WorkspaceMeta } from "@/lib/workspace-api";
 
+export const dynamic = "force-dynamic";
+
 function WorkspaceRow({ workspace }: { workspace: WorkspaceMeta }) {
   return (
     <tr className="border-b border-neutral-800/50 hover:bg-neutral-900/50">

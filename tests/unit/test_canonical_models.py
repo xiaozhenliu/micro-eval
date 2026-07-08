@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from micro_eval.models.configuration import AgentSpec, ConfigurationSpec, Guardrails
+from micro_eval.models.configuration import AgentSpec, ConfigurationSpec, Guardrails, JudgeConfig
 from micro_eval.models.evaluation import EvaluationResult
 from micro_eval.models.run import CellResult, CellStatus
 from micro_eval.models.task import ExpectationSpec, TaskSpec
@@ -77,3 +77,70 @@ def test_command_expectation_requires_argv_list():
 def test_pass_fail_evaluation_requires_evidence_refs():
     with pytest.raises(ValidationError):
         EvaluationResult(evaluation_id="e1", cell_id="c1", pass_fail="pass")
+
+
+def test_task_spec_conversational_fields_default_none():
+    """Conversational fields are optional — existing tasks must not break."""
+    task = TaskSpec(id="t", name="T", input_payload="hello")
+    assert task.scenario is None
+    assert task.expected_outcome is None
+    assert task.user_description is None
+
+
+def test_task_spec_conversational_fields_roundtrip():
+    """Conversational fields survive JSON serialization."""
+    task = TaskSpec(
+        id="conv", name="Conv", input_payload="ctx",
+        scenario="test scenario",
+        expected_outcome="agent succeeds",
+        user_description="a tester",
+    )
+    data = task.model_dump(mode="json")
+    restored = TaskSpec.model_validate(data)
+    assert restored.scenario == "test scenario"
+    assert restored.expected_outcome == "agent succeeds"
+    assert restored.user_description == "a tester"
+
+
+def test_judge_config_default_provider_unchanged():
+    """Existing eval.yaml without provider field should default to 'deepeval'."""
+    config = JudgeConfig(enabled=True)
+    assert config.provider == "deepeval"
+
+
+def test_judge_config_accepts_conversational_provider():
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational")
+    assert config.provider == "deepeval_conversational"
+    assert config.max_turns == 10
+    assert config.turn_timeout_s == 60.0
+    assert config.conversational_metrics == []
+
+
+def test_judge_config_rejects_unknown_provider():
+    with pytest.raises(ValidationError):
+        JudgeConfig(enabled=True, provider="unknown_provider")
+
+
+def test_cell_result_conversational_fields_default():
+    """Existing CellResult construction must not break."""
+    result = CellResult(
+        cell_id="c1", run_id="r1", task_id="t1",
+        configuration_id="cfg", configuration_name="cfg",
+        repetition=1, status=CellStatus.passed,
+    )
+    assert result.conversation_turns == 0
+    assert result.conversation_ref is None
+
+
+def test_cell_result_conversational_fields_roundtrip():
+    result = CellResult(
+        cell_id="c1", run_id="r1", task_id="t1",
+        configuration_id="cfg", configuration_name="cfg",
+        repetition=1, status=CellStatus.passed,
+        conversation_turns=5,
+        conversation_ref="c1::conversation::abc123",
+    )
+    data = result.model_dump(mode="json")
+    restored = CellResult.model_validate(data)
+    assert restored.conversation_turns == 5
+    assert restored.conversation_ref == "c1::conversation::abc123"

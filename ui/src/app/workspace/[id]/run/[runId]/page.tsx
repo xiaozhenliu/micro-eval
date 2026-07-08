@@ -16,7 +16,7 @@ interface PageProps {
 }
 
 function safeRunId(id: string): string | null {
-  return /^[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
+  return /^(?!\.+$)[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
 }
 
 function loadWorkspaceRun(workspaceId: string, runId: string): Run | null {
@@ -75,8 +75,8 @@ export default async function WorkspaceRunPage({ params }: PageProps) {
         results={run.results}
         decision={run.decision}
       />
-      <CellDetail run={run} />
-      <AnnotationPanel runId={run.id} cells={run.results} />
+      <CellDetail run={run} artifactBasePath={`/workspace/${id}/run/${runId}/artifact`} />
+      <AnnotationPanel runId={run.id} cells={run.results} workspaceId={id} />
     </div>
   );
 }

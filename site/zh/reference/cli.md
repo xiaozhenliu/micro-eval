@@ -1,6 +1,6 @@
 # CLI 命令
 
-`micro-eval` 全部命令参考。当前版本：**0.4.0**。
+`micro-eval` 全部命令参考。当前版本：**0.4.1**。
 
 ## 配置文件查找顺序
 
@@ -354,6 +354,59 @@ Caveats:
 | `0` | 报告渲染成功。 |
 | `1` | 错误 — 运行 ID 未找到，或输出路径不可写。 |
 | `2` | 运行数据损坏或缺少必填字段。 |
+
+---
+
+## micro-eval apply-evaluation
+
+将一次人工评测应用到某个运行 cell，并重新计算该运行的 decision。从 stdin 读取 JSON payload，将得到的 evaluation、evidence 与更新后的 decision 以 JSON 形式写入 stdout。这与 Web UI 复核页面在审核者提交 pass/fail 判定时走的是同一条代码路径——同时也可直接用于脚本或 CI。
+
+**语法**
+
+```
+micro-eval apply-evaluation --run-id RUN_ID --cell-id CELL_ID
+```
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--run-id` | string | _（必填）_ | 来自 `micro-eval list` 的运行标识符。 |
+| `--cell-id` | string | _（必填）_ | 运行的 ResultMatrix 中的 cell 标识符。 |
+
+**Stdin payload**
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `pass_fail` | boolean | 该 cell 的总体 pass/fail 判定。 |
+| `score` | number | 可选的单一标量得分。 |
+| `scores` | object | 可选的分维度得分。 |
+| `comment` | string | 审核者评论。 |
+| `evaluator` | string | 审核者身份，默认为 `"human"`。 |
+
+**示例**
+
+::: code-group
+
+```bash [提交带评论的 pass 判定]
+echo '{"pass_fail": true, "comment": "Matches rubric", "evaluator": "alice"}' \
+  | micro-eval apply-evaluation --run-id run-20260615-143022-a1b2c3d4 --cell-id cell-003
+```
+
+:::
+
+**输出示例**
+
+```json
+{"evaluation": {...}, "evidence": {...}, "decision": {...}}
+```
+
+**退出码**
+
+| 代码 | 含义 |
+|------|------|
+| `0` | 评测应用成功，decision 已重新计算。 |
+| `1` | stdin 上的 JSON 无效，或运行/cell 未找到。 |
 
 ---
 
@@ -802,7 +855,7 @@ micro-eval queue cancel JOB_ID [OPTIONS]
 
 ```bash
 micro-eval --version
-# micro-eval 0.4.0
+# micro-eval 0.4.1
 ```
 
 ---

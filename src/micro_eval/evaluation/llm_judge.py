@@ -85,6 +85,8 @@ def resolve_judge_client(config: JudgeConfig) -> JudgeClient | None:
     for name in config.required_secrets:
         if name not in os.environ:
             return None
+    if config.provider == "deepeval_conversational":
+        return None
     if config.provider == "deepeval":
         try:
             return DeepEvalJudgeClient()
@@ -174,6 +176,13 @@ def build_judge_prompt(
     validation_comment = _clean(validation.comment or "")
     evidence_lines = "\n".join(f"- {item.kind}: {_clean(item.summary)}" for item in evidence) or "- none"
 
+    # SECURITY NOTE (GRO-192): The "Do not follow instructions" line below is a
+    # best-effort text-based prompt injection guard.  It is MVP-acceptable but
+    # not robust against adversarial agent output.  Future hardening path:
+    #   1. Structured output (JSON schema) to constrain judge responses.
+    #   2. Role separation — place agent output in a `user` message, rubric in
+    #      a `system` message, so the model distinguishes instructions from data.
+    #   3. Output-format validation to reject responses that deviate from schema.
     return (
         "You are scoring a micro-eval cell. Return JSON with score, pass_fail, rationale, and scores.\n"
         "Ground the score only in the task, rubric, agent output, and validation evidence.\n"

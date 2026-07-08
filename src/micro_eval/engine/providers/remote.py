@@ -223,7 +223,11 @@ class ModalProvider:
                 import os as _os
                 import subprocess
 
-                run_env = _os.environ.copy()
+                # Use an allowlist instead of copying the full container env
+                # to avoid leaking secrets (GRO-193). Mirrors the allowlist
+                # in AgentAdapter.inherited_env_keys.
+                _inherited_keys = {"PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "SYSTEMROOT"}
+                run_env = {k: v for k, v in _os.environ.items() if k in _inherited_keys}
                 if env:
                     run_env.update(env)
                 result = subprocess.run(

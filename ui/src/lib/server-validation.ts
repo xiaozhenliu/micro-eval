@@ -12,7 +12,8 @@ export function validateWriteRequest(
   request: Request,
 ): { member: string } | NextResponse {
   const contentType = request.headers.get("content-type");
-  if (contentType && !contentType.includes("application/json")) {
+  const mediaType = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  if (mediaType !== "application/json") {
     return NextResponse.json(
       { error: "content type must be application/json" },
       { status: 400 },
@@ -32,8 +33,13 @@ export function validateWriteRequest(
  * Executes a Python snippet via `uv run python -c` with the queue.db path
  * injected through the MICRO_EVAL_DATA_ROOT env var (never via string interpolation).
  * The snippet must print a single JSON value to stdout.
+ * Pass values via `extraEnv` instead of string-interpolating into the snippet.
  */
-export function queryQueue(pythonSnippet: string, input?: string): unknown {
+export function queryQueue(
+  pythonSnippet: string,
+  input?: string,
+  extraEnv?: Record<string, string>,
+): unknown {
   const uvBin = process.env.MICRO_EVAL_UV_PATH || "uv";
   const dataRoot = getServerDataRoot();
   const wrapper = `
@@ -56,6 +62,7 @@ finally:
     env: {
       ...process.env,
       _QUEUE_DB_PATH: dataRoot + "/queue.db",
+      ...extraEnv,
     },
     ...(input !== undefined ? { input } : {}),
   });
@@ -70,6 +77,13 @@ export function uvBin(): string {
 }
 
 /**
+ * Safe path-segment ID regex: alphanumerics + dot/hyphen/underscore/colon,
+ * 1+ chars, excluding pure-dot names (`.`, `..`). Used for runId, cellId, etc.
+ * Prevents path traversal when the ID is used in path.join().
+ */
+export const SAFE_SEGMENT_RE = /^(?!\.+$)[A-Za-z0-9_.:-]+$/;
+
+/**
  * Sanitises a job_id: only hex-safe chars and hyphens (job-YYYYMMDDTHHMMSSZ-xxxxxxxx).
  */
 export function safeJobId(id: string): string | null {
@@ -77,8 +91,29 @@ export function safeJobId(id: string): string | null {
 }
 
 /**
- * Sanitises a template_id: alphanumeric, hyphens, underscores, 1-64 chars.
+ * Allowed template_id charset: alphanumerics plus dot/hyphen/underscore, 1-64
+ * chars, and never a pure-dot name — the negative lookahead rejects `.`/`..`
+ * so a caller-supplied id cannot escape the templates root (H1). JS `$` (no `m`
+ * flag) anchors the true end of input, so a trailing newline cannot slip through.
+ */
+export const TEMPLATE_ID_RE = /^(?!\.+$)[a-zA-Z0-9._-]{1,64}$/;
+
+/**
+ * Sanitises a template_id: alphanumeric, dot, hyphen, underscore, 1-64 chars,
+ * excluding pure-dot names. Returns null if invalid.
  */
 export function safeTemplateId(id: string): string | null {
-  return /^[a-zA-Z0-9._-]{1,64}$/.test(id) ? id : null;
+  return TEMPLATE_ID_RE.test(id) ? id : null;
+}
+
+/**
+ * Strip absolute paths and truncate error detail before returning to client.
+ * Prevents leaking server directory structure in error responses (GRO-190).
+ */
+export function sanitizeErrorDetail(detail: string): string {
+  // Strip absolute paths (Unix and Windows)
+  const stripped = detail.replace(/(?:\/[\w./-]+|[A-Z]:\\[\w.\\-]+)/g, "<path>");
+  // Keep last 200 chars to avoid leaking long stack traces
+  if (stripped.length > 200) return "..." + stripped.slice(-200);
+  return stripped;
 }

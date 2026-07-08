@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getMemberName, setMemberName as persistMemberName } from "@/lib/member-identity";
 
 interface Template {
   id: string;
@@ -15,16 +16,10 @@ export default function NewWorkspacePage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [memberName, setMemberName] = useState("");
+  const [memberName, setMemberName] = useState(() => getMemberName());
   const [templates, setTemplates] = useState<Template[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Load member name from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem("micro-eval:member-name");
-    if (stored) setMemberName(stored);
-  }, []);
 
   // Fetch available templates
   useEffect(() => {
@@ -34,17 +29,19 @@ export default function NewWorkspacePage() {
       .catch(() => setTemplates([]));
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Workspace name is required.");
       return;
     }
+    if (!memberName.trim()) {
+      setError("Please enter your name — it is recorded as the workspace owner.");
+      return;
+    }
 
     // Persist member name for future use
-    if (memberName.trim()) {
-      localStorage.setItem("micro-eval:member-name", memberName.trim());
-    }
+    persistMemberName(memberName);
 
     setSubmitting(true);
     setError(null);
@@ -52,18 +49,26 @@ export default function NewWorkspacePage() {
     try {
       const res = await fetch("/api/workspaces", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Micro-Eval-Member": memberName.trim(),
+        },
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim() || undefined,
           template_id: templateId || undefined,
-          owner: memberName.trim() || undefined,
+          owner: memberName.trim(),
         }),
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Server returned ${res.status}`);
+        const rawError = typeof body.error === "string" ? body.error : "";
+        const message =
+          res.status === 400 && rawError.toLowerCase().includes("x-micro-eval-member")
+            ? "Please enter your name first."
+            : rawError || `Server returned ${res.status}`;
+        throw new Error(message);
       }
 
       const workspace = await res.json();
@@ -131,7 +136,7 @@ export default function NewWorkspacePage() {
 
         <div>
           <label htmlFor="member-name" className="block text-sm font-medium text-neutral-300 mb-1.5">
-            Your name
+            Your name <span className="text-red-400">*</span>
           </label>
           <input
             id="member-name"
@@ -140,6 +145,7 @@ export default function NewWorkspacePage() {
             onChange={(e) => setMemberName(e.target.value)}
             placeholder="e.g. alice"
             className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:border-blue-500 focus:outline-none"
+            required
           />
           <p className="mt-1 text-xs text-neutral-500">Stored locally and used as workspace owner.</p>
         </div>

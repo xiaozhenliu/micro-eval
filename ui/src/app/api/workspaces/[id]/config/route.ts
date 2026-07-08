@@ -1,8 +1,6 @@
-import path from "node:path";
-import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { resolveWorkspacePath } from "@/lib/workspace-api";
+import { resolveWorkspacePath, readEvalYaml, writeEvalYaml } from "@/lib/workspace-api";
 import { validateWriteRequest } from "@/lib/server-validation";
 
 interface RouteContext {
@@ -19,12 +17,11 @@ export async function GET(_request: Request, context: RouteContext) {
   const wsPath = resolveWorkspacePath(id);
   if (!wsPath) return NextResponse.json({ error: "workspace not found" }, { status: 404 });
 
-  const evalYamlPath = path.join(wsPath, "eval.yaml");
-  if (!fs.existsSync(evalYamlPath)) {
-    return NextResponse.json({ error: "eval.yaml not found" }, { status: 404 });
+  const content = readEvalYaml(wsPath);
+  if (content === null) {
+    return NextResponse.json({ error: "eval.yaml not found or invalid" }, { status: 404 });
   }
 
-  const content = fs.readFileSync(evalYamlPath, "utf-8");
   return new Response(content, {
     headers: { "content-type": "text/plain; charset=utf-8" },
   });
@@ -56,13 +53,8 @@ export async function PUT(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "eval.yaml too large (max 256 KiB)" }, { status: 413 });
   }
 
-  const evalYamlPath = path.join(wsPath, "eval.yaml");
-  // Ensure the resolved path is still inside the workspace
-  const resolvedTarget = path.resolve(evalYamlPath);
-  if (!resolvedTarget.startsWith(wsPath + path.sep) && resolvedTarget !== path.join(wsPath, "eval.yaml")) {
-    return NextResponse.json({ error: "invalid path" }, { status: 400 });
-  }
+  const err = writeEvalYaml(wsPath, yamlContent);
+  if (err) return NextResponse.json({ error: err }, { status: 400 });
 
-  fs.writeFileSync(evalYamlPath, yamlContent, "utf-8");
   return NextResponse.json({ saved: true });
 }

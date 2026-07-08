@@ -402,9 +402,15 @@ class TestRedactor:
         assert redactor.redact("got my-secret-token back") == "got [REDACTED:MICRO_EVAL_SECRET_TOKEN] back"
 
     def test_empty_values_are_not_stored(self) -> None:
-        redactor = Redactor({"MICRO_EVAL_SECRET_EMPTY": "", "MICRO_EVAL_SECRET_REAL": "val"})
+        redactor = Redactor({"MICRO_EVAL_SECRET_EMPTY": "", "MICRO_EVAL_SECRET_REAL": "real-value"})
         assert "MICRO_EVAL_SECRET_EMPTY" not in redactor.values
         assert "MICRO_EVAL_SECRET_REAL" in redactor.values
+
+    def test_short_values_are_skipped(self) -> None:
+        """Secrets shorter than 4 chars are skipped to avoid over-replacement (GRO-188)."""
+        redactor = Redactor({"MICRO_EVAL_SECRET_SHORT": "abc", "MICRO_EVAL_SECRET_OK": "abcd"})
+        assert "MICRO_EVAL_SECRET_SHORT" not in redactor.values
+        assert "MICRO_EVAL_SECRET_OK" in redactor.values
 
     async def test_secret_in_stderr_is_redacted_in_result(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MICRO_EVAL_SECRET_PASS", "top-secret-password")

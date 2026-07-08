@@ -1,0 +1,8 @@
+id: echo-conversation
+name: "Echo conversation test"
+description: "Test multi-turn conversation with echo agent"
+input_payload: "You are a helpful assistant."
+scenario: "A user asks simple questions and expects helpful responses"
+expected_outcome: "The assistant responds helpfully to all questions"
+user_description: "A friendly user asking basic questions"
+rubric: "Evaluate whether the agent maintains a coherent, helpful conversation"

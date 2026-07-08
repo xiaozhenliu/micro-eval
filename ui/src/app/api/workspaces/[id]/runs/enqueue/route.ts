@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { NextResponse } from "next/server";
 import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
 import { resolveWorkspacePath } from "@/lib/workspace-api";
-import { validateWriteRequest, uvBin } from "@/lib/server-validation";
+import { validateWriteRequest, uvBin, sanitizeErrorDetail } from "@/lib/server-validation";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -31,7 +31,7 @@ export async function POST(request: Request, context: RouteContext) {
       },
     );
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "failed to build run plan", detail }, { status: 502 });
   }
 
@@ -75,7 +75,7 @@ finally:
     }
     return NextResponse.json(result, { status: 202 });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "enqueue failed", detail }, { status: 502 });
   }
 }

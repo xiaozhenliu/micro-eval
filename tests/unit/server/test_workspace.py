@@ -2,6 +2,7 @@
 
 import os
 import re
+from unittest.mock import patch
 
 import pytest
 
@@ -49,6 +50,55 @@ def test_create_from_template(manager, data_root):
 def test_create_template_not_found(manager):
     with pytest.raises(WorkspaceError, match="template not found"):
         manager.create(name="fail", owner="alice", template_id="no-such")
+    # Template-not-found is a domain error hit before any copy happens;
+    # the partially created workspace dir must not survive it.
+    assert list(manager.workspaces_dir.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    ["..", ".", "/etc", "../../../etc/ssh", "../evil", "a/b", "x" * 65, "tpl\n"],
+)
+def test_create_rejects_traversal_template_id(manager, bad_id):
+    """A traversal template_id must be rejected before any copy, leaving no
+    workspace behind (GRO-172 / H1)."""
+    with pytest.raises(WorkspaceError, match="template not found"):
+        manager.create(name="evil", owner="mallory", template_id=bad_id)
+    assert list(manager.workspaces_dir.iterdir()) == []
+
+
+def test_create_traversal_does_not_copy_external_dir(manager, data_root):
+    """The classic exploit: `../evil` would resolve to a sibling of templates/
+    and copy its contents into the member workspace. The charset guard rejects
+    it, so the secret file must never land in any workspace."""
+    evil = data_root / "evil"
+    evil.mkdir()
+    (evil / "secret.txt").write_text("id_rsa contents")
+
+    with pytest.raises(WorkspaceError):
+        manager.create(name="pwn", owner="mallory", template_id="../evil")
+
+    assert list(manager.workspaces_dir.iterdir()) == []
+    # The external secret was never copied anywhere under workspaces/.
+    assert not any(manager.workspaces_dir.rglob("secret.txt"))
+
+
+def test_create_rollback_on_copy_failure(manager, data_root):
+    """A mid-copy failure (e.g. stale template with .micro-eval/ conflicts,
+    or any OSError during shutil.copytree/copy2) must not leave a partial
+    workspace directory behind, and must surface a readable WorkspaceError."""
+    tpl_dir = data_root / "templates" / "tpl-bad"
+    tpl_dir.mkdir(parents=True)
+    (tpl_dir / "eval.yaml").write_text("project_name: tpl-bad\n")
+    (tpl_dir / "template.json").write_text(
+        '{"schema_version":"1.0","template_id":"tpl-bad","name":"Bad","version":"1.0.0","created_at":"","updated_at":""}'
+    )
+
+    with patch("shutil.copy2", side_effect=OSError("disk full")):
+        with pytest.raises(WorkspaceError, match="workspace creation failed"):
+            manager.create(name="fail", owner="alice", template_id="tpl-bad")
+
+    assert list(manager.workspaces_dir.iterdir()) == []
 
 
 def test_workspace_id_format(manager):

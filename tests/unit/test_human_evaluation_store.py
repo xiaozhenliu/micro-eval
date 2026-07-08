@@ -58,15 +58,15 @@ def test_append_human_evaluation_updates_cell_file_and_decision(tmp_path: Path) 
 
 
 def test_human_evaluation_redacts_micro_eval_secret_comments(monkeypatch) -> None:
-    monkeypatch.setenv("MICRO_EVAL_SECRET_REVIEW", "xy")
+    monkeypatch.setenv("MICRO_EVAL_SECRET_REVIEW", "secret-val")
 
     evaluation, evidence = build_human_evaluation(
         cell_id="cell",
         pass_fail="pass",
         score=1.0,
-        comment="contains xy",
+        comment="contains secret-val here",
     )
 
-    assert "xy" not in evaluation.comment
-    assert "xy" not in evidence.summary
+    assert "secret-val" not in evaluation.comment
+    assert "secret-val" not in evidence.summary
     assert "[REDACTED:MICRO_EVAL_SECRET_REVIEW]" in evaluation.comment

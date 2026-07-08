@@ -3,7 +3,7 @@ title: Docs Directory Guide
 doc_type: reference
 status: active
 created_at: 2026-06-03T08:35+08:00
-updated_at: 2026-06-12T12:45+08:00
+updated_at: 2026-07-02T12:00+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -52,6 +52,8 @@ Use this README as the entry point for deciding where a document belongs.
 | `releases/2026-06-12-v0.2.0-dependency-inventory.md` | Dependency inventory for v0.2.0 release preparation. |
 | `.codex/skills/micro-eval-release/SKILL.md` | Project-level executable release skill for versioning, release evidence, dependency inventory, dev commits, tags, and dev-to-main publishing. |
 | `engineering/release-process.md` | Human-readable release reference that points back to the release skill. |
+
+For the most accurate and up-to-date version record, see the root [`CHANGELOG.md`](../CHANGELOG.md) — dedicated release evidence documents have not been produced for every release since v0.3.0.
 
 ## Source-of-truth hierarchy
 

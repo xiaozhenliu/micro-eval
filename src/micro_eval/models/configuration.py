@@ -175,11 +175,16 @@ class JudgeConfig(BaseModel):
 
     schema_version: str = SCHEMA_VERSION
     enabled: bool = False
-    provider: Literal["deepeval"] = "deepeval"
+    provider: Literal["deepeval", "deepeval_conversational"] = "deepeval"
     model: str = ""
     temperature: float = 0.0
     pass_threshold: float = 0.5
     required_secrets: list[str] = Field(default_factory=list)
+    # Conversational evaluation parameters
+    max_turns: int = 10
+    turn_timeout_s: float = 60.0
+    simulator_model: str = ""
+    conversational_metrics: list[str] = Field(default_factory=list)
 
     @field_validator("required_secrets")
     @classmethod

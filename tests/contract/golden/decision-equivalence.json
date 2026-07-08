@@ -54,7 +54,9 @@
           "process:cell-b1"
         ],
         "cell_snapshot": null,
-        "snapshot_gate_result": null
+        "snapshot_gate_result": null,
+        "conversation_turns": 0,
+        "conversation_ref": null
       },
       {
         "schema_version": "1.0",
@@ -87,7 +89,9 @@
           "process:cell-b2"
         ],
         "cell_snapshot": null,
-        "snapshot_gate_result": null
+        "snapshot_gate_result": null,
+        "conversation_turns": 0,
+        "conversation_ref": null
       },
       {
         "schema_version": "1.0",
@@ -120,7 +124,9 @@
           "process:cell-b3"
         ],
         "cell_snapshot": null,
-        "snapshot_gate_result": null
+        "snapshot_gate_result": null,
+        "conversation_turns": 0,
+        "conversation_ref": null
       },
       {
         "schema_version": "1.0",
@@ -153,7 +159,9 @@
           "process:cell-c1"
         ],
         "cell_snapshot": null,
-        "snapshot_gate_result": null
+        "snapshot_gate_result": null,
+        "conversation_turns": 0,
+        "conversation_ref": null
       },
       {
         "schema_version": "1.0",
@@ -186,7 +194,9 @@
           "process:cell-c2"
         ],
         "cell_snapshot": null,
-        "snapshot_gate_result": null
+        "snapshot_gate_result": null,
+        "conversation_turns": 0,
+        "conversation_ref": null
       }
     ],
     "execution_order": [],
@@ -362,6 +372,6 @@
         }
       }
     },
-    "recommended_action": "review evidence and complete P0-b comparability gate"
+    "recommended_action": "review the evidence for each cell and confirm the runs are comparable before acting"
   }
 }

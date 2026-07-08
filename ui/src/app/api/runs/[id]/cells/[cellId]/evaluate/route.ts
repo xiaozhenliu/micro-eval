@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRun, getProjectRoot } from "@/lib/api";
+import { isServerMode } from "@/lib/server-mode";
 
 const HumanEvaluationRequestSchema = z.object({
   pass_fail: z.enum(["pass", "fail"]).nullable().default(null),
@@ -16,8 +17,12 @@ interface RouteContext {
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  // Local-only route: block in serve mode to prevent CSRF bypass (GRO-175 / M3).
+  // Server-mode evaluations go through the workspace-scoped evaluate route.
+  if (isServerMode()) return NextResponse.json({ error: "not found" }, { status: 404 });
+
   const { id, cellId } = await context.params;
-  if (!/^[A-Za-z0-9_.:-]+$/.test(id)) return NextResponse.json({ error: "invalid run id" }, { status: 400 });
+  if (!/^(?!\.+$)[A-Za-z0-9_.:-]+$/.test(id)) return NextResponse.json({ error: "invalid run id" }, { status: 400 });
   const decodedCellId = decodeURIComponent(cellId);
   const run = await getRun(id);
   if (!run) return NextResponse.json({ error: "run not found" }, { status: 404 });

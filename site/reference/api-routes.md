@@ -656,7 +656,7 @@ Templates are managed via the CLI (`micro-eval template create/update/delete`) a
 
 ```json
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "mode": "server",
   "worker_alive": true,
   "queue_depth": 2,

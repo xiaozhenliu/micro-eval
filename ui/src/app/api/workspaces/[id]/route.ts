@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
 import { readWorkspaceMeta, resolveWorkspacePath } from "@/lib/workspace-api";
-import { validateWriteRequest, uvBin, queryQueue } from "@/lib/server-validation";
+import { validateWriteRequest, uvBin, queryQueue, sanitizeErrorDetail } from "@/lib/server-validation";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -60,7 +60,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     });
     return NextResponse.json(JSON.parse(stdout));
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "workspace update failed", detail }, { status: 502 });
   }
 }
@@ -78,7 +78,9 @@ export async function DELETE(request: Request, context: RouteContext) {
   // Check no pending jobs before deletion
   try {
     const hasPending = queryQueue(
-      `result = db.has_pending_jobs(${JSON.stringify(id)})\nprint(json.dumps(result))`,
+      `result = db.has_pending_jobs(os.environ['_WS_ID'])\nprint(json.dumps(result))`,
+      undefined,
+      { _WS_ID: id },
     ) as boolean;
     if (hasPending) {
       return NextResponse.json(
@@ -102,7 +104,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
     return NextResponse.json({ deleted: true, workspace_id: id });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = sanitizeErrorDetail(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: "workspace deletion failed", detail }, { status: 502 });
   }
 }

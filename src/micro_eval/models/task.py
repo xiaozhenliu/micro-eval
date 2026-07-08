@@ -129,6 +129,10 @@ class TaskSpec(BaseModel):
     business_impact_tier: int = 3
     tags: list[str] = Field(default_factory=list)
     revision_id: str = ""
+    # Conversational evaluation fields (optional, backward compatible)
+    scenario: str | None = None
+    expected_outcome: str | None = None
+    user_description: str | None = None
 
     @field_validator("id")
     @classmethod

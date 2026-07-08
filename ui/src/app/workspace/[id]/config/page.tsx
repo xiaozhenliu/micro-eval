@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import fs from "node:fs";
-import path from "node:path";
-import { readWorkspaceMeta, resolveWorkspacePath } from "@/lib/workspace-api";
+import { readWorkspaceMeta, resolveWorkspacePath, readEvalYaml } from "@/lib/workspace-api";
 import { ConfigEditor } from "@/components/ConfigEditor";
 
 interface PageProps {
@@ -17,10 +15,7 @@ export default async function WorkspaceConfigPage({ params }: PageProps) {
   const wsPath = resolveWorkspacePath(id);
   let configContent = "";
   if (wsPath) {
-    const evalYamlPath = path.join(wsPath, "eval.yaml");
-    if (fs.existsSync(evalYamlPath)) {
-      configContent = fs.readFileSync(evalYamlPath, "utf-8");
-    }
+    configContent = readEvalYaml(wsPath) ?? "";
   }
 
   return (

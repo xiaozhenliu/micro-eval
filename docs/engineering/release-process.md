@@ -3,7 +3,7 @@ title: micro-eval Release Process
 doc_type: reference
 status: active
 created_at: 2026-06-03T13:09+08:00
-updated_at: 2026-06-03T13:55+08:00
+updated_at: 2026-07-02T14:10+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -17,19 +17,19 @@ related:
   - docs/DEVELOPMENT.md
   - docs/documentation-standard.md
   - docs/engineering/security-guidelines.md
-  - .codex/skills/micro-eval-release/SKILL.md
+  - docs/releases/2026-07-02-release-backfill-record.md
   - scripts/release-to-main.sh
 ---
 
 # micro-eval Release Process
 
-This document is a human-readable release reference. The executable release workflow is the project-level skill `.codex/skills/micro-eval-release/SKILL.md` plus its bundled `scripts/` and `assets/templates/`. Repository `scripts/release/*` and `scripts/release-to-main.sh` are compatibility wrappers.
+This document is the human-readable release reference. The release scripts live in repository `scripts/release/*` and `scripts/release-to-main.sh` (single copy, tracked on both branches). The release checklist skill is `.codex/skills/micro-eval-release/SKILL.md` (restored 2026-07-02 after being lost in the 2026-06-15 branch-rebuild incident — see `docs/releases/2026-07-02-release-backfill-record.md`). If this document and the skill disagree, fix both in the same change.
 
 ## Goals
 
 - Keep release work repeatable and auditable.
 - Keep `VERSION`, package metadata, runtime metadata, UI package metadata, and run evidence aligned.
-- Keep executable release automation inside `.codex/skills/micro-eval-release/`.
+- Keep executable release automation inside `scripts/release/` and `scripts/release-to-main.sh`.
 - Record release evidence and dependency inventory before publishing.
 - Publish `main` only through the existing projection script from a clean `dev` checkout.
 - Avoid leaking secrets or runtime artifacts into release documentation or commits.
@@ -54,7 +54,7 @@ scripts/release-to-main.sh dev main
   - `docs/bug_reports/`
   - `micro-eval-brd.md`
   - `micro-eval-prd.md`
-- `main` `AGENTS.md` and `CLAUDE.md` must be generated from `.codex/skills/micro-eval-release/assets/templates/`.
+- `main` `AGENTS.md` and `CLAUDE.md` must be generated from `.codex/skills/micro-eval-release/assets/templates/` (templates restored 2026-07-02).
 
 ## Version source strategy
 
@@ -100,13 +100,13 @@ Before preparing a release, identify:
 1. Run a preflight version audit:
 
 ```bash
-.codex/skills/micro-eval-release/scripts/check-version-consistency.py --version "$(cat VERSION)"
+scripts/release/check-version-consistency.py --version "$(cat VERSION)"
 ```
 
 2. Sync a new version when needed:
 
 ```bash
-.codex/skills/micro-eval-release/scripts/sync-version.py X.Y.Z
+scripts/release/sync-version.py X.Y.Z
 ```
 
 3. Re-run the consistency check.
@@ -195,8 +195,8 @@ The release evidence should include:
 Run the release checks appropriate to the changed files. For release work, the default gate is:
 
 ```bash
-.codex/skills/micro-eval-release/scripts/check-version-consistency.py --version "$(cat VERSION)"
-.codex/skills/micro-eval-release/scripts/preflight-release.sh "$(cat VERSION)"
+scripts/release/check-version-consistency.py --version "$(cat VERSION)"
+scripts/release/preflight-release.sh "$(cat VERSION)"
 ```
 
 Security-oriented greps must check that trusted paths do not introduce shell subprocess execution:

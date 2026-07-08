@@ -36,7 +36,7 @@ def build_plan_command(
     if overrides:
         override_dict = json.loads(overrides)
 
-    ALLOWED_OVERRIDES = {"repetitions", "timeout_s", "max_concurrency"}
+    ALLOWED_OVERRIDES = {"max_concurrency"}
     for key in override_dict:
         if key not in ALLOWED_OVERRIDES:
             typer.echo(json.dumps({"error": f"override '{key}' not allowed. Allowed: {ALLOWED_OVERRIDES}"}), err=True)

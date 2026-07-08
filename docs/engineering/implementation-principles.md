@@ -48,7 +48,7 @@ tags:
 - 文件路径通过注入的 base path 或 project root 计算。
 - JSON 文件是 MVP 存储实现，不是业务模块的直接依赖。
 
-这样未来从 JSON 迁移到 SQLite / hosted backend 时，不需要重写 Decision、UI、Evaluation 等层。
+`store/sqlite_store.py` 已作为索引层存在（用于趋势分析等查询场景），JSON 仍是 source of truth；边界原则不变：SQLite 索引与未来 hosted backend 一样，都必须通过 store 接口接入，不得让 Decision、UI、Evaluation 等层直接依赖具体存储实现。
 
 ## Snapshot and Replay Are Inputs
 

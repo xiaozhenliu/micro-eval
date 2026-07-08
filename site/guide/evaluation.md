@@ -207,6 +207,12 @@ After saving an annotation, the decision for that cell is **recomputed immediate
 
 ---
 
+## Multi-turn conversational evaluation
+
+The three layers above evaluate a single request/response exchange. For tasks that need to assess a multi-turn conversation — does the agent stay on topic, remember earlier context, reach the intended outcome — micro-eval offers a parallel evaluation path built on DeepEval's `ConversationSimulator`. It runs instead of the Layer 2 LLM judge for tasks that opt in, and does not change the default single-turn behavior. See [Conversational evaluation](/guide/conversational-evaluation) for how to configure it, which metrics it produces, and what artifacts it writes.
+
+---
+
 ## EvaluationResult Schema
 
 All three layers emit the same `EvaluationResult` structure, making them composable:

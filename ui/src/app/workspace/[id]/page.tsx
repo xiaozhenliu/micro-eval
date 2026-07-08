@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { RunSchema } from "@/lib/schema";
 import type { Run } from "@/lib/schema";
+import { RunEnqueueButton } from "@/components/RunEnqueueButton";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -66,13 +67,7 @@ export default async function WorkspaceDetailPage({ params }: PageProps) {
           >
             Config
           </Link>
-          <button
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
-            onClick={undefined}
-            type="button"
-          >
-            Enqueue Run
-          </button>
+          <RunEnqueueButton workspaceId={id} />
         </div>
       </div>
 

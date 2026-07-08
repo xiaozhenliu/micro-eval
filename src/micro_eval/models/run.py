@@ -112,6 +112,9 @@ class CellResult(BaseModel):
     trace_refs: list[str] = Field(default_factory=list)
     cell_snapshot: CellSnapshot | None = None
     snapshot_gate_result: SnapshotGateResult | None = None
+    # Conversational evaluation metadata (backward compatible)
+    conversation_turns: int = 0
+    conversation_ref: str | None = None
 
 
 class RunRecord(BaseModel):

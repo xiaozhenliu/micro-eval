@@ -6,6 +6,8 @@ import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
 import { TemplateCard } from "@/components/TemplateCard";
 import type { TemplateMeta } from "@/components/TemplateCard";
 
+export const dynamic = "force-dynamic";
+
 function listTemplates(): TemplateMeta[] {
   const templatesDir = path.join(getServerDataRoot(), "templates");
   if (!fs.existsSync(templatesDir)) return [];

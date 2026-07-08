@@ -2,6 +2,91 @@
 
 All notable changes to `micro-eval` are documented here.
 
+## Unreleased
+
+## 0.4.3 - 2026-07-08
+
+### Security
+
+Resolving the 2026-07-07 security audit (`docs/security/2026-07-07-security-audit.md`).
+
+- **H1 / GRO-172 — `template_id` path traversal (HIGH)**: `POST /api/workspaces` accepted an unvalidated `template_id` (`z.string().min(1).max(64)`, no charset limit) that flowed as `--template <id>` into `templates_dir / template_id` with only an `exists()` check. Under pathlib, `template_id="/etc"` replaces the base path entirely and `"../.."` traverses up, so any server-readable directory could be copied into a member workspace — an arbitrary file read chain running as the server process user. Fixed at the authoritative Python boundary: new `resolve_template_dir()` in `server/template.py` enforces a charset allowlist (`[A-Za-z0-9._-]{1,64}`, pure-dot names rejected, `\Z`-anchored against trailing-newline bypass) plus a `resolve()` + prefix check mirroring `WorkspaceManager.resolve_path`; `WorkspaceManager.create` and `TemplateRegistry.get/create/update/delete` all route through it (covers both the CLI and UI entry points). UI defense-in-depth: shared `TEMPLATE_ID_RE` in `server-validation.ts` (tightened `safeTemplateId` to also reject `.`/`..`) is now enforced on the `POST /api/workspaces` zod schema. Adds 40 pytest + 25 vitest regression assertions. Reviewed by codex (gpt-5.5, xhigh): APPROVE, no bypass found.
+- **L9 / GRO-188 — short secret over-redact (LOW)**: secrets < 4 chars skipped with warning to prevent "a" replacing all "a" in output. **L10 / GRO-189 — overrides whitelist (LOW)**: narrowed `ALLOWED_OVERRIDES` to `{max_concurrency}` only. **I1 / GRO-190 — error path leaks (INFO)**: `sanitizeErrorDetail()` strips absolute paths + truncates; applied to all error responses; status route removed `data_root`. **I2 / GRO-191 — string interpolation (INFO)**: replaced JSON.stringify in Python code with env var passing via `queryQueue(..., extraEnv)`. **I3 / GRO-192 — LLM judge injection (INFO)**: documentation-only acknowledging limitation. **I4 / GRO-193 — Modal env copy (INFO)**: replaced `os.environ.copy()` with allowlist. **I5 / GRO-194 — run_store arbitrary JSON (INFO)**: narrowed to only parse `run-id/run.json`. Batch reviewed by codex (gpt-5.4, xhigh): blocking issue fixed (evaluate + queue route sanitization); APPROVE on remaining 6.
+- **L8 / GRO-187 — worker workspace resolver lacks ID validation (LOW)**: worker used bare `exists()` for workspace resolution and raw `path.join` for execution path, bypassing regex/resolve/prefix checks. Replaced with `WorkspaceManager.resolve_path`; invalid ws_id now fails the job immediately. Reviewed by codex (gpt-5.4, xhigh): APPROVE.
+- **L7 / GRO-186 — template hardlink + silent symlink (LOW)**: top-level symlink exclusion in workspace.py was silent (no log); hardlink (`st_nlink>1`) files were copied without detection. Fixed: warning logs for both; hardlink files skipped in top-level copy, `_copy_template_source`, and `_template_ignore` callback. Reviewed by codex (gpt-5.4, xhigh): APPROVE.
+- **L5 / GRO-184 — bridge stderr unlimited read + pipe stall (LOW)**: SubprocessBridge `stop()` did `stderr.read()` with no cap (adapter uses 10MB); session-long pipe never consumed → agent writes fill OS buffer → turn timeouts. Fixed: background `_drain_stderr()` task consumes stderr into capped buffer during session; `stop()` awaits the drain task. Reviewed by codex (gpt-5.4, xhigh): APPROVE.
+- **L3 / GRO-182 — kernel error stderr not redacted (LOW)**: except branch used empty `Redactor({})`, now uses `Redactor.from_env()`. **L4 / GRO-183 — worker exception not redacted (LOW)**: `error=str(exc)` written to queue.db now passes through `Redactor.from_env()`. **L6 / GRO-185 — conversation.json user turns not redacted (LOW)**: all conversation_log entries now redacted before persistence. Batch reviewed by codex (gpt-5.5, xhigh): APPROVE.
+- **L2 / GRO-181 — runId regex allows pure-dot traversal (LOW)**: `RUN_ID_RE = /^[A-Za-z0-9_.:-]+$/` accepted `..` which could traverse one directory level via `path.join`. Added `(?!\.+$)` negative lookahead to all 11 instances (6 `RUN_ID_RE`, 2 `safeRunId`, 1 `safeId`, 1 inline, 1 exported `SAFE_SEGMENT_RE`). Reviewed by codex (gpt-5.5, xhigh): APPROVE.
+- **L1 / GRO-180 — eval.yaml symlink write-through (LOW~MEDIUM)**: config PUT/GET followed eval.yaml symlinks planted by an agent in Level 0 (no sandbox), enabling arbitrary file read/write as the server user. Fixed: shared `readEvalYaml`/`writeEvalYaml` helpers with lstat+realpath+prefix check; write uses temp file (`crypto.randomUUID()` + `wx` flag) + `renameSync` to prevent TOCTOU races and symlink write-through. Config page also uses safe reader. Reviewed by codex (gpt-5.5, xhigh): APPROVE after fixing dangling symlink, config page direct read, and predictable temp path.
+- **M7 / GRO-179 — audit report leak to main channel (MEDIUM)**: `docs/security/` (containing vulnerability file:line details) was tracked on dev but not in the release script's `DEV_ONLY_PATTERNS`, so it could leak to the public main branch on release. Code fix already in place (commit `cffe16a`): `docs/security` added to `DEV_ONLY_PATTERNS` + `MAIN_GITIGNORE_EXTRAS`; `CLAUDE.md` pattern widened to `*CLAUDE.md`; local main `git rm --cached` two leaked files. Remaining: push main (awaiting next formal release).
+- **M6 / GRO-178 — worker.pid identity + race fix (MEDIUM)**: `_write_pid` had 3 bugs: (a) `os.kill(pid,0)` only checks PID existence, not identity — PID reuse causes false "already running"; (b) `except OSError: pass` lets EPERM (process belongs to another user) silently fall through; (c) no atomicity between exists() check and write. Rewrote with `fcntl.flock` exclusive advisory lock serializing the entire check→unlink→O_EXCL-create sequence; PermissionError from kill or file read → treated as "occupied" (fail-closed); PID file includes boot timestamp for future identity verification. 11 test cases. Reviewed by codex (gpt-5.5, xhigh): APPROVE.
+- **M5 / GRO-177 — BridgeError swallowed, dead agent scored (MEDIUM)**: when the agent process died mid-conversation, model_callback caught `BridgeError` and substituted placeholder text, letting the simulator continue with a dead agent. The resulting fake "conversation" was then scored normally — if exit_code was 0, the cell was judged "passed". Violated Decision Safety ("untrusted evidence must not produce strong conclusions"). Fixed: `bridge_failed` flag in model_callback → force `adapter_result.status = CellStatus.error`; kernel now skips `score_conversation` for error cells AND sets `CellResult.pass_fail = None, score = None` to prevent aggregation from treating error cells as passes. Reviewed by codex (gpt-5.5, xhigh): APPROVE after fixing aggregation propagation path.
+- **M4 / GRO-176 — bridge subprocess leak window (MEDIUM)**: `bridge.start()` to `try:` had 22 lines (conversation_log init, model_callback, ConversationalGolden construction) outside try/finally. If any threw, `bridge.stop()` was skipped → agent subprocess leak. Fixed by moving `try:` immediately after `bridge.start()`. Reviewed by codex (gpt-5.5, xhigh): APPROVE.
+- **M3 / GRO-175 — local evaluate route exposed in serve mode (MEDIUM)**: the local `/api/runs/{id}/cells/{cellId}/evaluate` POST had no `isServerMode()` gate and no `validateWriteRequest`, so in serve mode any page could tamper with evaluation results without CSRF protection or member attribution. Fixed by adding `isServerMode() → 404` gate on the local evaluate route, routing workspace pages through the workspace-scoped evaluate route (which has full CSRF + member validation), making AnnotationPanel workspace-aware (passes `workspaceId`, sends `X-Micro-Eval-Member`), and server-side overriding `evaluator` with the authenticated member. Reviewed by codex (gpt-5.5, xhigh): APPROVE after fixing AnnotationPanel routing + member attribution.
+- **M2 / GRO-174 — Content-Type enforcement (MEDIUM)**: `validateWriteRequest` accepted requests with no `Content-Type` header (the check was `contentType && !...includes(...)` — falsy when null). An attacker could send a simple request with no Content-Type to bypass CSRF layer 1. Fixed by extracting the media type essence (`split(";")[0].trim().toLowerCase()`) and rejecting anything other than exact `application/json`. Also fixed ConfigEditor which was sending `Content-Type: application/yaml` (raw body) instead of `application/json` (JSON body) and missing the `X-Micro-Eval-Member` header. Adds 8 vitest cases for validateWriteRequest. Reviewed by codex (gpt-5.5, xhigh): APPROVE after addressing Content-Type smuggling and ConfigEditor.
+- **M1 / GRO-173 — Host header allowlist / DNS rebinding (MEDIUM)**: the Team Server had no Host-header validation, leaving CSRF-protection layer 4 (anti DNS-rebinding) unimplemented — after a rebind, an external page becomes same-origin and can forge `X-Micro-Eval-Member`, defeating layers 1/2. Added `ui/src/proxy.ts` (Next.js 16 renamed the `middleware` file convention to `proxy`) which, in `serve` mode only, rejects any request whose `Host` header is not in the allowlist (loopback defaults for the bound port + `allowed_hosts` from `server.json`) with a 400; local `micro-eval ui` mode is out of scope and passes through. `serve.py` injects `MICRO_EVAL_BIND_PORT` / `MICRO_EVAL_ALLOWED_HOSTS` and prints a hint that LAN access requires configuring `allowed_hosts` (secure-by-default: only loopback is allowed until an admin declares hostnames). Adds 15 vitest cases (incl. the spec §14.6 rejects-unknown / dns-rebinding acceptance scenarios). Reviewed by codex (gpt-5.5, xhigh): APPROVE, no bypass found.
+
+## 0.4.2 - 2026-07-02
+
+### Fixed
+
+- **Team Server member journey** — 15 issues resolved to enable a new team member to complete the full evaluation journey in a browser within 10 minutes, without CLI or external help.
+  - **A1**: Server-mode home page redirects to `/workspaces`; persistent global navigation (Workspaces / Queue / Templates) in header.
+  - **A2/A3**: Server-mode pages (`/workspaces`, `/queue`, `/templates`, `/templates/[id]`) use `force-dynamic` rendering; `micro-eval serve` injects server env vars during `npm run build`.
+  - **A4**: Workspace creation form sends `X-Micro-Eval-Member` header alongside `owner` body field; member name is required with clear prompt; error messages humanized.
+  - **A5**: `RunEnqueueButton` wired into workspace detail page (replacing `onClick={undefined}` placeholder); component self-reads identity from shared util.
+  - **A6**: Artifact links in `CellDetail` scoped to workspace routes (`/workspace/{id}/run/{runId}/artifact/...`); new workspace-scoped artifact page.
+  - **B7**: `micro-eval serve` warns on stderr when `.next` build is older than `ui/src/` sources.
+  - **B8**: `serve` signal handler terminates child processes (Next.js + worker) with SIGTERM→SIGKILL escalation; worker takes over stale `worker.pid` files.
+  - **B9/F4**: Template packaging excludes `.micro-eval/`, `.git/`, `node_modules/`, `__pycache__/`, `.next/`, `.DS_Store`; symlinks skipped with warning (closes security audit F4).
+  - **B10**: Workspace creation rolls back partial directory on failure; CLI prints readable error instead of traceback.
+  - **C12**: Decision `recommended_action` uses plain language instead of internal codename "P0-b"; decision card fields have tooltips.
+  - **C13**: Per-cell failure explanation line: timeout / process error with exit code / validation failure.
+- Shared `member-identity.ts` util is the single source for browser-side member identity (`localStorage`); all consumers use it instead of scattered `localStorage` calls.
+
+### Added
+
+- **Enqueue confirmation card** (C14): clicking "Enqueue Run" first fetches a plan summary (task × config × rep counts + agent commands) and shows a preview card; the run is only enqueued on explicit confirmation.
+- **Seed demo template** (C14): on first `micro-eval serve` start with an empty template registry, a `demo-codefix` template is auto-seeded from deterministic mock agents (zero API cost).
+- **Member identity widget** (C11): persistent identity display/editor in the server navigation bar.
+- New API route: `GET /api/workspaces/[id]/plan-summary` — read-only plan preview.
+- New workspace-scoped artifact page: `/workspace/[id]/run/[runId]/artifact/[artifactId]`.
+- 24 new vitest tests (member-identity, RunEnqueueButton, CellDetail, MemberIdentity); 7 new pytest tests (stale PID, template excludes/symlinks, workspace rollback).
+
+### Changed
+
+- Version bump to 0.4.2 (Python `__init__.py`, UI `package.json`, VERSION).
+- Team server documentation (`site/guide/team-server.md`, `site/zh/guide/team-server.md`) corrected: `template create` syntax fixed, new features documented.
+
+### Security
+
+- Template packaging symlink protection (audit F4): symlinks at any nesting depth are skipped, not followed.
+- Shell interpolation zero-match: `grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples` — clean.
+- All new subprocess calls use argv-only execution.
+- Workspace creation rollback removes only the freshly created directory path (not user-controlled).
+
+## 0.4.1 - 2026-06-20
+
+### Added
+
+- **Conversational Evaluation** — DeepEval ConversationSimulator integration for multi-turn agent evaluation.
+  - `SubprocessBridge` (`engine/agent_bridge.py`): keeps subprocess agents alive during multi-turn conversations via JSONL on stdin/stdout. Supports turn timeout, graceful shutdown (SIGTERM→SIGKILL escalation), and error recovery.
+  - `simulate_conversation()` / `score_conversation()` (`evaluation/conversational_judge.py`): two-phase evaluation — drive conversation first, then score with DeepEval metrics. Split enables Invariant #6 (deterministic validation between simulation and scoring).
+  - 5 built-in conversational metrics: `conversation_completeness`, `turn_relevancy`, `knowledge_retention`, `role_adherence`, `goal_accuracy`. Custom rubric via `ConversationalGEval`.
+  - Kernel integration: `_execute_cell_conversational()` branch in `ExecutionKernel` when `provider: deepeval_conversational` + task has `scenario` field.
+- `TaskSpec` extended with optional conversational fields: `scenario`, `expected_outcome`, `user_description` (maps 1:1 to DeepEval `ConversationalGolden`).
+- `JudgeConfig` extended with `provider: "deepeval_conversational"`, `max_turns`, `turn_timeout_s`, `simulator_model`, `conversational_metrics`.
+- `CellResult` extended with `conversation_turns` and `conversation_ref` (backward compatible).
+- Zod schema (`ui/src/lib/schema.ts`) synced with new CellResult fields.
+- New example: `examples/conversational-eval/` with echo agent and conversational eval.yaml.
+- 30 new tests: `test_agent_bridge.py` (8), `test_conversational_judge.py` (8), `test_conversational_kernel.py` (4), `test_canonical_models.py` (7 new assertions), contract test updated.
+
+### Changed
+
+- `AgentAdapter` exposes `build_env` as public alias for `_build_env`.
+- Contract test `SANCTIONED_SPAWNERS` updated to include `agent_bridge.py`.
+- Golden fixtures regenerated for new CellResult fields.
+
 ## 0.4.0 - 2026-06-19
 
 ### Added

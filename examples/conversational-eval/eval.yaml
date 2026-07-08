@@ -1,0 +1,19 @@
+project_name: conversational-eval-example
+configurations:
+  - id: echo-agent
+    name: "Echo Agent"
+    agent:
+      name: echo-agent
+      command: ["python", "echo_agent.py"]
+      input_mode: stdin
+      output_mode: stdout
+tasks_dir: tasks
+judge:
+  enabled: true
+  provider: deepeval_conversational
+  max_turns: 5
+  pass_threshold: 0.5
+  conversational_metrics:
+    - conversation_completeness
+    - turn_relevancy
+  required_secrets: []

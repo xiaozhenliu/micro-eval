@@ -2,7 +2,27 @@
 
 import pytest
 
-from micro_eval.server.template import TemplateError, TemplateRegistry
+from micro_eval.server.template import (
+    TemplateError,
+    TemplateRegistry,
+    resolve_template_dir,
+)
+
+# Payloads that must never be accepted as a template_id (GRO-172 / H1).
+TRAVERSAL_IDS = [
+    "..",
+    ".",
+    "...",
+    "/etc",
+    "../../../etc/ssh",
+    "../evil",
+    "a/b",
+    "",
+    "x" * 65,
+    "tpl a",
+    "tpl$",
+    "tpl\n",
+]
 
 
 @pytest.fixture
@@ -59,3 +79,45 @@ def test_delete(registry, source_dir):
     registry.create(source_dir, template_id="tpl-1", name="T")
     assert registry.delete("tpl-1")
     assert registry.get("tpl-1") is None
+
+
+@pytest.mark.parametrize("bad_id", TRAVERSAL_IDS)
+def test_resolve_template_dir_rejects_traversal(registry, bad_id):
+    assert resolve_template_dir(registry.templates_dir, bad_id) is None
+
+
+def test_resolve_template_dir_accepts_valid(registry):
+    resolved = resolve_template_dir(registry.templates_dir, "tpl-a")
+    assert resolved is not None
+    assert resolved.parent == registry.templates_dir.resolve()
+    assert resolved.name == "tpl-a"
+
+
+@pytest.mark.parametrize("bad_id", TRAVERSAL_IDS)
+def test_get_rejects_traversal(registry, bad_id):
+    assert registry.get(bad_id) is None
+
+
+@pytest.mark.parametrize("bad_id", TRAVERSAL_IDS)
+def test_create_rejects_traversal(registry, source_dir, bad_id):
+    with pytest.raises(TemplateError, match="invalid template id"):
+        registry.create(source_dir, template_id=bad_id, name="Evil")
+
+
+@pytest.mark.parametrize("bad_id", TRAVERSAL_IDS)
+def test_update_rejects_traversal(registry, source_dir, bad_id):
+    with pytest.raises(TemplateError, match="template not found"):
+        registry.update(bad_id, source_dir)
+
+
+@pytest.mark.parametrize("bad_id", TRAVERSAL_IDS)
+def test_delete_rejects_traversal(registry, bad_id):
+    assert registry.delete(bad_id) is False
+
+
+def test_create_traversal_id_writes_nothing_outside_root(registry, source_dir, data_root):
+    """A traversal template_id must not create anything outside templates_dir."""
+    sibling = data_root / "evil"
+    with pytest.raises(TemplateError):
+        registry.create(source_dir, template_id="../evil", name="Evil")
+    assert not sibling.exists()

@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { isServerMode, getServerDataRoot } from "@/lib/server-mode";
+import { isServerMode } from "@/lib/server-mode";
 import { notFound } from "next/navigation";
 import { QueueDashboard } from "@/components/QueueDashboard";
 import type { QueueDashboardData } from "@/components/QueueDashboard";
 import { queryQueue } from "@/lib/server-validation";
+
+export const dynamic = "force-dynamic";
 
 function fetchQueueData(): QueueDashboardData {
   try {

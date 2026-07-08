@@ -17,6 +17,9 @@ site/.vitepress/cache/
 .micro-eval/
 examples/**/report.html
 
+# Playwright MCP runtime artifacts (console/page logs)
+.playwright-mcp/
+
 # OS
 .DS_Store
 
@@ -24,6 +27,7 @@ examples/**/report.html
 .vscode/
 .idea/
 .claude/
+.zed/
 
 # Plan files (local only)
 .plan/
@@ -50,3 +54,4 @@ docs/security/
 
 # rtk (Rust Token Killer) local cache/filters — not project content
 .rtk/
+.gstack/

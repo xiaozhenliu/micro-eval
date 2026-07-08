@@ -4,16 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.4.0](https://img.shields.io/badge/version-0.4.0-6f42c1)](VERSION)
+[![Version: 0.4.3](https://img.shields.io/badge/version-0.4.3-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-当前版本：`0.4.0`
+当前版本：`0.4.3`
 
 **一个本地优先的 Agent / Skill 评测助手，帮助小型 AI 团队用证据而不是体感做对比。**
 
 `micro-eval` 把“candidate 感觉更强”转化为可复现对比：同一批任务、同一起点、同一证据链，并基于受保护的决策逻辑判断 baseline / candidate 在哪些 cell 上更强、更弱、样本不足、不可比或需要人工判断。
 
-0.3.3 新增中英双语[项目文档网站](https://xiaozhenliu.github.io/micro-eval/)（VitePress 构建），涵盖指南、参考手册和示例文档。Phase 3 provider 化沙箱隔离（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal）、多源 fixture digest + toolchain fingerprint、SQLite 索引 + drift-aware 趋势分析均完全可用。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
+中英双语[项目文档网站](https://xiaozhenliu.github.io/micro-eval/)（VitePress 构建）按决策闭环、三个设计张力、七个核心对象组织，指南按用户旅程（入门 → 使用 → 进阶 → 参考）结构化。Phase 3 provider 化沙箱隔离（本地 OS 策略 Seatbelt/Bubblewrap + 远程 E2B/Modal）、多源 fixture digest + toolchain fingerprint、SQLite 索引 + drift-aware 趋势分析均完全可用。面向可信内网团队的共享 **Team Server**（`micro-eval serve`）提供成员级 workspace 隔离、串行 run 队列、只读模板库和归属记录（v0.4.0）。**Conversational evaluation** 通过 DeepEval ConversationSimulator 和 JSONL subprocess 桥接实现多轮会话评测，是单轮 GEval judge 的并行路径（v0.4.2）。Langfuse 和 DeepEval 仍是 optional extra；没有外部服务时，本地 subprocess 执行、artifact 和 deterministic validation 仍可工作。
 
 ## 为什么使用 micro-eval？
 
@@ -38,7 +38,10 @@
 - **人工评分持久化**：UI 通过本地 API append human `EvaluationResult`；不把 `localStorage` 当作可信评分状态。
 - **默认关闭的 LLM judge**：可选 DeepEval adapter 能追加补充 judge evaluation，但不会覆盖 deterministic pass/fail。
 - **Guarded decision**：snapshot mismatch、缺失 evidence 或 repetitions 不足会生成 caveat，而不是伪造 winner 结论。
-- **本地 review UI/API**：Next.js UI 通过 zod 读取 canonical run、cell、artifact、evaluation、trace、cost 和 decision 数据。
+- **跨 run 趋势分析**：SQLite 索引的 run 数据支持按 configuration 做时间序列趋势查询，configuration 内容变化时会标注 drift-aware breakpoint。
+- **本地 review UI/API**：Next.js UI 通过 zod 读取 canonical run、cell、artifact、evaluation、trace、cost、trend 和 decision 数据。
+- **Team Server** —— 面向可信内网团队的共享 server：成员级 workspace 隔离、串行 run 队列、只读模板库、归属记录（v0.4.0）
+- **Conversational evaluation** —— 通过 DeepEval ConversationSimulator 和 JSONL subprocess 桥接实现多轮会话评测，是单轮 GEval judge 的并行路径（v0.4.2）
 
 ## 快速开始
 
@@ -88,7 +91,17 @@ python examples/run-example.py
 python examples/run-example.py --real
 ```
 
-[`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) 中的真实 agent 矩阵覆盖 Claude Code、Codex CLI、OpenClaw 和 Hermes。示例索引见 [`examples/`](examples/)。
+[`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) 中的真实 agent 矩阵覆盖 Claude Code、Codex CLI、OpenClaw 和 Hermes。此外还有多任务矩阵、git workspace 隔离和趋势分析示例：
+
+```bash
+python examples/run-example.py --example multi-task-matrix
+python examples/run-example.py --example git-workspace-isolation
+python examples/run-example.py --example all
+```
+
+[`examples/conversational-eval/`](examples/conversational-eval/) 演示多轮会话评测（`judge.provider: deepeval_conversational`），使用一个 echo agent；可直接用 `micro-eval run --config examples/conversational-eval/eval.yaml` 运行。
+
+示例索引和能力覆盖矩阵见 [`examples/`](examples/)。
 
 ## CLI 命令
 
@@ -101,7 +114,14 @@ Config 查找顺序为：`--config` → `$MICRO_EVAL_CONFIG` → `./eval.yaml`�
 | `micro-eval run [--config eval.yaml] [--max-concurrency N] [--dry-run] [--format text\|json]` | 执行矩阵 run，或只打印 RunPlan。 |
 | `micro-eval list [--format text\|json]` | 列出 `.micro-eval/runs/*/run.json` 记录。 |
 | `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | 输出矩阵、Basic Honest Stats、decision/caveats 和 artifacts。 |
+| `micro-eval apply-evaluation --run-id ID --cell-id ID` | 通过 stdin JSON 应用一次人工评分并重算 run decision（UI 内部使用）。 |
+| `micro-eval build-plan --workspace PATH [--overrides JSON]` | 从 `eval.yaml` 构建 `RunPlan` 并以 JSON 形式输出到 stdout。 |
 | `micro-eval ui [--port 3000]` | 从源码 checkout 启动本地 Next.js UI。 |
+| `micro-eval serve [--port 3000] [--host HOST] [--data-root PATH]` | 为可信内网团队启动 Team Server（Next.js + worker）。 |
+| `micro-eval worker [--data-root PATH]` | 独立启动 run worker（`serve` 内部使用，也可单独运行）。 |
+| `micro-eval workspace create\|list\|update\|delete` | 管理 server workspace（创建、列出、更新元数据、删除）。 |
+| `micro-eval template create\|update\|list\|delete` | 管理只读评测模板库。 |
+| `micro-eval queue status\|cancel` | 查看 run 队列状态或取消一个排队/运行中的 job。 |
 
 ## Configuration 和 Tasks
 
@@ -212,7 +232,7 @@ MICRO_EVAL_PROJECT_ROOT=/path/to/eval-project uv run micro-eval ui --port 3000
 | --- | --- |
 | `/` | Run List |
 | `/run/[id]` | Decision Summary、caveats、Result Matrix、Cell Evidence 和 Human Evaluation |
-| `/run/[id]/review` | Phase 2 review surface，包含 cost、trace、matrix heatmap 和 per-cell evidence |
+| `/run/[id]/review` | 人工 review surface，包含 cost、trace、matrix heatmap 和 per-cell evidence |
 | `/run/[id]/artifact/[artifactId]` | 通过 manifest `artifact_id` 查看 artifact |
 | `/api/runs/[id]/cells/[cellId]/trace` | 按 manifest 边界读取单个 cell 的 trace |
 | `/api/runs/...` | read-only run/cell/artifact API + append-only human evaluation API |
@@ -281,7 +301,7 @@ title: micro-eval 中文 README
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T15:56+08:00
-updated_at: 2026-06-12T12:35+08:00
+updated_at: 2026-07-02
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
