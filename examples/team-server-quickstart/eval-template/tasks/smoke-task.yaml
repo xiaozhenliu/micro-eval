@@ -1,0 +1,16 @@
+id: smoke-task
+name: "Smoke test task"
+description: "Trivial task that any mock agent can pass."
+input_payload: |
+  Write the word "DONE" to the output file.
+expectations:
+  - type: contains
+    stream: output
+    value: "DONE"
+workspace:
+  type: files
+  files:
+    - workspace
+rubric: "The agent should write DONE to the output."
+business_impact_tier: 3
+tags: [smoke, team-server]

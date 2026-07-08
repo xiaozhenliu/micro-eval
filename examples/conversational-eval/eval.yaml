@@ -1,4 +1,6 @@
 project_name: conversational-eval-example
+description: Multi-turn conversational evaluation using DeepEval ConversationSimulator.
+
 configurations:
   - id: echo-agent
     name: "Echo Agent"
@@ -7,13 +9,40 @@ configurations:
       command: ["python", "echo_agent.py"]
       input_mode: stdin
       output_mode: stdout
+
 tasks_dir: tasks
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 120
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "echo agent conversational quality"
+  task_set_version: "conversational-eval.v1"
+  success_criteria:
+    - The agent maintains coherent multi-turn conversation.
+    - All 5 conversational metrics are scored.
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+  inconclusive_policy: warn
+
 judge:
   enabled: true
   provider: deepeval_conversational
   max_turns: 5
+  turn_timeout_s: 30
   pass_threshold: 0.5
+  simulator_model: ""
   conversational_metrics:
     - conversation_completeness
     - turn_relevancy
+    - knowledge_retention
+    - role_adherence
+    - goal_accuracy
   required_secrets: []
+
+trace:
+  enabled: true
+  provider: process

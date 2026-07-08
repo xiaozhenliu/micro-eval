@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""Run the multi-task-matrix example through a cross-platform Python entrypoint.
+"""Run the conversational-eval example through a cross-platform Python entrypoint.
+
+Prerequisites:
+  - The `deepeval` package must be installed (see pyproject.toml extras).
+  - An `OPENAI_API_KEY` environment variable must be set — the DeepEval
+    ConversationSimulator and conversational metrics call an LLM provider
+    to simulate the user side of the conversation and to score each turn.
 
 Usage:
-    python examples/multi-task-matrix/run.py          # validate + run + report
-    python examples/multi-task-matrix/run.py --ui     # also launch the web UI
-    python examples/multi-task-matrix/run.py --skip-run  # report from existing runs
+    python examples/conversational-eval/run.py          # validate + run + report
+    python examples/conversational-eval/run.py --ui     # also launch the web UI
+    python examples/conversational-eval/run.py --skip-run  # report from existing runs
 
 Expected outcome:
-  - 2 configs × 3 tasks × 2 reps = 12 cells executed
-  - decision.json verdict = inconclusive (alpha all-pass vs beta partial-fail)
-  - All four expectation types exercised: exit_code, contains, file_exists, command
+  - 1 config x 2 tasks x 1 rep = 2 cells executed via the JSONL subprocess bridge
+  - Each cell simulates a multi-turn conversation and scores all 5 conversational
+    metrics: conversation_completeness, turn_relevancy, knowledge_retention,
+    role_adherence, goal_accuracy
+  - helpdesk-conversation task exercises a structured RubricSpec with named
+    dimensions (context retention, empathy, solution quality)
 """
 
 from __future__ import annotations
@@ -22,18 +31,14 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-EXAMPLE_NAME = "multi-task-matrix"
+EXAMPLE_NAME = "conversational-eval"
 
 
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[2]
     example_root = Path(__file__).resolve().parent
-    variant_configs = {
-        "mock": "eval.mock.yaml",
-        "enriched": "eval.enriched.yaml",
-    }
-    config_name = variant_configs[args.variant]
+    config_name = "eval.yaml"
     command_prefix = micro_eval_command(repo_root)
 
     if command_prefix is None:
@@ -48,21 +53,18 @@ def main() -> int:
         print("--max-concurrency must be >= 1", file=sys.stderr, flush=True)
         return 2
 
-    print(f"Running {EXAMPLE_NAME} ({args.variant}) from {example_root}", flush=True)
-    if args.variant == "enriched":
-        print("Enriched variant exercises:", flush=True)
-        print("  - randomize_execution_order (cell order randomized, seed in run.json)", flush=True)
-        print("  - skills_profile + parameters (per-config metadata, included in config digest)", flush=True)
-        print("  - denominator_policy: exclude_failed (errored cells excluded from pass rate)", flush=True)
-        print("  - stop_on_cell_error: true (run halts on first cell error)", flush=True)
-        print("  - inconclusive_policy: block (inconclusive treated as blocking)", flush=True)
-    else:
-        print("This example demonstrates:", flush=True)
-        print("  - 2 configs × 3 tasks × 2 reps = 12 cells (multi-task matrix)", flush=True)
-        print("  - All 4 expectation types: exit_code, contains, file_exists, command", flush=True)
-        print("  - Workspace setup commands", flush=True)
-        print("  - Checker-beta partial failure (generate-report task)", flush=True)
-        print("  - Inconclusive decision (baseline all-pass vs candidate partial-fail)", flush=True)
+    print(f"Running {EXAMPLE_NAME} from {example_root}", flush=True)
+    print("This example demonstrates:", flush=True)
+    print("  - Multi-turn conversational evaluation via DeepEval ConversationSimulator", flush=True)
+    print("  - JSONL subprocess bridge (agent_bridge.py) for turn-by-turn agent I/O", flush=True)
+    print("  - All 5 conversational metrics: conversation_completeness, turn_relevancy, ", flush=True)
+    print("    knowledge_retention, role_adherence, goal_accuracy", flush=True)
+    print("  - Structured RubricSpec with named dimensions (helpdesk-conversation task)", flush=True)
+    print(
+        "Note: scoring requires DeepEval installed and OPENAI_API_KEY set "
+        "(or another configured LLM provider) to simulate and score turns.",
+        flush=True,
+    )
 
     run_step("validate", [*command_prefix, "validate", "--config", config_name], cwd=example_root)
     if not args.skip_run:
@@ -88,8 +90,8 @@ def main() -> int:
 
     print(f"\nDone. Static report: {example_root / 'report.html'}", flush=True)
     print(
-        "Observe: checker-alpha (baseline) shows all PASS; "
-        "checker-beta (candidate) shows FAIL on generate-report.",
+        "Observe: each cell's trace shows the simulated multi-turn conversation "
+        "and per-turn scores for all 5 conversational metrics.",
         flush=True,
     )
     if args.ui:
@@ -106,12 +108,6 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=f"Run the {EXAMPLE_NAME} micro-eval example.")
     parser.add_argument(
-        "--variant",
-        choices=["mock", "enriched"],
-        default="mock",
-        help="Config variant: mock (default) or enriched (exercises extra fields).",
-    )
-    parser.add_argument(
         "--skip-run",
         action="store_true",
         help="Validate and regenerate reports from existing runs without re-running.",
@@ -119,8 +115,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-concurrency",
         type=int,
-        default=2,
-        help="Maximum concurrent cells (default: 2).",
+        default=1,
+        help="Maximum concurrent cells (default: 1).",
     )
     parser.add_argument(
         "--ui",

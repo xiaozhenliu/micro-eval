@@ -1,0 +1,42 @@
+# Demonstrates blank workspace type and input_mode: file.
+# The agent receives its task input from a temp file instead of stdin,
+# and works in an empty workspace (no pre-existing files).
+project_name: agent-codefix-showdown-blank
+description: Blank workspace + file input mode demo.
+
+configurations:
+  - id: mock-blank
+    name: "Mock Blank Agent"
+    role: baseline
+    repetitions: 1
+    agent:
+      name: mock-blank
+      command: ["{python}", "workspace/scripts/mock-blank-agent.py", "{input_file}", "{output_file}"]
+      input_mode: file
+      output_mode: file
+      timeout_s: 30
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/blank-workspace-task.yaml
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 60
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "blank workspace + file input mode"
+  success_criteria:
+    - The agent reads input from a file and produces a valid fibonacci function.
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+
+trace:
+  enabled: true
+  provider: process
+
+judge:
+  enabled: false
