@@ -18,6 +18,8 @@ ALL_EXAMPLES = [
     "agent-codefix-showdown",
     "multi-task-matrix",
     "git-workspace-isolation",
+    "conversational-eval",
+    "team-server-quickstart",
 ]
 
 
@@ -130,7 +132,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the micro-eval source-checkout examples.")
     parser.add_argument(
         "--example",
-        choices=["agent-codefix-showdown", "multi-task-matrix", "git-workspace-isolation", "all"],
+        choices=[*ALL_EXAMPLES, "all"],
         default=DEFAULT_EXAMPLE,
         help=(
             "Which example to run. "

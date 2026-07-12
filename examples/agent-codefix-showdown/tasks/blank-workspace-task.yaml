@@ -1,0 +1,16 @@
+id: blank-workspace-task
+name: "Generate code from scratch"
+description: "Agent creates a file from a blank workspace, receiving input from a file (input_mode: file)."
+input_payload: |
+  Create a Python file called solution.py that defines a function
+  `fibonacci(n)` which returns the nth Fibonacci number (0-indexed).
+  Write the file to the output location.
+expectations:
+  - type: contains
+    stream: output
+    value: "def fibonacci"
+workspace:
+  type: blank
+rubric: "The agent should produce a valid Python function."
+business_impact_tier: 3
+tags: [example, blank-workspace, input-file]

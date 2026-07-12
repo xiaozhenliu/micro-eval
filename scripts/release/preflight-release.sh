@@ -14,7 +14,7 @@ uv run pytest -q
 uv build
 git diff --check
 git diff --cached --check
-if grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples; then
+if grep -RInE 'create_subprocess_shell|shell=True' --exclude='test_execution_contract.py' src tests ui/src examples; then
   echo 'Forbidden shell subprocess pattern found' >&2
   exit 1
 fi

@@ -1,0 +1,90 @@
+# Enriched variant: exercises guardrail and evaluation fields not covered elsewhere.
+# Use: python examples/multi-task-matrix/run.py --variant enriched
+project_name: multi-task-matrix-enriched
+description: >
+  Same matrix as eval.mock.yaml but with enriched configuration:
+  randomize_execution_order, skills_profile, parameters,
+  denominator_policy=exclude_failed, stop_on_cell_error.
+
+configurations:
+  - id: checker-alpha
+    name: Style Checker Alpha (enriched)
+    role: baseline
+    repetitions: 2
+    skills_profile:
+      linter: "ruff"
+      formatter: "black"
+    parameters:
+      strictness: "high"
+      max_issues: 10
+    agent:
+      name: Style Checker Alpha
+      command: ["{python}", "workspace/scripts/mock-good-checker.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 30
+      env: {}
+      required_secrets: []
+
+  - id: checker-beta
+    name: Style Checker Beta (enriched)
+    role: candidate
+    repetitions: 2
+    skills_profile:
+      linter: "pylint"
+      formatter: "autopep8"
+    parameters:
+      strictness: "medium"
+      max_issues: 20
+    agent:
+      name: Style Checker Beta
+      command: ["{python}", "workspace/scripts/mock-flaky-checker.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 30
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/check-style.yaml
+  - tasks/find-bugs.yaml
+  - tasks/generate-report.yaml
+
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 2
+  timeout_s: 60
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 1048576
+  # Enriched: stop the run as soon as any cell errors
+  stop_on_cell_error: true
+  # Enriched: randomize cell execution order (seed recorded in run.json)
+  randomize_execution_order: true
+
+evaluation:
+  comparison_subject: "enriched code quality checker comparison"
+  task_set_version: "multi-task-matrix-enriched.v1"
+  success_criteria:
+    - Alpha (baseline) passes all tasks.
+    - Beta (candidate) fails generate-report, but errored cells are excluded from pass rate.
+  budget: null
+  decision_threshold: null
+  # Enriched: block instead of warn on inconclusive
+  inconclusive_policy: block
+  min_repetitions: 1
+  required_evaluators: [validator]
+  # Enriched: failed cells are excluded from denominator
+  denominator_policy: exclude_failed
+
+trace:
+  enabled: true
+  provider: process
+
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

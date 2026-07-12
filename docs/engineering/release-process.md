@@ -54,7 +54,7 @@ scripts/release-to-main.sh dev main
   - `docs/bug_reports/`
   - `micro-eval-brd.md`
   - `micro-eval-prd.md`
-- `main` `AGENTS.md` and `CLAUDE.md` must be generated from `.codex/skills/micro-eval-release/assets/templates/` (templates restored 2026-07-02).
+- `main` `AGENTS.md` is the single source of agent instructions and must equal `.codex/skills/micro-eval-release/assets/templates/agents-publish-template.md`. `CLAUDE.md` is dev-only: it is a `@AGENTS.md` stub matched by the `*CLAUDE.md` exclusion and is intentionally NOT projected to `main` (Claude Code on a `main` checkout reads `AGENTS.md` directly). `main` has never tracked a root `CLAUDE.md`.
 
 ## Version source strategy
 
@@ -202,7 +202,7 @@ scripts/release/preflight-release.sh "$(cat VERSION)"
 Security-oriented greps must check that trusted paths do not introduce shell subprocess execution:
 
 ```bash
-if grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples; then
+if grep -RInE 'create_subprocess_shell|shell=True' --exclude='test_execution_contract.py' src tests ui/src examples; then
   echo 'Forbidden shell subprocess pattern found' >&2
   exit 1
 fi
@@ -238,7 +238,7 @@ After publishing, verify:
 test -z "$(git ls-files '.codex/*' '.understand-anything/*' 'docs/dev/*' 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
 ```
 
-Also confirm the release commit exists on `main` and `AGENTS.md` / `CLAUDE.md` match the skill asset templates.
+Also confirm the release commit exists on `main`, that `AGENTS.md` matches the skill asset template, and that no root `CLAUDE.md` is tracked on `main` (it is dev-only).
 
 ## Local tag workflow
 

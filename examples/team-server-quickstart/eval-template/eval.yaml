@@ -1,0 +1,38 @@
+project_name: team-server-smoke
+description: Minimal smoke eval for team server quickstart.
+
+configurations:
+  - id: mock-fixer
+    name: "Mock Fixer"
+    role: baseline
+    repetitions: 1
+    agent:
+      name: mock-fixer
+      command: ["{python}", "workspace/scripts/mock-agent.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 30
+      env: {}
+      required_secrets: []
+
+tasks_dir: tasks
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 60
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "mock fixer for server smoke test"
+  success_criteria:
+    - The mock agent writes the expected output and exits cleanly.
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+
+trace:
+  enabled: true
+  provider: process
+
+judge:
+  enabled: false
