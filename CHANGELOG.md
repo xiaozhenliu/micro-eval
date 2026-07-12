@@ -4,20 +4,22 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
-## 0.4.4 - 2026-07-08
+## 0.4.4 - 2026-07-12
 
 ### Added
 
 - **conversational-eval example** — completed with `run.py`, registered in runner, all 5 conversational metrics (`conversation_completeness`, `turn_relevancy`, `knowledge_retention`, `role_adherence`, `goal_accuracy`), `helpdesk-conversation` task with structured `RubricSpec` + dimensions, README.
 - **team-server-quickstart example** — end-to-end `micro-eval serve` walkthrough: template create → workspace create → HTTP API enqueue → queue monitoring → result inspection. Deterministic mock agent, local data root, atexit cleanup.
 - **example field enrichment** — `eval.enriched.yaml` (multi-task-matrix) exercises `randomize_execution_order`, `skills_profile`, `parameters`, `denominator_policy: exclude_failed`, `inconclusive_policy: block`, `stop_on_cell_error`; `eval.blank.yaml` (agent-codefix-showdown) exercises `blank` workspace + `input_mode: file`; `--variant enriched` flag added to multi-task-matrix `run.py`.
-- **examples/README.md** — expanded coverage matrix from 3 to 5 examples (27 → 40 capabilities tracked), added Config Variants section.
+- **examples/README.md** — expanded coverage matrix from 3 to 5 examples (27 → 43 capabilities tracked), added Config Variants section.
 - **examples/run-example.py** — registered `conversational-eval` and `team-server-quickstart`; argparse choices derived from `ALL_EXAMPLES`.
+- **Bilingual docs-site example indexes** — synchronized the English and Chinese example inventory, 5-column capability matrix, and config variant commands with the source examples.
 
 ### Fixed
 
 - team-server-quickstart run.py: corrected health probe endpoint (`/api/server/status`), enqueue route (`/api/workspaces/{id}/runs/enqueue`), and `run.json` field names (`id` not `run_id`, `results` not `cells`). Found by codex (gpt-5.4, xhigh) code review.
 - conversational-eval README: corrected misleading claim about DeepEval being "skipped" when missing (it actually errors at runtime).
+- release preflight shell-injection gate: aligned with CI by excluding the contract test that names forbidden APIs and limiting the UI scan to trusted source under `ui/src`.
 
 ## 0.4.3 - 2026-07-08
 
