@@ -1,6 +1,6 @@
 # 示例
 
-micro-eval 附带一组源码检出示例，覆盖工具的完整功能面——从简单的单任务冒烟测试，到多单元矩阵，再到 Phase 3 沙箱化 workspace 隔离。
+micro-eval 附带 5 个源码检出示例，覆盖 43 项已跟踪功能，包括确定性矩阵运行、沙箱化 workspace 隔离、会话评分和 Team Server 工作流。
 
 ::: tip 源码检出示例
 示例位于代码仓库的 `examples/` 目录下，不随 wheel 包分发。运行前请先克隆仓库。
@@ -19,6 +19,8 @@ python examples/run-example.py
 ```bash [指定示例]
 python examples/run-example.py --example multi-task-matrix
 python examples/run-example.py --example git-workspace-isolation
+python examples/run-example.py --example conversational-eval
+python examples/run-example.py --example team-server-quickstart
 ```
 
 ```bash [所有示例]
@@ -38,9 +40,11 @@ python examples/run-example.py --real
 
 | 示例 | 演示内容 | 核心功能 |
 |---|---|---|
-| [Agent Codefix Showdown](/zh/examples/agent-codefix-showdown) | 使用真实 agent 矩阵的完整 MVP 流程 | `files` workspace、argv 命令、Phase 2 trace、pass@k |
-| [Multi-Task Matrix](/zh/examples/multi-task-matrix) | 2 × 3 × 2 = 12 个单元的矩阵 | 全部 4 种期望类型、setup 命令、`inconclusive` 决策 |
-| [Git Workspace Isolation](/zh/examples/git-workspace-isolation) | Phase 3 workspace + 趋势分析 | git worktree、OS 沙箱、fixture digest、趋势漂移 |
+| [Agent Codefix Showdown](/zh/examples/agent-codefix-showdown) | 包含真实 agent 和确定性 mock 路径的完整本地代码修复运行 | `files` workspace、3 次 repetition、process trace、pass@k；`eval.blank.yaml` 增加 `blank` workspace 和 `input_mode: file` |
+| [Multi-Task Matrix](/zh/examples/multi-task-matrix) | 2 configs × 3 tasks × 2 reps = 12 个 cell，并包含刻意设置的部分失败 candidate | 全部 4 种 expectation 和 setup 命令；`eval.enriched.yaml` 增加高级执行与决策字段 |
+| [Git Workspace Isolation](/zh/examples/git-workspace-isolation) | 每个 cell 使用独立 `git_repo` worktree，并演示两次运行的趋势分析 | OS 策略沙箱、fixture digest、toolchain fingerprint、drift breakpoint |
+| [Conversational Evaluation](/zh/guide/conversational-evaluation) | 通过 DeepEval ConversationSimulator 进行多轮会话评分 | JSONL subprocess bridge、5 种 conversational metric、结构化 RubricSpec；需要 DeepEval 和 LLM provider |
+| [Team Server Quickstart](/zh/guide/team-server) | 使用确定性 mock agent 演示端到端 `micro-eval serve` 工作流 | template、workspace、HTTP enqueue、成员归因、串行队列；需要先执行一次 `cd ui && npm run build` |
 
 ## 功能覆盖矩阵
 
@@ -48,32 +52,63 @@ python examples/run-example.py --real
 
 `docs` = README 提供了配置片段；该功能无离线 mock 路径。
 
-| 功能 | codefix-showdown | multi-task-matrix | git-workspace-isolation |
-|---|:---:|:---:|:---:|
-| 矩阵执行（Tasks × Configs × Reps） | ✓ | ✓ | ✓ |
-| 多任务 | | ✓ | ✓ |
-| `files` workspace | ✓ | ✓ | |
-| `git_repo` workspace | | | ✓ |
-| `exit_code` 期望 | | ✓ | |
-| `contains` 期望 | ✓ | ✓ | ✓ |
-| `file_exists` 期望 | | ✓ | |
-| `command` 期望 | | ✓ | |
-| `stdout` 输出模式 | | docs | ✓ |
-| `file` 输出模式 | ✓ | ✓ | |
-| `directory` 输出模式 | | docs | |
-| `setup` 命令 | | ✓ | |
-| 进程 trace | ✓ | | |
-| OS 策略沙箱 | | | ✓ |
-| Fixture digest | | | ✓ |
-| Toolchain fingerprint | | | ✓ |
-| 趋势分析 + drift breakpoint | | | ✓ |
-| pass@k / pass^k 聚合 | ✓ | ✓ | ✓ |
-| Caveat（真实触发） | | ✓ | ✓ |
-| 人工标注指南 | | | ✓ |
-| LLM Judge | | | docs |
-| Langfuse trace | | | docs |
-| Secrets channel | | | docs |
-| E2B/Modal 远程 VM | | | docs |
+| 功能 | codefix-showdown | multi-task-matrix | git-workspace-isolation | conversational-eval | team-server |
+|---|:---:|:---:|:---:|:---:|:---:|
+| 矩阵执行（Tasks × Configs × Reps） | ✓ | ✓ | ✓ | ✓ | |
+| 多任务 | | ✓ | ✓ | ✓ | |
+| `files` workspace | ✓ | ✓ | | | ✓ |
+| `git_repo` workspace | | | ✓ | | |
+| `blank` workspace | ✓ (eval.blank) | | | | |
+| `exit_code` 期望 | | ✓ | | | |
+| `contains` 期望 | ✓ | ✓ | ✓ | | ✓ |
+| `file_exists` 期望 | | ✓ | | | |
+| `command` 期望 | | ✓ | | | |
+| `stdin` input mode | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `file` input mode | ✓ (eval.blank) | | | | |
+| `stdout` 输出模式 | | docs | ✓ | ✓ | |
+| `file` 输出模式 | ✓ | ✓ | | | ✓ |
+| `directory` 输出模式 | | docs | | | |
+| `setup` 命令 | | ✓ | | | |
+| Process trace | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OS 策略沙箱 | | | ✓ | | |
+| Fixture digest | | | ✓ | | |
+| Toolchain fingerprint | | | ✓ | | |
+| 趋势分析 + drift breakpoint | | | ✓ | | |
+| pass@k / pass^k 聚合 | ✓ | ✓ | ✓ | | |
+| Caveat（真实触发） | | ✓ | ✓ | | |
+| 人工标注指南 | | | ✓ (README) | | |
+| LLM Judge | | | docs | | |
+| Langfuse trace | | | docs | | |
+| Secrets channel | | | docs | | |
+| E2B/Modal 远程 VM | | | docs | | |
+| 会话评测 | | | | ✓ | |
+| JSONL subprocess bridge | | | | ✓ | |
+| 结构化 RubricSpec | | | | ✓ | |
+| `randomize_execution_order` | | ✓ (enriched) | | | |
+| `skills_profile` | | ✓ (enriched) | | | |
+| `parameters` | | ✓ (enriched) | | | |
+| `denominator_policy: exclude_failed` | | ✓ (enriched) | | | |
+| `inconclusive_policy: block` | | ✓ (enriched) | | | |
+| `stop_on_cell_error: true` | | ✓ (enriched) | | | |
+| `micro-eval serve` | | | | | ✓ |
+| Template management | | | | | ✓ |
+| Workspace management | | | | | ✓ |
+| HTTP API（evaluate） | | | | | ✓ |
+| 成员归因 | | | | | ✓ |
+| 串行队列 | | | | | ✓ |
+| CSRF 防护 | | | | | ✓ |
+
+## Config Variants
+
+Config variant 可以在不增加 example 目录的情况下扩展功能覆盖：
+
+```bash
+# multi-task-matrix：高级执行与决策字段
+python examples/multi-task-matrix/run.py --variant enriched
+
+# agent-codefix-showdown：blank workspace 和 file input mode
+cd examples/agent-codefix-showdown && uv run micro-eval run --config eval.blank.yaml
+```
 
 ## 可选外部集成
 

@@ -1,6 +1,6 @@
 # Examples
 
-micro-eval ships a set of source-checkout examples that cover the full capability surface of the tool — from a simple single-task smoke test through multi-cell matrices and Phase 3 sandboxed workspace isolation.
+micro-eval ships 5 source-checkout examples covering 43 tracked capabilities, from deterministic matrix runs and sandboxed workspace isolation to conversational scoring and the Team Server workflow.
 
 ::: tip Source-checkout examples
 Examples live in the repository under `examples/` and are not bundled into the wheel. Clone the repo before running them.
@@ -19,6 +19,8 @@ python examples/run-example.py
 ```bash [Specific example]
 python examples/run-example.py --example multi-task-matrix
 python examples/run-example.py --example git-workspace-isolation
+python examples/run-example.py --example conversational-eval
+python examples/run-example.py --example team-server-quickstart
 ```
 
 ```bash [All examples]
@@ -38,9 +40,11 @@ The launcher uses `uv run --project` when `uv` is available and falls back to an
 
 | Example | What it demonstrates | Key capabilities |
 |---|---|---|
-| [Agent Codefix Showdown](/examples/agent-codefix-showdown) | Complete MVP flow with a real-agent matrix | `files` workspace, argv commands, Phase 2 trace, pass@k |
-| [Multi-Task Matrix](/examples/multi-task-matrix) | 2 × 3 × 2 = 12-cell matrix | All 4 expectation types, setup commands, `inconclusive` decision |
-| [Git Workspace Isolation](/examples/git-workspace-isolation) | Phase 3 workspace + trend analysis | git worktree, OS sandbox, fixture digest, trend drift |
+| [Agent Codefix Showdown](/examples/agent-codefix-showdown) | Complete local code-fix run with real-agent and deterministic mock paths | `files` workspace, 3 repetitions, process trace, pass@k; `eval.blank.yaml` adds `blank` workspace and `input_mode: file` |
+| [Multi-Task Matrix](/examples/multi-task-matrix) | 2 configs × 3 tasks × 2 reps = 12 cells with a deliberately partial-failing candidate | All 4 expectation types and setup commands; `eval.enriched.yaml` adds advanced execution and decision fields |
+| [Git Workspace Isolation](/examples/git-workspace-isolation) | Per-cell `git_repo` worktree isolation and two-run trend analysis | OS policy sandbox, fixture digest, toolchain fingerprint, drift breakpoint |
+| [Conversational Evaluation](/guide/conversational-evaluation) | Multi-turn scoring through DeepEval's ConversationSimulator | JSONL subprocess bridge, 5 conversational metrics, structured RubricSpec; requires DeepEval and an LLM provider |
+| [Team Server Quickstart](/guide/team-server) | End-to-end `micro-eval serve` workflow using a deterministic mock agent | Templates, workspaces, HTTP enqueue, member attribution, serial queue; requires one `cd ui && npm run build` |
 
 ## Capability Coverage Matrix
 
@@ -48,32 +52,63 @@ Use this matrix to find the example that demonstrates the feature you want to le
 
 `docs` = the README provides a configuration snippet; no offline mock path exists for this capability.
 
-| Capability | codefix-showdown | multi-task-matrix | git-workspace-isolation |
-|---|:---:|:---:|:---:|
-| Matrix execution (Tasks × Configs × Reps) | ✓ | ✓ | ✓ |
-| Multi-task | | ✓ | ✓ |
-| `files` workspace | ✓ | ✓ | |
-| `git_repo` workspace | | | ✓ |
-| `exit_code` expectation | | ✓ | |
-| `contains` expectation | ✓ | ✓ | ✓ |
-| `file_exists` expectation | | ✓ | |
-| `command` expectation | | ✓ | |
-| `stdout` output mode | | docs | ✓ |
-| `file` output mode | ✓ | ✓ | |
-| `directory` output mode | | docs | |
-| `setup` commands | | ✓ | |
-| Process trace | ✓ | | |
-| OS policy sandbox | | | ✓ |
-| Fixture digest | | | ✓ |
-| Toolchain fingerprint | | | ✓ |
-| Trend analysis + drift breakpoint | | | ✓ |
-| pass@k / pass^k aggregation | ✓ | ✓ | ✓ |
-| Caveat (real trigger) | | ✓ | ✓ |
-| Human annotation guide | | | ✓ |
-| LLM Judge | | | docs |
-| Langfuse trace | | | docs |
-| Secrets channel | | | docs |
-| E2B/Modal remote VM | | | docs |
+| Capability | codefix-showdown | multi-task-matrix | git-workspace-isolation | conversational-eval | team-server |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Matrix execution (Tasks × Configs × Reps) | ✓ | ✓ | ✓ | ✓ | |
+| Multi-task | | ✓ | ✓ | ✓ | |
+| `files` workspace | ✓ | ✓ | | | ✓ |
+| `git_repo` workspace | | | ✓ | | |
+| `blank` workspace | ✓ (eval.blank) | | | | |
+| `exit_code` expectation | | ✓ | | | |
+| `contains` expectation | ✓ | ✓ | ✓ | | ✓ |
+| `file_exists` expectation | | ✓ | | | |
+| `command` expectation | | ✓ | | | |
+| `stdin` input mode | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `file` input mode | ✓ (eval.blank) | | | | |
+| `stdout` output mode | | docs | ✓ | ✓ | |
+| `file` output mode | ✓ | ✓ | | | ✓ |
+| `directory` output mode | | docs | | | |
+| `setup` commands | | ✓ | | | |
+| Process trace | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OS policy sandbox | | | ✓ | | |
+| Fixture digest | | | ✓ | | |
+| Toolchain fingerprint | | | ✓ | | |
+| Trend analysis + drift breakpoint | | | ✓ | | |
+| pass@k / pass^k aggregation | ✓ | ✓ | ✓ | | |
+| Caveat (real trigger) | | ✓ | ✓ | | |
+| Human annotation guide | | | ✓ (README) | | |
+| LLM Judge | | | docs | | |
+| Langfuse trace | | | docs | | |
+| Secrets channel | | | docs | | |
+| E2B/Modal remote VM | | | docs | | |
+| Conversational evaluation | | | | ✓ | |
+| JSONL subprocess bridge | | | | ✓ | |
+| Structured RubricSpec | | | | ✓ | |
+| `randomize_execution_order` | | ✓ (enriched) | | | |
+| `skills_profile` | | ✓ (enriched) | | | |
+| `parameters` | | ✓ (enriched) | | | |
+| `denominator_policy: exclude_failed` | | ✓ (enriched) | | | |
+| `inconclusive_policy: block` | | ✓ (enriched) | | | |
+| `stop_on_cell_error: true` | | ✓ (enriched) | | | |
+| `micro-eval serve` | | | | | ✓ |
+| Template management | | | | | ✓ |
+| Workspace management | | | | | ✓ |
+| HTTP API (evaluate) | | | | | ✓ |
+| Member attribution | | | | | ✓ |
+| Serial queue | | | | | ✓ |
+| CSRF protection | | | | | ✓ |
+
+## Config Variants
+
+Config variants extend feature coverage without adding more example directories:
+
+```bash
+# multi-task-matrix: advanced execution and decision fields
+python examples/multi-task-matrix/run.py --variant enriched
+
+# agent-codefix-showdown: blank workspace and file input mode
+cd examples/agent-codefix-showdown && uv run micro-eval run --config eval.blank.yaml
+```
 
 ## Optional External Integrations
 
