@@ -87,7 +87,50 @@ jobs:
         run: cd ui && npm run build
 
   example-smoke:
-    name: Example smoke test
+    name: Example smoke (${{ matrix.example }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - agent-codefix-showdown
+          - multi-task-matrix
+          - git-workspace-isolation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Run deterministic example
+        run: uv run python examples/run-example.py --example "${{ matrix.example }}"
+
+  team-server-smoke:
+    name: Example smoke (team-server-quickstart)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install Python dependencies
+        run: uv sync --extra dev
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+      - name: Run Team Server example
+        run: uv run python examples/run-example.py --example team-server-quickstart
+
+  conversational-config-smoke:
+    name: Conversational example config smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,5 +140,6 @@ jobs:
           enable-cache: true
       - name: Install dependencies
         run: uv sync --extra dev
-      - name: Run example
-        run: python examples/run-example.py
+      - name: Validate conversational example config
+        run: uv run micro-eval validate --config eval.yaml
+        working-directory: examples/conversational-eval

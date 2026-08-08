@@ -386,6 +386,16 @@ RUN_PHASE2_FULL: dict = {  # type: ignore[type-arg]
         "created_at": "20260612T000000Z",
     },
     "denominator_policy": "exclude_failed",
+    "owner": "fixture-owner",
+    "server_context": {
+        "schema_version": "1.0",
+        "workspace_id": "ws-20260612T000000Z-12345678",
+        "owner": "fixture-owner",
+        "template_id": "phase2-template",
+        "template_version": "1.0.0",
+        "job_id": "job-20260612T000000Z-12345678",
+        "server_name": "fixture-server",
+    },
 }
 
 # ---------------------------------------------------------------------------

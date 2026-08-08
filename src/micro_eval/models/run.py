@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from micro_eval.models.artifact import ArtifactRef, EvidenceItem, TraceRef
 from micro_eval.models.configuration import ConfigurationSpec, Guardrails, JudgeConfig, TraceConfig
@@ -46,6 +46,20 @@ class RunCell(BaseModel):
     repetition: int = 1
 
 
+class ServerContext(BaseModel):
+    """Immutable Team Server provenance attached to a run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: str = SCHEMA_VERSION
+    workspace_id: str
+    owner: str
+    template_id: str | None = None
+    template_version: str | None = None
+    job_id: str
+    server_name: str
+
+
 class RunPlan(BaseModel):
     """Canonical execution plan consumed by the Execution Kernel."""
 
@@ -63,6 +77,8 @@ class RunPlan(BaseModel):
     same_start_snapshot: SameStartSnapshot | None = None
     replay_canonical: ReplayCanonical | None = None
     denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"
+    owner: str | None = None
+    server_context: ServerContext | None = None
 
 
 class AdapterResult(BaseModel):
@@ -148,4 +164,4 @@ class RunRecord(BaseModel):
     denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"
     # Server mode fields (optional, backward compatible)
     owner: str | None = None
-    server_context: dict | None = None
+    server_context: ServerContext | None = None

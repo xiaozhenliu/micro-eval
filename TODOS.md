@@ -23,12 +23,6 @@
 
 ### P2
 
-#### CI: 新 example smoke 接入
-
-- **关联文件:** `.github/workflows/ci.yml`（`example-smoke` job 当前只跑 `run-example.py` 默认 example）。
-- **待做:** CI smoke job 改为 `python examples/run-example.py --example all`，或分拆三个并行 job 各跑一个 example。`git-workspace-isolation` 需要 `git` 可用（CI ubuntu 默认有）。
-- **风险:** 无。改一行 CI 配置即可。
-
 #### 占位符解析不一致：`{python}` 仅在 agent command 中生效
 
 - **现状:** `AgentAdapter._resolve_command()`（`engine/adapter.py:215-225`）解析 `{python}`/`{output_file}`/`{input_file}`/`{output_dir}`。但 workspace setup commands（`providers/git_worktree.py:207-223`）和 command expectations（`evaluation/validator.py:135-162`）直接 `subprocess.run`/`create_subprocess_exec`，不走占位符解析。
@@ -143,6 +137,8 @@
 
 ## Done（留档，定期清入 CHANGELOG 后删除）
 
+- **Example smoke CI coverage**（2026-08-08）—— CI 按依赖分组覆盖 3 个确定性 examples、Team Server quickstart 和 conversational-eval 配置校验；不在普通 CI 中调用真实 LLM 或外部服务。
+- **Team Server run provenance**（2026-08-08）—— worker 将 job owner、workspace/template、job ID 和 server name 写入 `run.json`，quickstart smoke 对归属与 pass 状态做强断言。
 - **Test coverage expansion**（v0.3.2）—— 整体覆盖率从 ~78%（224 tests）提升到 91%（455 tests）。CLI 层（init/list/run/validate/report）从 0% 提升至 82%+；decision/trend 达到 100%；engine/workspace 达到 99%；models/configuration、models/run 达到 100%。455 pytest 全绿。
 - **Example coverage expansion**（v0.3.1）—— 新增 `multi-task-matrix`（12-cell 矩阵，4 种 expectation，setup commands）+ `git-workspace-isolation`（git_repo worktree、OS sandbox、fixture digest、toolchain fingerprint、趋势分析 drift breakpoint）。`run-example.py` 加 `--example` 统一入口。examples/README.md 加能力覆盖矩阵 + Advanced 外部集成文档。覆盖度 ~50% → ~85%。独立 opus 评审 → 修复 6 项反馈后 commit。224 pytest + 48 vitest 全绿。
 - **Phase 3 实施**（v0.3.0）—— P3-a→P3-e 五个里程碑全部交付。详见 CHANGELOG 0.3.0。

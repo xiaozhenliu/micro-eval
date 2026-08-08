@@ -10,10 +10,11 @@ import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
 
 from micro_eval.engine.kernel import ExecutionKernel
-from micro_eval.models.run import RunPlan
-from micro_eval.server.models import ServerConfig
+from micro_eval.models.run import RunPlan, ServerContext
+from micro_eval.server.models import ServerConfig, WorkspaceMeta
 from micro_eval.server.queue import QueueDB
 
 logger = logging.getLogger(__name__)
@@ -108,10 +109,30 @@ def _clear_pid(data_root: Path) -> None:
             pass
 
 
+def _attach_server_provenance(
+    plan: RunPlan,
+    job: Mapping[str, str],
+    workspace_meta: WorkspaceMeta | None,
+    server_name: str,
+) -> RunPlan:
+    """Attach immutable queue and workspace provenance before execution starts."""
+    owner = job["owner"]
+    context = ServerContext(
+        workspace_id=job["workspace_id"],
+        owner=owner,
+        template_id=workspace_meta.template_id if workspace_meta else None,
+        template_version=workspace_meta.template_version if workspace_meta else None,
+        job_id=job["job_id"],
+        server_name=server_name,
+    )
+    return plan.model_copy(update={"owner": owner, "server_context": context})
+
+
 async def worker_loop(
     data_root: Path,
     poll_interval: float = 2.0,
     run_timeout: int = 3600,
+    server_name: str = "team-eval-server",
 ) -> None:
     db = QueueDB(data_root / "queue.db")
 
@@ -152,6 +173,12 @@ async def worker_loop(
 
         try:
             plan = RunPlan.model_validate_json(job["plan_json"])
+            plan = _attach_server_provenance(
+                plan,
+                job,
+                ws_manager.get(ws_id),
+                server_name,
+            )
             run_id = plan.run_id
             db.update_status(job_id, "running", run_id=run_id)
 
@@ -203,6 +230,7 @@ def run_worker(data_root: Path, config: ServerConfig | None = None) -> None:
             data_root,
             poll_interval=config.worker_poll_interval_seconds,
             run_timeout=config.run_timeout_seconds,
+            server_name=config.server_name,
         ))
     finally:
         _clear_pid(data_root)

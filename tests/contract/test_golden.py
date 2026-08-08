@@ -52,6 +52,9 @@ def test_run_phase2_full_roundtrip() -> None:
     assert any_llm, "expected at least one llm_judge evaluation"
     assert record.decision is not None
     assert record.decision.decision_report_id
+    assert record.owner == "fixture-owner"
+    assert record.server_context is not None
+    assert record.server_context.job_id == "job-20260612T000000Z-12345678"
     assert all(
         stats.denominator_policy for stats in record.decision.aggregation.per_configuration.values()
     )

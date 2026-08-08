@@ -4,6 +4,10 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- Team Server worker now persists run owner and server provenance (`workspace_id`, template, job, and server name) in `run.json`; the quickstart smoke validates the recorded attribution and pass results.
+
 ## 0.4.4 - 2026-07-12
 
 ### Added
