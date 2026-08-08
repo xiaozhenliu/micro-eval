@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from micro_eval.engine.adapter import Redactor
+from micro_eval.engine.command import resolve_command_argv
 from micro_eval.models.artifact import EvidenceItem
 from micro_eval.models.evaluation import EvaluationResult
 from micro_eval.models.ids import compact_timestamp, rubric_digest, sha256_text
@@ -133,7 +134,10 @@ def _stream_text(stream: str, adapter_result: AdapterResult) -> str:
 
 
 async def _run_validation_command(expectation, workspace_dir: Path, output_dir: Path, redactor: Redactor) -> tuple[bool, str]:
-    command = expectation.command or []
+    command = resolve_command_argv(
+        expectation.command or [],
+        replacements={"{output_dir}": str(output_dir)},
+    )
     cwd = workspace_dir
     if expectation.cwd:
         base, cwd_value = _scope_base(expectation.cwd, workspace_dir, output_dir)

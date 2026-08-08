@@ -74,6 +74,19 @@ class TestGitWorktreeProviderProtocol:
         assert handle.source_repo is None
         provider.cleanup(handle)
 
+    def test_setup_resolves_python_placeholder(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path / "project")
+        provider = GitWorktreeProvider(repo)
+        spec = WorkspaceSpec(
+            type=WorkspaceType.blank,
+            setup=[["{python}", "-c", "from pathlib import Path; Path('setup.txt').write_text('ok')"]],
+        )
+
+        handle = provider.create(spec, cell_id="setup-cell", run_id="test-run")
+
+        assert (handle.workspace_path / "setup.txt").read_text() == "ok"
+        provider.cleanup(handle)
+
     def test_collect_diff_returns_none_for_clean_worktree(self, tmp_path: Path) -> None:
         repo = _make_git_repo(tmp_path / "project")
         provider = GitWorktreeProvider(repo)

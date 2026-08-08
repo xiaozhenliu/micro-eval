@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from micro_eval.engine.command import resolve_command_argv
 from micro_eval.engine.providers.base import (
     CommandResult,
     IsolationLevel,
@@ -210,7 +211,7 @@ class GitWorktreeProvider:
             if not command or any(not isinstance(part, str) or not part for part in command):
                 raise WorkspaceProviderError("workspace setup commands must be non-empty argv lists")
             result = subprocess.run(
-                command,
+                resolve_command_argv(command),
                 cwd=workspace_path,
                 env={key: value for key, value in os.environ.items() if key in self.SETUP_ENV_KEYS},
                 capture_output=True,
