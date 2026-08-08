@@ -19,7 +19,12 @@ def write_text_if_changed(path: Path, text: str) -> None:
 
 
 def replace_current_version_line(text: str, version: str) -> str:
-    return re.sub(r"Current version: `[^`]+`", f"Current version: `{version}`", text)
+    text = re.sub(r"Current version: `[^`]+`", f"Current version: `{version}`", text)
+    return re.sub(
+        r"\[!\[Version: [^]]+\]\(https://img\.shields\.io/badge/version-[^-]+-6f42c1\)\]\(VERSION\)",
+        f"[![Version: {version}](https://img.shields.io/badge/version-{version}-6f42c1)](VERSION)",
+        text,
+    )
 
 
 def main() -> int:
@@ -38,7 +43,10 @@ def main() -> int:
     write_text_if_changed(init_path, init_text)
 
     readme_path = ROOT / "README.md"
-    write_text_if_changed(readme_path, replace_current_version_line(readme_path.read_text(encoding="utf-8"), version))
+    write_text_if_changed(
+        readme_path,
+        replace_current_version_line(readme_path.read_text(encoding="utf-8"), version),
+    )
 
     package_json_path = ROOT / "ui" / "package.json"
     package_json = json.loads(package_json_path.read_text(encoding="utf-8"))

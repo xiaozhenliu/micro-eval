@@ -229,6 +229,16 @@ export const CellResultSchema = z.object({
   conversation_ref: z.string().nullable().default(null),
 });
 
+export const ServerContextSchema = z.object({
+  schema_version: z.string().default("1.0"),
+  workspace_id: z.string(),
+  owner: z.string(),
+  template_id: z.string().nullable().default(null),
+  template_version: z.string().nullable().default(null),
+  job_id: z.string(),
+  server_name: z.string(),
+});
+
 export const RunSchema = z.object({
   schema_version: z.string().default("1.0"),
   id: z.string(),
@@ -236,6 +246,7 @@ export const RunSchema = z.object({
   status: z.enum(["planned", "running", "completed", "failed", "partial"]),
   created_at: z.string(),
   completed_at: z.string().nullable().default(null),
+  failure_reason: z.string().nullable().default(null),
   output_dir: z.string(),
   config_hash: z.string().default(""),
   tasks: z.array(z.string()).default([]),
@@ -254,7 +265,7 @@ export const RunSchema = z.object({
   decision: DecisionReportSchema.nullable().default(null),
   denominator_policy: z.enum(["include_failed", "exclude_failed"]).default("include_failed"),
   owner: z.string().nullable().default(null),
-  server_context: z.record(z.string(), z.any()).nullable().default(null),
+  server_context: ServerContextSchema.nullable().default(null),
 });
 
 export const WorkspaceMetaSchema = z.object({

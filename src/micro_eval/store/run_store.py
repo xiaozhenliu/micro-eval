@@ -52,6 +52,8 @@ class RunStore:
             same_start_snapshot=plan.same_start_snapshot,
             replay_canonical=plan.replay_canonical,
             denominator_policy=plan.denominator_policy,
+            owner=plan.owner,
+            server_context=plan.server_context,
         )
         self.write_run(record)
         return record
@@ -61,6 +63,10 @@ class RunStore:
         run_dir = self.run_dir(record.id, record.output_dir)
         run_path = run_dir / "run.json"
         run_path.parent.mkdir(parents=True, exist_ok=True)
+        if run_path.exists():
+            existing = RunRecord.model_validate_json(run_path.read_text())
+            if existing.owner != record.owner or existing.server_context != record.server_context:
+                raise RunStoreError("run owner and server_context are immutable after initialization")
         run_path.write_text(record.model_dump_json(indent=2))
         if record.decision is not None:
             self.write_decision(record)
@@ -143,6 +149,22 @@ class RunStore:
         """Mark a run complete or partial based on cell results."""
         record.completed_at = datetime.now(timezone.utc).isoformat()
         record.status = RunStatus.completed if len(record.results) == len(record.cells) else RunStatus.partial
+        self.write_run(record)
+        self._index_to_sqlite(record)
+        return record
+
+    def fail_run(
+        self,
+        run_id: str,
+        *,
+        output_dir: str = ".micro-eval/runs",
+        reason: str,
+    ) -> RunRecord:
+        """Persist a terminal failed state for an initialized run."""
+        record = self.read_run(run_id, output_dir)
+        record.status = RunStatus.failed
+        record.completed_at = datetime.now(timezone.utc).isoformat()
+        record.failure_reason = reason
         self.write_run(record)
         self._index_to_sqlite(record)
         return record

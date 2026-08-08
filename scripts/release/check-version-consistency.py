@@ -96,6 +96,15 @@ def main() -> int:
 
     readme = read_text(ROOT / "README.md")
     checks.append(ok("README current version matches") if f"Current version: `{expected}`" in readme else fail("README current version mismatch"))
+    readme_badge = (
+        f"[![Version: {expected}]"
+        f"(https://img.shields.io/badge/version-{expected}-6f42c1)](VERSION)"
+    )
+    checks.append(
+        ok("README version badge matches")
+        if readme_badge in readme
+        else fail("README version badge mismatch")
+    )
 
     package_json = load_json(ROOT / "ui" / "package.json")
     checks.append(ok("ui/package.json version matches") if package_json.get("version") == expected else fail("ui/package.json version mismatch", {"actual": package_json.get("version")}))

@@ -4,6 +4,19 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+## 0.4.5 - 2026-08-08
+
+### Fixed
+
+- Team Server worker now persists run owner and server provenance (`workspace_id`, template, job, and server name) in `run.json`; the quickstart smoke validates the recorded attribution and pass results.
+- Command placeholders now resolve consistently across agent commands, workspace setup commands, and command expectations. `{python}` uses the active micro-eval interpreter without shell interpolation, while context-specific input/output placeholders remain scoped to the stages where those paths exist.
+- Team Server worker timeouts and execution failures now persist a terminal failed canonical run with a redacted reason; crash recovery preserves failed state, respects custom run output directories, and rejects output-directory escapes.
+
+### Verification
+
+- CI example smoke coverage now separates deterministic examples, the Team Server walkthrough, and conversational configuration validation so ordinary CI does not require external LLM credentials.
+- Added cross-language contract coverage for canonical run failure reasons and real worker-loop timeout regression coverage.
+
 ## 0.4.4 - 2026-07-12
 
 ### Added

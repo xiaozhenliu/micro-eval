@@ -79,6 +79,32 @@ async def test_command_expectation_pass_and_fail(tmp_path: Path) -> None:
     assert "exit_code=3" in evaluation.comment
 
 
+async def test_command_expectation_resolves_python_and_output_dir(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    output = tmp_path / "output"
+    workspace.mkdir()
+    output.mkdir()
+    (output / "artifact.txt").write_text("ok")
+    expectation = ExpectationSpec(
+        type="command",
+        command=[
+            "{python}",
+            "-c",
+            "from pathlib import Path; raise SystemExit(Path(r'{output_dir}/artifact.txt').read_text() != 'ok')",
+        ],
+    )
+
+    evaluation, _ = await validate_cell(
+        cell=_cell([expectation]),
+        adapter_result=AdapterResult(status=CellStatus.passed),
+        cell_dir=output,
+        evidence_prefix="cell::evidence",
+        workspace_dir=workspace,
+    )
+
+    assert evaluation.pass_fail == "pass"
+
+
 async def test_command_cwd_escape_is_rejected(tmp_path: Path) -> None:
     expectation = ExpectationSpec(type="command", command=[sys.executable, "-c", "pass"], cwd="../..")
     evaluation, _ = await _validate([expectation], AdapterResult(status=CellStatus.passed), tmp_path)

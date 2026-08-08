@@ -6,10 +6,10 @@ import asyncio
 import logging
 import os
 import stat
-import sys
 import time
 from pathlib import Path
 
+from micro_eval.engine.command import resolve_command_argv
 from micro_eval.models.configuration import AgentSpec, InputMode, OutputMode
 from micro_eval.models.ids import looks_binary
 from micro_eval.models.run import AdapterResult, CellStatus
@@ -229,18 +229,14 @@ class AgentAdapter:
         output_file: Path,
         input_file: Path,
     ) -> list[str]:
-        replacements = {
-            "{output_dir}": str(output_dir),
-            "{output_file}": str(output_file),
-            "{input_file}": str(input_file),
-            "{python}": sys.executable,
-        }
-        argv: list[str] = []
-        for arg in agent.command:
-            value = arg
-            for placeholder, replacement in replacements.items():
-                value = value.replace(placeholder, replacement)
-            argv.append(value)
+        argv = resolve_command_argv(
+            agent.command,
+            replacements={
+                "{output_dir}": str(output_dir),
+                "{output_file}": str(output_file),
+                "{input_file}": str(input_file),
+            },
+        )
         if not argv:
             raise AdapterError("agent command cannot be empty")
         return argv

@@ -117,7 +117,19 @@ workspace:
     - ["test", "-d", "workspace/sample-project"]
 ```
 
-Setup commands run in the cell workspace root before the agent starts. They use plain argv arrays — no shell interpolation, no `{python}` placeholder.
+Setup commands run in the cell workspace root before the agent starts. They use plain argv arrays — no shell interpolation — and support `{python}` for the active Python interpreter.
+
+## Command placeholders
+
+All executable commands are argv arrays. Placeholder replacement happens per argument and never invokes a shell.
+
+| Command entry point | Supported placeholders |
+| --- | --- |
+| Agent command | `{python}`, `{input_file}`, `{output_file}`, `{output_dir}` |
+| Workspace setup command | `{python}` |
+| Command expectation | `{python}`, `{output_dir}` |
+
+`{python}` always resolves to the interpreter running micro-eval. Setup runs before cell artifact paths are available, so input/output placeholders are intentionally limited to agent and validation contexts. In command expectations, `{output_dir}` resolves to the persisted cell artifact directory; the command otherwise runs in the cell workspace unless `cwd` selects the output directory.
 
 ## How the inconclusive outcome works
 

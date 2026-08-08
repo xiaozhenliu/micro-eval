@@ -77,6 +77,20 @@ describe("golden: run-phase2-full.json", () => {
     expect(run.decision?.decision_report_id).toBeTruthy();
   });
 
+  it("preserves typed Team Server provenance", () => {
+    const run = RunSchema.parse(raw);
+    expect(run.owner).toBe("fixture-owner");
+    expect(run.server_context).toEqual({
+      schema_version: "1.0",
+      workspace_id: "ws-20260612T000000Z-12345678",
+      owner: "fixture-owner",
+      template_id: "phase2-template",
+      template_version: "1.0.0",
+      job_id: "job-20260612T000000Z-12345678",
+      server_name: "fixture-server",
+    });
+  });
+
   it("has llm_judge evaluations with rubric_hash", () => {
     const run = RunSchema.parse(raw);
     const judgeEvals = run.evaluations.filter((e) => e.evaluator_type === "llm_judge");

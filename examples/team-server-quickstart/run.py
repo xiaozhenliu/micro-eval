@@ -211,14 +211,43 @@ def main() -> int:
             run_json = latest / "run.json"
             if run_json.exists():
                 run_data = json.loads(run_json.read_text())
+                owner = run_data.get("owner")
+                context = run_data.get("server_context") or {}
+                results = run_data.get("results", [])
+                if owner != MEMBER_NAME:
+                    print(
+                        f"Error: run.json owner was {owner!r}, expected {MEMBER_NAME!r}.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    return 1
+                if context.get("workspace_id") != workspace_id or context.get("job_id") != job_id:
+                    print(
+                        "Error: run.json server_context does not match the enqueued job.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    return 1
+                if not results or any(cr.get("status") != "pass" for cr in results):
+                    print("Error: Team Server smoke run did not produce all pass cells.", file=sys.stderr, flush=True)
+                    return 1
                 print(f"    Run ID: {run_data.get('id', '?')}", flush=True)
-                print(f"    Owner: {run_data.get('owner', '?')}", flush=True)
-                for cr in run_data.get("results", []):
+                print(f"    Owner: {owner}", flush=True)
+                for cr in results:
                     print(
                         f"    Cell {cr.get('cell_id', '?')}: "
                         f"status={cr.get('status', '?')}",
                         flush=True,
                     )
+            else:
+                print("Error: completed workspace has no run.json.", file=sys.stderr, flush=True)
+                return 1
+        else:
+            print("Error: completed workspace has no run directories.", file=sys.stderr, flush=True)
+            return 1
+    else:
+        print("Error: completed workspace has no runs directory.", file=sys.stderr, flush=True)
+        return 1
 
     # Summary
     print("\n" + "=" * 60, flush=True)
