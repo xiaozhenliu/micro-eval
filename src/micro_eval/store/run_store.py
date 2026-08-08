@@ -153,6 +153,22 @@ class RunStore:
         self._index_to_sqlite(record)
         return record
 
+    def fail_run(
+        self,
+        run_id: str,
+        *,
+        output_dir: str = ".micro-eval/runs",
+        reason: str,
+    ) -> RunRecord:
+        """Persist a terminal failed state for an initialized run."""
+        record = self.read_run(run_id, output_dir)
+        record.status = RunStatus.failed
+        record.completed_at = datetime.now(timezone.utc).isoformat()
+        record.failure_reason = reason
+        self.write_run(record)
+        self._index_to_sqlite(record)
+        return record
+
     def _index_to_sqlite(self, record: RunRecord) -> None:
         """Best-effort index to SQLite for trend queries."""
         try:

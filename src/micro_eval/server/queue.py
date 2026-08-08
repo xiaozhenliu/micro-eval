@@ -208,12 +208,28 @@ class QueueDB:
                                    error="worker crashed during execution")
                 recovered.append(job["job_id"])
                 continue
-            run_json = ws_path / ".micro-eval" / "runs" / run_id / "run.json"
+            run_json = _resolve_run_json_path(ws_path, job, run_id)
+            if run_json is None:
+                self.update_status(
+                    job["job_id"],
+                    "failed",
+                    finished_at=_utcnow(),
+                    error="worker crashed with invalid run output directory",
+                )
+                recovered.append(job["job_id"])
+                continue
             if run_json.exists():
                 data = json.loads(run_json.read_text())
                 if data.get("completed_at"):
                     if job.get("cancel_requested_at"):
                         self.update_status(job["job_id"], "cancelled", finished_at=_utcnow())
+                    elif data.get("status") == "failed":
+                        self.update_status(
+                            job["job_id"],
+                            "failed",
+                            finished_at=_utcnow(),
+                            error=data.get("failure_reason") or "run failed before worker recovery",
+                        )
                     else:
                         self.update_status(job["job_id"], "done", finished_at=_utcnow())
                     recovered.append(job["job_id"])
@@ -225,6 +241,19 @@ class QueueDB:
 
     def close(self) -> None:
         self._conn.close()
+
+
+def _resolve_run_json_path(workspace_path: Path, job: dict, run_id: str) -> Path | None:
+    """Resolve a queued plan's canonical run path within its workspace."""
+    try:
+        plan = json.loads(job["plan_json"])
+        output_dir = plan.get("output_dir", ".micro-eval/runs")
+        workspace_root = workspace_path.resolve()
+        run_json = (workspace_root / output_dir / run_id / "run.json").resolve()
+        run_json.relative_to(workspace_root)
+        return run_json
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
 
 
 class QueueFullError(Exception):

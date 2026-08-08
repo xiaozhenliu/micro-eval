@@ -16,6 +16,7 @@ from micro_eval.engine.kernel import ExecutionKernel
 from micro_eval.models.run import RunPlan, ServerContext
 from micro_eval.server.models import ServerConfig, WorkspaceMeta
 from micro_eval.server.queue import QueueDB
+from micro_eval.store.run_store import RunStore, RunStoreError
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ async def worker_loop(
             continue
         logger.info("Executing job %s for workspace %s", job_id, ws_id)
 
+        plan: RunPlan | None = None
         try:
             plan = RunPlan.model_validate_json(job["plan_json"])
             plan = _attach_server_provenance(
@@ -204,20 +206,51 @@ async def worker_loop(
                 logger.info("Job %s completed successfully", job_id)
 
         except asyncio.TimeoutError:
+            timeout_error = f"run timed out after {run_timeout}s"
+            run_failure_persisted = plan is not None and _persist_run_failure(
+                ws_path, plan, timeout_error
+            )
+            queue_error = timeout_error
+            if not run_failure_persisted:
+                queue_error += "; run.json failure state could not be persisted"
             db.update_status(
                 job_id, "failed", finished_at=_utcnow(),
-                error=f"run timed out after {run_timeout}s",
+                error=queue_error,
             )
             logger.error("Job %s timed out", job_id)
 
         except Exception as exc:
             from micro_eval.engine.adapter import Redactor
             redacted_err = Redactor.from_env().redact(str(exc))
-            db.update_status(job_id, "failed", finished_at=_utcnow(), error=redacted_err)
+            run_failure_persisted = plan is not None and _persist_run_failure(
+                ws_path, plan, redacted_err
+            )
+            queue_error = redacted_err
+            if plan is not None and not run_failure_persisted:
+                queue_error += "; run.json failure state could not be persisted"
+            db.update_status(job_id, "failed", finished_at=_utcnow(), error=queue_error)
             logger.exception("Job %s failed: %s", job_id, exc)
 
     db.close()
     logger.info("Worker shut down gracefully")
+
+
+def _persist_run_failure(workspace_path: Path, plan: RunPlan, reason: str) -> bool:
+    """Best-effort synchronization of a queue failure into canonical run.json."""
+    try:
+        store = RunStore(workspace_path)
+        run_path = store.run_dir(plan.run_id, plan.output_dir) / "run.json"
+        if not run_path.exists():
+            store.init_run(plan)
+        store.fail_run(
+            plan.run_id,
+            output_dir=plan.output_dir,
+            reason=reason,
+        )
+        return True
+    except (RunStoreError, OSError, ValueError):
+        logger.warning("Run %s could not be marked failed", plan.run_id, exc_info=True)
+        return False
 
 
 def run_worker(data_root: Path, config: ServerConfig | None = None) -> None:

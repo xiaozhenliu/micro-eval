@@ -142,6 +142,7 @@ class RunRecord(BaseModel):
     status: RunStatus = RunStatus.planned
     created_at: str
     completed_at: str | None = None
+    failure_reason: str | None = None
     output_dir: str
     config_hash: str = ""
     tasks: list[str] = Field(default_factory=list)

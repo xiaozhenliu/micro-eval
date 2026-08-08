@@ -55,6 +55,7 @@ def test_run_phase2_full_roundtrip() -> None:
     assert record.owner == "fixture-owner"
     assert record.server_context is not None
     assert record.server_context.job_id == "job-20260612T000000Z-12345678"
+    assert record.failure_reason is None
     assert all(
         stats.denominator_policy for stats in record.decision.aggregation.per_configuration.values()
     )

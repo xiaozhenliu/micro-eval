@@ -246,6 +246,7 @@ export const RunSchema = z.object({
   status: z.enum(["planned", "running", "completed", "failed", "partial"]),
   created_at: z.string(),
   completed_at: z.string().nullable().default(null),
+  failure_reason: z.string().nullable().default(null),
   output_dir: z.string(),
   config_hash: z.string().default(""),
   tasks: z.array(z.string()).default([]),

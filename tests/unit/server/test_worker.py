@@ -1,12 +1,15 @@
 """Tests for run worker logic."""
 
+import asyncio
+import signal
+
 import pytest
 
 from micro_eval.models.configuration import Guardrails
-from micro_eval.models.run import RunPlan, RunRecord
+from micro_eval.models.run import RunPlan, RunRecord, RunStatus
 from micro_eval.server.queue import QueueDB
 from micro_eval.server.models import WorkspaceMeta
-from micro_eval.server.worker import _attach_server_provenance
+from micro_eval.server.worker import _attach_server_provenance, _persist_run_failure, worker_loop
 from micro_eval.store.run_store import RunStore, RunStoreError
 
 
@@ -81,6 +84,72 @@ def test_crash_recovery_with_cancel_requested(data_root):
     db.close()
 
 
+def test_crash_recovery_preserves_failed_run_status(data_root):
+    """A terminal failed run must not be recovered as a successful job."""
+    db = QueueDB(data_root / "queue.db")
+    db.enqueue("ws-test", "alice", '{"run_id": "run-1"}')
+    job = db.dequeue_next()
+    db.update_status(job["job_id"], "running", run_id="run-1")
+
+    ws_dir = data_root / "workspaces" / "ws-test" / ".micro-eval" / "runs" / "run-1"
+    ws_dir.mkdir(parents=True)
+    (ws_dir / "run.json").write_text(
+        '{"status":"failed","completed_at":"2026-01-01T00:00:00Z",'
+        '"failure_reason":"run timed out after 1s"}'
+    )
+
+    recovered = db.recover_stale_jobs(lambda ws_id: data_root / "workspaces" / ws_id)
+
+    assert recovered == [job["job_id"]]
+    recovered_job = db.get_job(job["job_id"])
+    assert recovered_job["status"] == "failed"
+    assert recovered_job["error"] == "run timed out after 1s"
+    db.close()
+
+
+def test_crash_recovery_reads_custom_output_directory(data_root):
+    db = QueueDB(data_root / "queue.db")
+    db.enqueue(
+        "ws-test",
+        "alice",
+        '{"run_id":"run-1","output_dir":"custom/runs"}',
+    )
+    job = db.dequeue_next()
+    db.update_status(job["job_id"], "running", run_id="run-1")
+
+    run_dir = data_root / "workspaces" / "ws-test" / "custom" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(
+        '{"status":"failed","completed_at":"2026-01-01T00:00:00Z",'
+        '"failure_reason":"custom output failure"}'
+    )
+
+    db.recover_stale_jobs(lambda ws_id: data_root / "workspaces" / ws_id)
+
+    recovered_job = db.get_job(job["job_id"])
+    assert recovered_job["status"] == "failed"
+    assert recovered_job["error"] == "custom output failure"
+    db.close()
+
+
+def test_crash_recovery_rejects_output_directory_escape(data_root):
+    db = QueueDB(data_root / "queue.db")
+    db.enqueue(
+        "ws-test",
+        "alice",
+        '{"run_id":"run-1","output_dir":"../../outside"}',
+    )
+    job = db.dequeue_next()
+    db.update_status(job["job_id"], "running", run_id="run-1")
+
+    db.recover_stale_jobs(lambda ws_id: data_root / "workspaces" / ws_id)
+
+    recovered_job = db.get_job(job["job_id"])
+    assert recovered_job["status"] == "failed"
+    assert recovered_job["error"] == "worker crashed with invalid run output directory"
+    db.close()
+
+
 def test_worker_provenance_is_present_in_initial_run_record(tmp_path):
     """Worker provenance reaches the first persisted run.json before execution."""
     job = {
@@ -142,3 +211,99 @@ def test_worker_provenance_is_present_in_initial_run_record(tmp_path):
     still_unchanged = store.read_run(plan.run_id)
     assert still_unchanged.server_context is not None
     assert still_unchanged.server_context.job_id == job["job_id"]
+
+
+def test_persist_run_failure_writes_terminal_status(tmp_path):
+    plan = RunPlan(
+        run_id="run-timeout",
+        project_name="timeout-test",
+        created_at="2026-08-08T08:00:00+00:00",
+        output_dir=".micro-eval/runs",
+        guardrails=Guardrails(),
+        cells=[],
+        config_hash="config-hash",
+    )
+    store = RunStore(tmp_path)
+    store.init_run(plan)
+
+    persisted = _persist_run_failure(tmp_path, plan, "run timed out after 1s")
+
+    assert persisted is True
+    record = store.read_run(plan.run_id)
+    assert record.status == RunStatus.failed
+    assert record.completed_at is not None
+    assert record.failure_reason == "run timed out after 1s"
+
+
+def test_persist_run_failure_initializes_missing_run_record(tmp_path):
+    plan = RunPlan(
+        run_id="missing-run",
+        project_name="timeout-test",
+        created_at="2026-08-08T08:00:00+00:00",
+        output_dir=".micro-eval/runs",
+        guardrails=Guardrails(),
+        cells=[],
+        config_hash="config-hash",
+    )
+
+    assert _persist_run_failure(tmp_path, plan, "run timed out") is True
+    record = RunStore(tmp_path).read_run(plan.run_id)
+    assert record.status == RunStatus.failed
+    assert record.failure_reason == "run timed out"
+
+
+async def test_worker_timeout_persists_queue_and_run_failure(data_root, monkeypatch):
+    workspace_id = "ws-20260808T080000Z-12345678"
+    workspace_path = data_root / "workspaces" / workspace_id
+    workspace_path.mkdir(parents=True)
+    plan = RunPlan(
+        run_id="run-timeout",
+        project_name="timeout-test",
+        created_at="2026-08-08T08:00:00+00:00",
+        output_dir=".micro-eval/runs",
+        guardrails=Guardrails(),
+        cells=[],
+        config_hash="config-hash",
+    )
+    setup_db = QueueDB(data_root / "queue.db")
+    queued = setup_db.enqueue(workspace_id, "alice", plan.model_dump_json())
+    setup_db.close()
+
+    class BlockingKernel:
+        def __init__(self, project_root, on_cell_complete=None):
+            self.store = RunStore(project_root)
+
+        async def run(self, run_plan):
+            self.store.init_run(run_plan)
+            await asyncio.sleep(60)
+
+    handlers = {}
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(
+        loop,
+        "add_signal_handler",
+        lambda sig, callback: handlers.setdefault(sig, callback),
+    )
+    monkeypatch.setattr("micro_eval.server.worker.ExecutionKernel", BlockingKernel)
+
+    worker_task = asyncio.create_task(
+        worker_loop(data_root, poll_interval=0.01, run_timeout=0.01)
+    )
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        inspect_db = QueueDB(data_root / "queue.db")
+        job = inspect_db.get_job(queued["job_id"])
+        inspect_db.close()
+        if job["status"] == "failed":
+            break
+    else:
+        raise AssertionError("worker did not persist timeout status")
+
+    handlers[signal.SIGTERM]()
+    await asyncio.wait_for(worker_task, timeout=1)
+
+    assert job["error"] == "run timed out after 0.01s"
+    record = RunStore(workspace_path).read_run(plan.run_id)
+    assert record.status == RunStatus.failed
+    assert record.completed_at is not None
+    assert record.failure_reason == "run timed out after 0.01s"
