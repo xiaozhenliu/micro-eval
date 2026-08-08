@@ -114,6 +114,20 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 - pytest — Python 测试
 - vitest — UI 测试
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked as local Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the five canonical local status names. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Domain documentation uses a single-context layout. See `docs/agents/domain.md`.
+
 ## Engineering guidelines routing
 
 不要默认读取整个 `docs/engineering/` 目录。只有任务命中下列场景时，才读取对应文件：
@@ -149,4 +163,3 @@ uv run pytest
 cd ui && npm run dev
 cd ui && npx vitest run
 ```
-
