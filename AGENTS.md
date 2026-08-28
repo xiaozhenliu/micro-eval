@@ -5,6 +5,7 @@ You are operating on the `main` release branch of `micro-eval`.
 Critical rules:
 
 - Always reply to the user in Simplified Chinese.
+- In Simplified Chinese responses and documentation, keep `ticket` in English; do not translate it as “票”.
 - Do not use TDD. Implement from specification and user path first, then verify.
 - Do not develop new features directly on `main`.
 - Do not manually merge `dev` into `main`.
