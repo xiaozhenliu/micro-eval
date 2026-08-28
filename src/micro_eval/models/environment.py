@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from micro_eval.models.task import WorkspaceType
 
 SCHEMA_VERSION = "1.0"
 
@@ -63,6 +66,21 @@ class CellSnapshot(BaseModel):
     timestamp: str = ""
     cleanup_status: str | None = None
     cleanup_error: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkspaceObservation:
+    """Bounded raw facts collected from a live workspace before validation.
+
+    Environment owns collection and interpretation of provider output, but it
+    deliberately does not know about ArtifactRef or run-directory layout.
+    ArtifactStore turns this observation into durable, redacted references.
+    """
+
+    workspace_type: WorkspaceType
+    diff_text: str | None = None
+    diff_truncated: bool = False
+    warnings: tuple[str, ...] = ()
 
 
 class SnapshotGateResult(BaseModel):

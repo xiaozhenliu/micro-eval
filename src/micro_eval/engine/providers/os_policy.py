@@ -23,7 +23,7 @@ from micro_eval.engine.providers.git_worktree import (
     GitWorktreeProvider,
     WorkspaceProviderError,
 )
-from micro_eval.models.artifact import ArtifactRef
+from micro_eval.models.environment import WorkspaceObservation
 from micro_eval.models.task import WorkspaceSpec
 
 
@@ -59,9 +59,12 @@ class SeatbeltProvider:
             provider_name=self.name,
             isolation_level=IsolationLevel.os_policy,
             source_repo=handle.source_repo,
+            workspace_type=handle.workspace_type,
+            setup_exit_code=handle.setup_exit_code,
             metadata={
                 "sandbox_type": "seatbelt",
                 "network_policy": spec.network_policy.value if spec.network_policy else "full",
+                **handle.metadata,
             },
         )
 
@@ -101,11 +104,15 @@ class SeatbeltProvider:
         except subprocess.TimeoutExpired:
             return CommandResult(exit_code=-1, timed_out=True)
 
-    def collect_artifacts(self, handle: WorkspaceHandle) -> list[ArtifactRef]:
+    def collect_artifacts(self, handle: WorkspaceHandle) -> list:
+        """Legacy compatibility shim; Environment no longer creates artifacts."""
         return self._inner.collect_artifacts(handle)
 
     def collect_diff(self, handle: WorkspaceHandle) -> str | None:
         return self._inner.collect_diff(handle)
+
+    def observe_final(self, handle: WorkspaceHandle, *, byte_limit: int) -> WorkspaceObservation:
+        return self._inner.observe_final(handle, byte_limit=byte_limit)
 
     def snapshot(self, handle: WorkspaceHandle) -> str:
         return self._inner.snapshot(handle)
@@ -149,9 +156,12 @@ class BubblewrapProvider:
             provider_name=self.name,
             isolation_level=IsolationLevel.os_policy,
             source_repo=handle.source_repo,
+            workspace_type=handle.workspace_type,
+            setup_exit_code=handle.setup_exit_code,
             metadata={
                 "sandbox_type": "bubblewrap",
                 "network_policy": spec.network_policy.value if spec.network_policy else "full",
+                **handle.metadata,
             },
         )
 
@@ -186,11 +196,15 @@ class BubblewrapProvider:
         except subprocess.TimeoutExpired:
             return CommandResult(exit_code=-1, timed_out=True)
 
-    def collect_artifacts(self, handle: WorkspaceHandle) -> list[ArtifactRef]:
+    def collect_artifacts(self, handle: WorkspaceHandle) -> list:
+        """Legacy compatibility shim; Environment no longer creates artifacts."""
         return self._inner.collect_artifacts(handle)
 
     def collect_diff(self, handle: WorkspaceHandle) -> str | None:
         return self._inner.collect_diff(handle)
+
+    def observe_final(self, handle: WorkspaceHandle, *, byte_limit: int) -> WorkspaceObservation:
+        return self._inner.observe_final(handle, byte_limit=byte_limit)
 
     def snapshot(self, handle: WorkspaceHandle) -> str:
         return self._inner.snapshot(handle)

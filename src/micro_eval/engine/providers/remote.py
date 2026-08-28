@@ -22,7 +22,7 @@ from micro_eval.engine.providers.base import (
 )
 from micro_eval.engine.providers.git_worktree import WorkspaceProviderError
 from micro_eval.models.ids import safe_path_segment
-from micro_eval.models.artifact import ArtifactRef
+from micro_eval.models.environment import WorkspaceObservation
 from micro_eval.models.task import WorkspaceSpec
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,8 @@ class E2BProvider:
             workspace_path=Path(workspace_dir),
             provider_name=self.name,
             isolation_level=IsolationLevel.vm,
+            workspace_type=spec.type,
+            setup_exit_code=0 if spec.setup else None,
             metadata={
                 "sandbox_id": sandbox_id,
                 "network_policy": NetworkPolicy.none.value,
@@ -124,11 +126,18 @@ class E2BProvider:
                 return CommandResult(exit_code=-1, timed_out=True)
             raise WorkspaceProviderError(f"E2B execution failed: {exc}") from exc
 
-    def collect_artifacts(self, handle: WorkspaceHandle) -> list[ArtifactRef]:
+    def collect_artifacts(self, handle: WorkspaceHandle) -> list:
+        """Legacy compatibility shim; Environment no longer creates artifacts."""
         return []
 
     def collect_diff(self, handle: WorkspaceHandle) -> str | None:
-        return None
+        return self.observe_final(handle, byte_limit=50 * 1024 * 1024).diff_text
+
+    def observe_final(self, handle: WorkspaceHandle, *, byte_limit: int) -> WorkspaceObservation:
+        return WorkspaceObservation(
+            workspace_type=handle.workspace_type,
+            warnings=("observation_unavailable",),
+        )
 
     def snapshot(self, handle: WorkspaceHandle) -> str:
         return handle.metadata.get("sandbox_id", "")
@@ -193,6 +202,8 @@ class ModalProvider:
             workspace_path=Path(workspace_dir),
             provider_name=self.name,
             isolation_level=IsolationLevel.container,
+            workspace_type=spec.type,
+            setup_exit_code=0 if spec.setup else None,
             metadata={
                 "run_id": run_id,
                 "cell_id": cell_id,
@@ -256,11 +267,18 @@ class ModalProvider:
                 return CommandResult(exit_code=-1, timed_out=True)
             raise WorkspaceProviderError(f"Modal execution failed: {exc}") from exc
 
-    def collect_artifacts(self, handle: WorkspaceHandle) -> list[ArtifactRef]:
+    def collect_artifacts(self, handle: WorkspaceHandle) -> list:
+        """Legacy compatibility shim; Environment no longer creates artifacts."""
         return []
 
     def collect_diff(self, handle: WorkspaceHandle) -> str | None:
-        return None
+        return self.observe_final(handle, byte_limit=50 * 1024 * 1024).diff_text
+
+    def observe_final(self, handle: WorkspaceHandle, *, byte_limit: int) -> WorkspaceObservation:
+        return WorkspaceObservation(
+            workspace_type=handle.workspace_type,
+            warnings=("observation_unavailable",),
+        )
 
     def snapshot(self, handle: WorkspaceHandle) -> str:
         return ""

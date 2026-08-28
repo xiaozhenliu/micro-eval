@@ -992,12 +992,19 @@ class WorkspaceProvider(Protocol):
     # 输入经 stdin/文件/argv 传递。所有 provider 实现据此。
     async def exec_command(self, handle: WorkspaceHandle, argv: list[str],
                            env: dict | None = None) -> CommandResult: ...
-    async def collect_artifacts(self, handle: WorkspaceHandle) -> list[Artifact]: ...
-    async def collect_diff(self, handle: WorkspaceHandle) -> str | None: ...
+    async def observe_final(self, handle: WorkspaceHandle, *, byte_limit: int) -> WorkspaceObservation: ...
     async def snapshot(self, handle: WorkspaceHandle) -> SnapshotID: ...
     async def restore(self, handle: WorkspaceHandle, snap: SnapshotID) -> None: ...
     async def cleanup(self, handle: WorkspaceHandle) -> None: ...
 ```
+
+`observe_final()` 只返回 Environment 拥有的原始、有界终态观察，不创建
+`ArtifactRef`，也不负责 run 目录布局或脱敏。对本地 `git_repo`，观察相对 source
+`HEAD` 收集 tracked 的 staged/unstaged 变化和未被 `.gitignore` 排除的安全文本
+untracked 文件；symlink、hardlink、binary 与超出上限的内容只产生 warning。观察必须在
+deterministic validator 之前完成，validator 的副作用不得污染这份终态事实。Artifact /
+Trace Layer 随后负责脱敏、容量限制、持久化 `workspace.diff` 并生成 ArtifactRef；远端
+provider 在无法提供观察时返回带 `observation_unavailable` warning 的空观察。
 
 内置 Provider 映射：
 
@@ -1128,8 +1135,8 @@ artifacts:
     path: .micro-eval/artifacts/run-xxx/fix-auth/claude-v2-skill-v2/rep-1/changes.patch
   - type: file
     path: .micro-eval/artifacts/run-xxx/fix-auth/claude-v2-skill-v2/rep-1/output.txt
-  - type: directory
-    path: .micro-eval/artifacts/run-xxx/fix-auth/claude-v2-skill-v2/rep-1/workspace/
+  # blank/files workspace directories are ephemeral and are not archived by default.
+  # A directory artifact requires an explicit, separately defined selection policy.
 
 # 执行指标
 metrics:
@@ -1800,7 +1807,8 @@ micro-eval run --config eval.yaml
 
 Agent 是黑盒。Adapter 只关心：
 - **怎么传入任务**：stdin / file / arg
-- **怎么收集产出**：stdout / file / directory / git diff
+- **怎么收集产出**：stdout / file / directory output artifacts；workspace diff/observation
+  由 Environment / WorkspaceProvider 收集，Artifact / Trace Layer 脱敏并持久化。
 - **怎么知道结束**：进程退出 + exit code
 
 ```python

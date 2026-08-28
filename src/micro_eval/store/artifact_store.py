@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import stat
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 
+from micro_eval.engine.adapter import Redactor
 from micro_eval.models.artifact import ArtifactRef, EvidenceItem, Manifest, TraceRef
+from micro_eval.models.environment import WorkspaceObservation
 from micro_eval.models.ids import looks_binary, safe_path_segment, sha256_bytes
 
 
@@ -33,6 +36,37 @@ class ArtifactStore:
         tmp.write_text(text)
         tmp.replace(path)
         return self.index_file(cell_id, kind, path)
+
+    def persist_workspace_observation(
+        self,
+        cell_id: str,
+        observation: WorkspaceObservation,
+        redactor: Redactor,
+    ) -> tuple[ArtifactRef, ...]:
+        """Persist a redacted, bounded workspace observation.
+
+        The provider returns only raw facts. This boundary owns redaction,
+        artifact caps, durable paths, and manifest references.
+        """
+        warnings = list(observation.warnings)
+        if observation.diff_truncated:
+            warnings.append("diff_truncated")
+        if observation.diff_text is None and not warnings:
+            return ()
+
+        text = redactor.redact(observation.diff_text or "")
+        encoded = text.encode()
+        if len(encoded) > self.artifact_cap_bytes:
+            # Do not persist an over-cap prefix: it could contain an
+            # unbounded or incompletely redacted payload.
+            text = ""
+            warnings.append("skipped_oversized")
+        warning = ";".join(dict.fromkeys(warnings)) or None
+        artifact = self.write_text(cell_id, "diff", "workspace.diff", text)
+        if warning:
+            artifact.warning = warning
+            self._upsert_artifact(artifact)
+        return (artifact,)
 
     def index_file(self, cell_id: str, kind: str, path: Path) -> ArtifactRef:
         """Add an existing file to the manifest."""
@@ -83,14 +117,32 @@ class ArtifactStore:
         self._upsert_artifact(artifact)
         return artifact
 
-    def index_existing_outputs(self, cell_id: str, *, exclude_names: set[str] | None = None) -> list[ArtifactRef]:
+    def index_existing_outputs(
+        self,
+        cell_id: str,
+        *,
+        exclude_names: set[str] | None = None,
+        include_paths: Iterable[str | Path] | None = None,
+    ) -> list[ArtifactRef]:
         """Index output files already written by directory-mode agents."""
         excluded = exclude_names or set()
         artifacts: list[ArtifactRef] = []
         root = self.cell_dir(cell_id)
         root_real = root.resolve()
+        included: set[Path] | None = None
+        if include_paths is not None:
+            included = set()
+            for raw_path in include_paths:
+                candidate = Path(raw_path)
+                if not candidate.is_absolute():
+                    candidate = root / candidate
+                candidate = candidate.absolute()
+                if _is_relative_to(candidate, root_real):
+                    included.add(candidate)
         for path in sorted(root.rglob("*")):
             if path.name in excluded:
+                continue
+            if included is not None and path.absolute() not in included:
                 continue
             if path.is_symlink() or not path.is_file():
                 continue

@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from micro_eval.models.run import CellResult, RunPlan, RunRecord, RunStatus
 from micro_eval.models.artifact import EvidenceItem
 from micro_eval.models.decision import DecisionReport
 from micro_eval.models.evaluation import EvaluationResult
 from micro_eval.models.ids import safe_path_segment
+from micro_eval.models.run import CellResult, RunPlan, RunRecord, RunStatus
 from micro_eval.decision.summary import build_decision
+
+if TYPE_CHECKING:
+    from micro_eval.engine.cell_lifecycle import FinalizedCell
 
 
 class RunStoreError(Exception):
@@ -96,6 +100,31 @@ class RunStore:
         cell_dir.mkdir(parents=True, exist_ok=True)
         (cell_dir / "result.json").write_text(result.model_dump_json(indent=2))
         record.results = [item for item in record.results if item.cell_id != result.cell_id] + [result]
+        self.write_run(record)
+        return record
+
+    def commit_cell(self, record: RunRecord, finalized: "FinalizedCell") -> RunRecord:
+        """Commit one fully finalized cell and its canonical evaluations.
+
+        CellLifecycle owns ordering and produces stable in-memory facts only;
+        this method owns the evaluation/result files and the RunRecord
+        projection. The kernel therefore never needs to know the cell layout.
+        """
+        result = finalized.result
+        cell_dir = self.run_dir(record.id, record.output_dir) / "cells" / safe_path_segment(result.cell_id)
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        (cell_dir / "evaluation.json").write_text(
+            json.dumps(
+                [evaluation.model_dump(mode="json") for evaluation in finalized.evaluations],
+                indent=2,
+            )
+        )
+        (cell_dir / "result.json").write_text(result.model_dump_json(indent=2))
+
+        record.results = [item for item in record.results if item.cell_id != result.cell_id] + [result]
+        record.evaluations = [
+            item for item in record.evaluations if item.cell_id != result.cell_id
+        ] + list(finalized.evaluations)
         self.write_run(record)
         return record
 
