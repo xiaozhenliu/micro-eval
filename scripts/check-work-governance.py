@@ -313,6 +313,12 @@ def _check_scratch(root: Path) -> list[str]:
                 and parts[1] == "issues"
                 and TICKET_FILENAME_RE.fullmatch(parts[2]) is not None
             )
+            or (
+                len(parts) == 4
+                and parts[1] == "issues"
+                and parts[2] == "resolved"
+                and TICKET_FILENAME_RE.fullmatch(parts[3]) is not None
+            )
             or (len(parts) >= 3 and parts[1] == "attachments")
         )
         if not allowed:
@@ -368,10 +374,52 @@ def _check_scratch(root: Path) -> list[str]:
     return errors
 
 
+def _archived_ticket_paths(root: Path) -> list[Path]:
+    scratch = root / ".scratch"
+    if not scratch.is_dir():
+        return []
+    return sorted(
+        path
+        for path in scratch.glob("*/issues/resolved/*.md")
+        if path.is_file()
+    )
+
+
+def _check_archived_tickets(root: Path, active: list[Ticket]) -> list[str]:
+    errors: list[str] = []
+    active_ids = {ticket.identifier for ticket in active}
+    seen: dict[str, Path] = {}
+    for path in _archived_ticket_paths(root):
+        relative = path.relative_to(root).as_posix()
+        if not TICKET_FILENAME_RE.fullmatch(path.name):
+            errors.append(f"{relative}: filename must be NN-lowercase-kebab.md")
+        identifier = _fields(path.read_text(encoding="utf-8")).get("id", "")
+        if not LOCAL_ID_RE.fullmatch(identifier):
+            errors.append(f"{relative}: invalid or missing ID")
+            continue
+        if identifier in active_ids:
+            errors.append(
+                f"{relative}: archived ID {identifier} duplicates an active ticket"
+            )
+        elif identifier in seen:
+            errors.append(
+                f"{relative}: duplicate ID {identifier} also used by "
+                f"{seen[identifier].relative_to(root).as_posix()}"
+            )
+        else:
+            seen[identifier] = path
+    return errors
+
+
 def check_repository(root: Path) -> list[str]:
     root = root.resolve()
     tickets, ticket_errors = _read_tickets(root)
-    return [*ticket_errors, *_check_todos(root, tickets), *_check_scratch(root)]
+    return [
+        *ticket_errors,
+        *_check_todos(root, tickets),
+        *_check_scratch(root),
+        *_check_archived_tickets(root, tickets),
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -13,7 +13,7 @@
 
 ## 当前执行（Now）
 
-（无）
+- [LOCAL-SITE-SKILL-01](.scratch/site-skill/issues/01-create-project-site-skill.md) — 创建项目站点更新 skill。
 
 ## 下一步（Next）
 

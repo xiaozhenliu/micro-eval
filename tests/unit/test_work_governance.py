@@ -82,3 +82,37 @@ def test_ticket_contract_rejects_completed_alias(tmp_path: Path) -> None:
     _, errors = work_governance._read_tickets(tmp_path)
 
     assert any("invalid lifecycle Status 'completed'" in error for error in errors)
+
+
+def _archive_ticket(root: Path, identifier: str = "LOCAL-EXAMPLE-01") -> Path:
+    source = root / ".scratch/example/issues/01-first-ticket.md"
+    target = root / ".scratch/example/issues/resolved/01-first-ticket.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source.replace(target)
+    return target
+
+
+def test_archived_ticket_keeps_id_outside_active_scan(tmp_path: Path) -> None:
+    _write_ticket(tmp_path, status="resolved", completion_evidence=True)
+    _archive_ticket(tmp_path)
+    tickets, ticket_errors = work_governance._read_tickets(tmp_path)
+
+    assert ticket_errors == []
+    assert tickets == []
+    assert work_governance._check_archived_tickets(tmp_path, tickets) == []
+
+
+def test_archived_ticket_rejects_duplicate_of_active_id(tmp_path: Path) -> None:
+    _write_ticket(tmp_path, status="resolved", completion_evidence=True)
+    _archive_ticket(tmp_path)
+    _write_ticket(tmp_path, status="ready")
+    tickets, ticket_errors = work_governance._read_tickets(tmp_path)
+
+    assert ticket_errors == []
+    assert [ticket.identifier for ticket in tickets] == ["LOCAL-EXAMPLE-01"]
+    errors = work_governance._check_archived_tickets(tmp_path, tickets)
+
+    assert any(
+        "archived ID LOCAL-EXAMPLE-01 duplicates an active ticket" in error
+        for error in errors
+    )

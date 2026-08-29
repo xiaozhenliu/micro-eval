@@ -100,6 +100,14 @@ proves delivery. Conversation history, if needed, is appended under
 `## Comments`. The ticket may remain as a durable record after it leaves the
 Work Register.
 
+Active tickets live directly under `.scratch/<effort>/issues/`. Once every
+ticket in an effort is `resolved`, the resolved files are filed under
+`.scratch/<effort>/issues/resolved/` so that `issues/` shows only unfinished
+work. Archiving is a move with history preserved (`git mv`): the ticket keeps
+its ID, `Status: resolved`, and full completion evidence, remains the
+authority for its record, and its ID stays reserved — archived IDs are still
+checked for uniqueness and must never be reused.
+
 `.scratch/` is tracked on `dev`. Its allowed content is limited to tickets,
 `spec.md`, `map.md`, and necessary attachments. Caches, build products, runtime
 data, logs, databases, credentials, and secret-bearing files do not belong
@@ -128,8 +136,8 @@ The normal flow is:
 5. When delivery is verified, set `Status: resolved`, record completion
    evidence, remove the pointer from `TODOS.md`, and move user-visible facts to
    `CHANGELOG.md` or implementation evidence to a development log.
-6. Keep the resolved ticket for auditability; archive it only when its record
-   is intentionally retired.
+6. Keep the resolved ticket for auditability; when an effort's tickets are
+   all resolved, file them under that effort's `issues/resolved/` directory.
 
 GitHub open/closed state is checked by a human during triage. Ordinary CI and
 the local governance check do not require network access or mutate GitHub.
