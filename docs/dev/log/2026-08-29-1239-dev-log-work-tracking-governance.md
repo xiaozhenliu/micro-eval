@@ -3,7 +3,7 @@ title: Development Log - Work Tracking Governance
 doc_type: dev_log
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T13:01+08:00
+updated_at: 2026-08-29T13:10+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -39,6 +39,9 @@ intentionally private.
 - Implementation commit: `c72b18814a29ffc83455c64a212fcf89fe807952`.
 - Replaced the old Ready/Blocked/Done list with `Now`, `Next`, `Waiting`,
   `Roadmap`, and `Inbox` portfolio lanes.
+- Expanded the Roadmap after audit to retain each genuine future item from the
+  previous Register, including schema generation, CLI/provider coverage, task
+  scope, three cost paths, run-wide controls, SQLite, OpenHands, and Windows.
 - Added the `GH-15` pointer and moved conditional future work into Roadmap
   entries with explicit triggers.
 - Removed the root `.scratch/` ignore rule, added durable effort maps, and

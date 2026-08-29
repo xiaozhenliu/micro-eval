@@ -121,3 +121,6 @@ Blocked by: None
   modes passed.
 - Follow-up: `GH-15` open/closed state still requires human triage; no GitHub
   write or Next.js upgrade was performed.
+- Post-completion audit: the Roadmap was expanded to preserve every genuine
+  unfinished route from the former Register; only completed, stale, and
+  monitoring-only entries remain removed.
