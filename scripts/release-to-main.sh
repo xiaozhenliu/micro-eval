@@ -193,13 +193,16 @@ trap cleanup_validation EXIT
 git worktree add --detach "$validation_worktree" "$candidate_sha" >/dev/null
 
 info "Running Python tests on candidate public tree..."
-candidate_pytest="$(
-  cd "$validation_worktree"
-  PYTHONPATH="$validation_worktree/src" \
-    uv run --project "$REPO_ROOT" pytest -q --timeout=60 2>&1
-)"
+if ! candidate_pytest="$(
+    cd "$validation_worktree"
+    PYTHONPATH="$validation_worktree/src" \
+      uv run --project "$REPO_ROOT" pytest -q --timeout=60 2>&1
+  )"; then
+  echo "$candidate_pytest" | tail -20
+  die "Python tests failed on candidate public tree."
+fi
 echo "$candidate_pytest" | grep -qE "^[0-9]+ passed" || {
-  echo "$candidate_pytest" | tail -5
+  echo "$candidate_pytest" | tail -20
   die "Python tests failed on candidate public tree."
 }
 echo "$candidate_pytest" | tail -1
@@ -208,14 +211,20 @@ if [[ -d "$REPO_ROOT/ui/node_modules" ]]; then
   ln -s "$REPO_ROOT/ui/node_modules" "$validation_worktree/ui/node_modules"
 fi
 info "Running UI tests and build on candidate public tree..."
-candidate_vitest="$(cd "$validation_worktree/ui" && npx vitest run 2>&1)"
+if ! candidate_vitest="$(cd "$validation_worktree/ui" && npx vitest run 2>&1)"; then
+  echo "$candidate_vitest" | tail -20
+  die "UI tests failed on candidate public tree."
+fi
 echo "$candidate_vitest" | grep -q "FAIL" && {
-  echo "$candidate_vitest" | tail -5
+  echo "$candidate_vitest" | tail -20
   die "UI tests failed on candidate public tree."
 }
-candidate_build="$(cd "$validation_worktree/ui" && npm run build 2>&1)"
+if ! candidate_build="$(cd "$validation_worktree/ui" && npm run build 2>&1)"; then
+  echo "$candidate_build" | tail -20
+  die "UI build failed on candidate public tree."
+fi
 echo "$candidate_build" | grep -q "Compiled successfully" || {
-  echo "$candidate_build" | tail -10
+  echo "$candidate_build" | tail -20
   die "UI build failed on candidate public tree."
 }
 

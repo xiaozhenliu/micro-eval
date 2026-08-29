@@ -21,6 +21,7 @@ PROJECTION_FILES = (
 AGENTS_TEMPLATE = (
     ".codex/skills/micro-eval-release/assets/templates/agents-publish-template.md"
 )
+PUBLIC_AGENTS = "AGENTS.md"
 VERSION = "1.2.3"
 
 
@@ -186,7 +187,7 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
     _write_project_file(
         worktree,
         "AGENTS.md",
-        (PROJECT_ROOT / AGENTS_TEMPLATE).read_text(encoding="utf-8"),
+        (PROJECT_ROOT / PUBLIC_AGENTS).read_text(encoding="utf-8"),
     )
     _write_project_file(
         worktree,
@@ -199,7 +200,11 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
     _git(worktree, "push", "-u", "origin", "main")
 
     _git(worktree, "checkout", "-b", "dev")
-    _copy_project_file(worktree, AGENTS_TEMPLATE)
+    _write_project_file(
+        worktree,
+        AGENTS_TEMPLATE,
+        (PROJECT_ROOT / PUBLIC_AGENTS).read_text(encoding="utf-8"),
+    )
     _write_project_file(worktree, ".codex/private.md", "dev only\n")
     _write_project_file(worktree, "CONTEXT.md", "internal domain notes\n")
     _write_project_file(
@@ -357,6 +362,8 @@ def test_failed_candidate_gate_keeps_main_unchanged_and_stage_can_retry(
     failed = _run_release(release_repo, "stage", "dev", "main", check=False)
 
     assert failed.returncode != 0
+    assert "candidate build failed" in failed.stdout
+    assert "UI build failed on candidate public tree." in failed.stderr
     assert _ref(release_repo.worktree, "main") == main_before
     assert _origin_ref(release_repo, "refs/heads/main") == origin_before
     receipts = list(
