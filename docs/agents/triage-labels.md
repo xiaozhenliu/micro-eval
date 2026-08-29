@@ -3,7 +3,7 @@ title: Triage Roles and Ticket Fields
 doc_type: reference
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T12:39+08:00
+updated_at: 2026-08-29T16:52+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -17,12 +17,14 @@ related:
 # Triage Roles and Ticket Fields
 
 Triage answers “what routing decision is needed?” It does not describe
-execution progress. A local ticket therefore carries separate `Triage`,
-`Executor`, and `Status` fields.
+execution progress. A local ticket therefore carries separate `triage`,
+`executor`, and `status` front matter fields, defined in
+`issue-tracker.md`.
 
 ## Triage role
 
-These values are intake and routing labels:
+These are the accepted values of the `triage` field. They are intake and
+routing labels:
 
 | Role | Meaning |
 | --- | --- |
@@ -34,24 +36,24 @@ These values are intake and routing labels:
 
 ## Executor
 
-`Executor` identifies the expected implementer: `unassigned`, `agent`,
+`executor` identifies the expected implementer: `unassigned`, `agent`,
 `human`, or `pair`. It may change without changing the lifecycle status.
 
 ## Lifecycle status
 
-`Status` records the ticket lifecycle:
+`status` records the ticket lifecycle:
 
 | Status | Meaning |
 | --- | --- |
 | `inbox` | Recorded but not yet ready for execution. |
 | `ready` | Accepted with clear criteria and ready to start. |
 | `in_progress` | Work is currently being implemented or investigated. |
-| `blocked` | Committed work cannot proceed until `Blocked by:` is cleared. |
+| `blocked` | Committed work cannot proceed until `blocked_by` is cleared. |
 | `resolved` | Acceptance criteria and completion evidence are satisfied. |
 | `archived` | A resolved record was intentionally retired from active history. |
 
 Use `resolved` as the only normal completion spelling. Do not substitute
-`completed`, `done`, or a triage label for lifecycle status.
+`completed`, `done`, `in-progress`, or a triage label for lifecycle status.
 
 ## Portfolio lane mapping
 

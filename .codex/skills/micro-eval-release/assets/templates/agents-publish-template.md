@@ -34,9 +34,13 @@ branch-sensitive rule, determine the actual current branch with
   one `LOCAL-<EFFORT>-<NN>` ticket or `GH-<number>` Issue pointer there; keep
   the details only in that authority source.
 - Local tickets are the default for internal work. Use a GitHub Issue only
-  when public feedback or collaboration is genuinely needed. The ticket-first
-  threshold and the separate `Triage`, `Executor`, and lifecycle `Status`
-  fields are defined in `docs/agents/issue-tracker.md`.
+  when public feedback or collaboration is genuinely needed.
+- A ticket carries its metadata in YAML front matter only. Never put metadata
+  in the body, never invent a key, and never guess a field value: copy
+  `docs/agents/ticket-template.md` and fill it in. The contract is
+  `docs/agents/issue-tracker.md` and the field vocabularies are
+  `docs/agents/triage-labels.md`; read them for an edge case, not to write an
+  ordinary ticket.
 - A one-file typo, formatting-only edit, or similarly trivial documentation
   correction may proceed without a ticket. When uncertain, create the ticket
   first.
@@ -45,6 +49,10 @@ branch-sensitive rule, determine the actual current branch with
 - `.scratch/**`, `TODOS.md`, and dev logs are development-only records. Keep
   them tracked on `dev` and out of public projection; never use `main` for
   source development.
+- Verify work records once, immediately before committing:
+  `uv run python scripts/check-work-governance.py`. It is a fail-closed check
+  over the whole register, so re-running it after each edit spends tokens
+  without catching anything the pre-commit run would miss.
 
 This file is generated into `main` from the development-only release
 instruction template during release. On `dev`, edit that template and keep

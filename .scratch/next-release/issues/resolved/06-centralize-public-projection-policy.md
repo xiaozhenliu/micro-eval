@@ -1,13 +1,19 @@
+---
+id: LOCAL-NEXT-06
+title: 集中公开投影策略并默认拒绝未知路径
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-06 — 集中公开投影策略并默认拒绝未知路径
 
 **What to build:** 用单一、机器可读的策略把 `dev` tracked 路径分类为 public、private 或 generated；发布入口、验证和文档不再维护彼此漂移的排除列表。
-
-ID: LOCAL-NEXT-06
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
 
 - [x] 每个 tracked 路径必须且只能命中 public、private 或 generated；未知或冲突分类使发布失败。
 - [x] `CONTEXT.md`、内部 docs、agent/tool 本地目录有明确 private 分类，公开代码、测试、站点和 release 工具有明确 public 分类。

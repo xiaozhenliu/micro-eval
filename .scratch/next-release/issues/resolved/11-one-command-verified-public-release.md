@@ -1,13 +1,23 @@
+---
+id: LOCAL-NEXT-11
+title: 一键生成并发布 verified 公开版本
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by:
+  - LOCAL-NEXT-06
+  - LOCAL-NEXT-07
+  - LOCAL-NEXT-08
+  - LOCAL-NEXT-10
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-11 — 一键生成并发布 verified 公开版本
 
 **What to build:** 把公开版本发布收敛成一个深 Release Module 和一个小命令界面：一个命令在本地构造、测试并验证 public 候选版本；远端发布是第二个显式动作，只能原子推送 verified `main` SHA，以及可选但必须指向同一 SHA 的 annotated tag。
-
-ID: LOCAL-NEXT-11
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: LOCAL-NEXT-06, LOCAL-NEXT-07, LOCAL-NEXT-08, LOCAL-NEXT-10
 
 - [x] 默认一键 stage 从 clean `dev` 构造和验证候选版本，全程不访问远端；任何候选测试、UI build 或产物检查失败时，本地 `main` 保持原值。
 - [x] Release Module 在全部验证通过后才通过 compare-and-swap 原子更新本地 `main`，回执具有明确的 `staged`/`verified`/`published` 状态并支持安全重试。

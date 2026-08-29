@@ -1,13 +1,19 @@
+---
+id: LOCAL-WORK-GOVERNANCE-02
+title: 归档已解决的本地 ticket
+effort: work-governance
+type: governance
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T16:19+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-WORK-GOVERNANCE-02 — 归档已解决的本地 ticket
 
 **What to build:** 将 `.scratch/` 下全部 12 个 `Status: resolved` 的本地 ticket 移入 per-effort 的 `issues/resolved/` 归档子目录，使 `issues/` 只呈现活跃 ticket。同步更新 effort map 链接、`docs/agents/issue-tracker.md` 的路径约定，以及 `scripts/check-work-governance.py` 的 `.scratch` 路径白名单与 ticket 扫描逻辑。归档 ticket 保留原有 `Status: resolved` 与完成证据，仅改变存放位置；归档文件继续参与 ID 唯一性校验，防止编号复用。
-
-ID: LOCAL-WORK-GOVERNANCE-02
-Type: governance
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
 
 ## Acceptance criteria
 

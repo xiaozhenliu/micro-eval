@@ -4,7 +4,8 @@
 >
 > - 已承诺的工作在这里保留一个 `LOCAL-...` 或 `GH-...` 权威指针；详情只写在
 >   对应的 ticket 或 GitHub Issue 中。
-> - 规划 lane 表示规划位置，ticket 的 `Status`、`Triage`、`Executor` 表示执行状态。
+> - 规划 lane 表示规划位置，ticket frontmatter 的 `status`、`triage`、`executor`
+>   表示执行状态。
 > - `Waiting（等待解除）` 表示已经承诺但确实被阻塞的工作。
 > - `Roadmap（路线图）` 表示尚未承诺、尚未阻塞的未来选项；每项记录剩余范围和
 >   触发/晋升时机。
@@ -13,7 +14,7 @@
 
 ## 当前执行（Now）
 
-- [LOCAL-SITE-SKILL-01](.scratch/site-skill/issues/01-create-project-site-skill.md) — 创建项目站点更新 skill。
+（无）
 
 ## 下一步（Next）
 
@@ -24,7 +25,7 @@
 （无）
 
 > 当前没有已承诺但被外部条件阻塞的工作。出现此类工作时，先建立 ticket，
-> 将 `Status: blocked`、`Blocked by:` 和解除条件写入 ticket，再放入此 lane；
+> 将 `status: blocked`、`blocked_by` 和解除条件写入 ticket frontmatter，再放入此 lane；
 > 阻塞解除后移回 `Now` 或 `Next`。
 
 ## 路线图（Roadmap）

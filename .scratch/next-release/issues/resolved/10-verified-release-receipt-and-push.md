@@ -1,13 +1,21 @@
+---
+id: LOCAL-NEXT-10
+title: 使用验证回执分离投影与远端 push
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by:
+  - LOCAL-NEXT-07
+  - LOCAL-NEXT-08
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-10 — 使用验证回执分离投影与远端 push
 
 **What to build:** local projection 生成绑定 source SHA、main SHA、策略摘要和验证状态的本地回执；远端 push 是单独命令，只能推送回执中已验证的精确 SHA。
-
-ID: LOCAL-NEXT-10
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: LOCAL-NEXT-07, LOCAL-NEXT-08
 
 - [x] 默认命令只生成、验证本地 `main` 和回执，不访问远端。
 - [x] push 命令要求显式 `--expected-sha`，核对本地 `main`、策略摘要和 verified 回执后才显示并执行 `origin/main` 更新。

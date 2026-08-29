@@ -1,7 +1,19 @@
-# LOCAL-NEXT — Release hardening effort map
+---
+title: LOCAL-NEXT — Release hardening effort map
+doc_type: reference
+status: active
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+owner: micro-eval maintainers
+source_of_truth: false
+tags:
+  - work-record
+  - effort-map
+related:
+  - docs/agents/issue-tracker.md
+---
 
-Type: map
-Status: active
+# LOCAL-NEXT — Release hardening effort map
 
 This map groups the durable release-preparation tickets. It is a navigation
 record, not a second Work Register; unfinished work is indexed only by

@@ -41,9 +41,29 @@ TERMINAL_STATUSES = {"resolved", "archived"}
 POINTER_RE = re.compile(
     r"\b(?:LOCAL-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{2}|GH-[0-9]+)\b"
 )
-LOCAL_ID_RE = re.compile(r"^LOCAL-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{2}$")
-TICKET_FILENAME_RE = re.compile(r"^[0-9]{2}-[a-z0-9][a-z0-9-]*\.md$")
-FIELD_RE = re.compile(r"^(?:\*\*)?([A-Za-z][A-Za-z _-]*)(?:\*\*)?\s*:\s*(.*?)\s*$")
+LOCAL_ID_RE = re.compile(r"^LOCAL-[A-Z0-9]+(?:-[A-Z0-9]+)*-([0-9]{2})$")
+TICKET_FILENAME_RE = re.compile(r"^([0-9]{2})-[a-z0-9][a-z0-9-]*\.md$")
+FRONTMATTER_DELIMITER = "---"
+FRONTMATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9_]*)\s*:\s*(.*?)\s*$")
+TIMESTAMP_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$")
+EFFORT_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+LEGACY_FIELD_RE = re.compile(
+    r"^(?:\*\*)?(ID|Type|Status|Triage|Executor|Blocked by)(?:\*\*)?\s*:", re.IGNORECASE
+)
+TICKET_REQUIRED_FIELDS = (
+    "id",
+    "title",
+    "effort",
+    "type",
+    "status",
+    "triage",
+    "executor",
+    "blocked_by",
+    "created_at",
+    "updated_at",
+)
+TICKET_OPTIONAL_FIELDS = ("tags", "related")
+TICKET_LIST_FIELDS = frozenset({"blocked_by", "tags", "related"})
 DISALLOWED_SCRATCH_PARTS = {
     ".git",
     ".next",
@@ -73,7 +93,7 @@ class Ticket:
     status: str
     triage: str
     executor: str
-    blocked_by: str
+    blocked_by: tuple[str, ...]
 
 
 def _git(root: Path, *args: str) -> tuple[int, str, str]:
@@ -86,13 +106,174 @@ def _git(root: Path, *args: str) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
-def _fields(text: str) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for line in text.splitlines():
-        match = FIELD_RE.match(line.strip())
-        if match:
-            fields[match.group(1).lower().replace(" ", "_")] = match.group(2)
-    return fields
+def _unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _parse_frontmatter(text: str) -> tuple[dict[str, Any], list[str], list[str]]:
+    """Parse the YAML subset used by work records: scalars and string lists.
+
+    Returns the parsed fields, the body lines, and any structural errors. The
+    parser is intentionally strict so an unsupported construct fails the check
+    instead of being silently reinterpreted.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != FRONTMATTER_DELIMITER:
+        return {}, lines, ["must start with YAML front matter delimited by '---'"]
+    end = next(
+        (
+            index
+            for index in range(1, len(lines))
+            if lines[index].strip() == FRONTMATTER_DELIMITER
+        ),
+        None,
+    )
+    if end is None:
+        return {}, [], ["front matter is not terminated by '---'"]
+
+    fields: dict[str, Any] = {}
+    errors: list[str] = []
+    current_key: str | None = None
+    for raw in lines[1:end]:
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if raw[0].isspace():
+            item = raw.strip()
+            if current_key is None or not item.startswith("- "):
+                errors.append(f"unsupported front matter line {raw.strip()!r}")
+                continue
+            bucket = fields.get(current_key)
+            if not isinstance(bucket, list):
+                errors.append(f"front matter key {current_key!r} mixes a scalar and a list")
+                continue
+            bucket.append(_unquote(item[2:].strip()))
+            continue
+        match = FRONTMATTER_KEY_RE.match(raw)
+        if match is None:
+            errors.append(f"unsupported front matter line {raw.strip()!r}")
+            current_key = None
+            continue
+        key, value = match.group(1), match.group(2)
+        if key in fields:
+            errors.append(f"duplicate front matter key {key!r}")
+        current_key = key
+        if value == "":
+            fields[key] = []
+        elif value.startswith("[") and value.endswith("]"):
+            inner = value[1:-1].strip()
+            fields[key] = (
+                [_unquote(item.strip()) for item in inner.split(",") if item.strip()]
+                if inner
+                else []
+            )
+            current_key = None
+        else:
+            fields[key] = _unquote(value)
+            current_key = None
+    return fields, lines[end + 1 :], errors
+
+
+def _check_ticket_frontmatter(
+    fields: dict[str, Any], body: list[str], effort: str, sequence: str
+) -> list[str]:
+    errors: list[str] = []
+    known = set(TICKET_REQUIRED_FIELDS) | set(TICKET_OPTIONAL_FIELDS)
+    for key in sorted(set(fields) - known):
+        errors.append(f"unknown front matter key {key!r}")
+    for key in TICKET_REQUIRED_FIELDS:
+        if key not in fields:
+            errors.append(f"missing front matter key {key!r}")
+    for key in sorted(set(fields) & known):
+        wants_list = key in TICKET_LIST_FIELDS
+        if wants_list is not isinstance(fields[key], list):
+            expected = "a list" if wants_list else "a scalar"
+            errors.append(f"front matter key {key!r} must be {expected}")
+
+    identifier = fields.get("id")
+    if not isinstance(identifier, str) or not LOCAL_ID_RE.fullmatch(identifier):
+        errors.append("invalid or missing id")
+    elif LOCAL_ID_RE.fullmatch(identifier).group(1) != sequence:
+        errors.append(f"id {identifier} does not match the file number {sequence}")
+
+    ticket_effort = fields.get("effort")
+    if not isinstance(ticket_effort, str) or not EFFORT_RE.fullmatch(ticket_effort):
+        errors.append("invalid or missing effort")
+    elif ticket_effort != effort:
+        errors.append(f"effort {ticket_effort!r} does not match directory {effort!r}")
+
+    for key, allowed, label in (
+        ("type", TICKET_TYPES, "Type"),
+        ("status", TICKET_STATUSES, "lifecycle Status"),
+        ("triage", TRIAGE_ROLES, "Triage role"),
+        ("executor", EXECUTORS, "Executor"),
+    ):
+        value = fields.get(key)
+        if not isinstance(value, str) or value not in allowed:
+            errors.append(f"invalid {label} {value!r}")
+
+    for key in ("created_at", "updated_at"):
+        value = fields.get(key)
+        if not isinstance(value, str) or not TIMESTAMP_RE.fullmatch(value):
+            errors.append(f"{key} must be an ISO-8601 minute-precision timestamp")
+
+    blocked_by = fields.get("blocked_by")
+    if isinstance(blocked_by, list) and any(
+        not POINTER_RE.fullmatch(item) for item in blocked_by
+    ):
+        errors.append("blocked_by must use stable LOCAL/GH identifiers")
+
+    title = fields.get("title")
+    heading = next((line for line in body if line.startswith("# ")), None)
+    if heading is None:
+        errors.append("missing H1 heading")
+    elif isinstance(identifier, str) and isinstance(title, str):
+        expected = f"# {identifier} — {title}"
+        if heading.strip() != expected:
+            errors.append(f"heading must be {expected!r}")
+
+    if any(LEGACY_FIELD_RE.match(line) for line in body):
+        errors.append("body still uses legacy plain-text metadata lines")
+
+    status = fields.get("status")
+    if status in TERMINAL_STATUSES and "## Completion evidence" not in "\n".join(body):
+        errors.append("terminal ticket needs Completion evidence")
+    return errors
+
+
+def _read_ticket(root: Path, path: Path) -> tuple[Ticket | None, list[str]]:
+    relative = path.relative_to(root).as_posix()
+    errors: list[str] = []
+    filename = TICKET_FILENAME_RE.fullmatch(path.name)
+    if filename is None:
+        errors.append(f"{relative}: filename must be NN-lowercase-kebab.md")
+    effort = path.relative_to(root / ".scratch").parts[0]
+    fields, body, structural = _parse_frontmatter(path.read_text(encoding="utf-8"))
+    errors.extend(f"{relative}: {error}" for error in structural)
+    if structural and not fields:
+        return None, errors
+    errors.extend(
+        f"{relative}: {error}"
+        for error in _check_ticket_frontmatter(
+            fields, body, effort, filename.group(1) if filename else ""
+        )
+    )
+    identifier = fields.get("id")
+    if not isinstance(identifier, str) or not LOCAL_ID_RE.fullmatch(identifier):
+        return None, errors
+    blocked_by = fields.get("blocked_by")
+    return (
+        Ticket(
+            path=path,
+            identifier=identifier,
+            status=str(fields.get("status", "")),
+            triage=str(fields.get("triage", "")),
+            executor=str(fields.get("executor", "")),
+            blocked_by=tuple(blocked_by) if isinstance(blocked_by, list) else (),
+        ),
+        errors,
+    )
 
 
 def _ticket_paths(root: Path) -> list[Path]:
@@ -111,57 +292,19 @@ def _read_tickets(root: Path) -> tuple[list[Ticket], list[str]]:
     errors: list[str] = []
     identifiers: dict[str, Path] = {}
     for path in _ticket_paths(root):
+        ticket, ticket_errors = _read_ticket(root, path)
+        errors.extend(ticket_errors)
+        if ticket is None:
+            continue
         relative = path.relative_to(root).as_posix()
-        if not TICKET_FILENAME_RE.fullmatch(path.name):
-            errors.append(f"{relative}: filename must be NN-lowercase-kebab.md")
-        fields = _fields(path.read_text(encoding="utf-8"))
-        identifier = fields.get("id", "")
-        ticket_type = fields.get("type", "")
-        status = fields.get("status", "")
-        triage = fields.get("triage", "")
-        executor = fields.get("executor", "")
-        blocked_by = fields.get("blocked_by", "")
-        if not LOCAL_ID_RE.fullmatch(identifier):
-            errors.append(f"{relative}: invalid or missing ID")
-        elif identifier in identifiers:
+        if ticket.identifier in identifiers:
             errors.append(
-                f"{relative}: duplicate ID {identifier} also used by "
-                f"{identifiers[identifier].relative_to(root).as_posix()}"
+                f"{relative}: duplicate ID {ticket.identifier} also used by "
+                f"{identifiers[ticket.identifier].relative_to(root).as_posix()}"
             )
         else:
-            identifiers[identifier] = path
-        if status not in TICKET_STATUSES:
-            errors.append(f"{relative}: invalid lifecycle Status {status!r}")
-        if ticket_type not in TICKET_TYPES:
-            errors.append(f"{relative}: invalid Type {ticket_type!r}")
-        if triage not in TRIAGE_ROLES:
-            errors.append(f"{relative}: invalid Triage role {triage!r}")
-        if executor not in EXECUTORS:
-            errors.append(f"{relative}: invalid Executor {executor!r}")
-        if not blocked_by:
-            errors.append(f"{relative}: missing Blocked by field")
-        elif blocked_by != "None":
-            dependencies = [item.strip() for item in blocked_by.split(",")]
-            if any(not POINTER_RE.fullmatch(item) for item in dependencies):
-                errors.append(f"{relative}: Blocked by must use stable IDs")
-        title = path.read_text(encoding="utf-8").splitlines()[:1]
-        if not title or not identifier or not title[0].startswith(f"# {identifier} —"):
-            errors.append(f"{relative}: heading must start with '# {identifier} —'")
-        if status in TERMINAL_STATUSES and "## Completion evidence" not in path.read_text(
-            encoding="utf-8"
-        ):
-            errors.append(f"{relative}: terminal ticket needs Completion evidence")
-        if identifier:
-            tickets.append(
-                Ticket(
-                    path=path,
-                    identifier=identifier,
-                    status=status,
-                    triage=triage,
-                    executor=executor,
-                    blocked_by=blocked_by,
-                )
-            )
+            identifiers[ticket.identifier] = path
+        tickets.append(ticket)
     return tickets, errors
 
 
@@ -231,7 +374,7 @@ def _check_todos(root: Path, tickets: list[Ticket]) -> list[str]:
                 if target is None or not target.is_file():
                     errors.append(f"TODOS.md: local pointer {pointer} target does not exist")
                     continue
-                target_fields = _fields(target.read_text(encoding="utf-8"))
+                target_fields, _, _ = _parse_frontmatter(target.read_text(encoding="utf-8"))
                 target_status = target_fields.get("status", "")
                 if target_fields.get("id") != pointer:
                     errors.append(f"TODOS.md: {pointer} link target has a different ID")
@@ -391,12 +534,13 @@ def _check_archived_tickets(root: Path, active: list[Ticket]) -> list[str]:
     seen: dict[str, Path] = {}
     for path in _archived_ticket_paths(root):
         relative = path.relative_to(root).as_posix()
-        if not TICKET_FILENAME_RE.fullmatch(path.name):
-            errors.append(f"{relative}: filename must be NN-lowercase-kebab.md")
-        identifier = _fields(path.read_text(encoding="utf-8")).get("id", "")
-        if not LOCAL_ID_RE.fullmatch(identifier):
-            errors.append(f"{relative}: invalid or missing ID")
+        ticket, ticket_errors = _read_ticket(root, path)
+        errors.extend(ticket_errors)
+        if ticket is None:
             continue
+        identifier = ticket.identifier
+        if ticket.status not in TERMINAL_STATUSES:
+            errors.append(f"{relative}: archived ticket must be resolved or archived")
         if identifier in active_ids:
             errors.append(
                 f"{relative}: archived ID {identifier} duplicates an active ticket"

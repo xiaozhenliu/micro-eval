@@ -49,6 +49,7 @@ Use this README as the entry point for deciding where a document belongs.
 | --- | --- |
 | `_archive/invocation-evidence.md` | Archived historical notes related to legacy invocation evidence behavior. |
 | `agents/issue-tracker.md` | Work Register, local ticket, GitHub Issue, and completion-evidence contract. |
+| `agents/ticket-template.md` | Copy-ready local ticket front matter and body skeleton. |
 | `agents/triage-labels.md` | Triage role, executor, and lifecycle status vocabulary. |
 | `releases/2026-06-02-mvp-release-evidence.md` | MVP release-readiness evidence and verification summary. |
 | `releases/2026-06-12-v0.2.0-release-evidence.md` | Phase 2 / v0.2.0 release-readiness evidence and verification summary. |
@@ -62,7 +63,8 @@ For the most accurate and up-to-date version record, see the root [`CHANGELOG.md
 On `dev`, `TODOS.md` is the private Work Register and `.scratch/` contains
 durable local tickets, specs, maps, and necessary attachments. The public
 contract for choosing a local ticket versus a GitHub Issue is
-`agents/issue-tracker.md`; the public projection omits `.scratch/` and the
+`agents/issue-tracker.md`, and `agents/ticket-template.md` is the copy-ready
+skeleton for writing one; the public projection omits `.scratch/` and the
 development log directory. Do not add links from public docs to those omitted
 records.
 

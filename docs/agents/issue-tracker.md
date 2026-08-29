@@ -3,7 +3,7 @@ title: Work Tracking and Local Ticket Governance
 doc_type: reference
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T12:39+08:00
+updated_at: 2026-08-29T16:52+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -11,6 +11,7 @@ tags:
   - ticket
   - governance
 related:
+  - docs/agents/ticket-template.md
   - docs/agents/triage-labels.md
   - docs/documentation-standard.md
   - docs/DEVELOPMENT.md
@@ -68,43 +69,98 @@ ticket and an execution lane; it must not silently become a blocked item.
 ## Local ticket contract
 
 Every file under `.scratch/<effort>/issues/` follows the path
-`NN-lowercase-kebab.md` and starts with these fields:
+`NN-lowercase-kebab.md`. Ticket metadata lives in YAML front matter at the very
+top of the file, in the same style as `docs/documentation-standard.md`. Prose
+never carries metadata: a `Key: value` line in the body is ordinary text, not a
+field.
+
+This document is the contract. To write an ordinary ticket, copy
+`docs/agents/ticket-template.md` instead of reading this section.
 
 ```md
+---
+id: LOCAL-EXAMPLE-01
+title: Short title
+effort: example
+type: task
+status: ready
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T16:52+08:00
+updated_at: 2026-08-29T16:52+08:00
+tags:
+  - example
+related:
+  - docs/agents/issue-tracker.md
+---
+
 # LOCAL-EXAMPLE-01 — Short title
 
-ID: LOCAL-EXAMPLE-01
-Type: task
-Status: ready
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
+## What to build
+
+...
+
+## Acceptance criteria
+
+- ...
 ```
 
-`Type` is `task`, `research`, `prototype`, `grilling`, or `governance`. `Status` is the
-lifecycle field and is one of `inbox`, `ready`, `in_progress`, `blocked`,
-`resolved`, or `archived`. `resolved` is the single completion status;
-`completed` is not used. `Triage` is an intake/routing role, and `Executor`
-identifies who is expected to do the work. Their vocabularies are defined
-separately in `triage-labels.md` and must not be merged into `Status`.
+### Front matter fields
 
-`Blocked by:` is `None` or a comma-separated list of stable `LOCAL-...` or
-`GH-...` identifiers. A blocked committed ticket uses `Status: blocked` and
-belongs in `Waiting`. An optional future dependency belongs in `Roadmap`
-until its trigger occurs.
+| Field | Required | Format | Meaning |
+| --- | --- | --- | --- |
+| `id` | Yes | `LOCAL-<EFFORT>-<NN>` | Stable ticket identifier; unique across active and archived tickets and never reused. |
+| `title` | Yes | Short string | Ticket title; must match the text after `— ` in the H1 heading. |
+| `effort` | Yes | Lowercase kebab-case | Effort this ticket belongs to; must equal the `.scratch/<effort>/` directory name. |
+| `type` | Yes | Enum | One of `task`, `research`, `prototype`, `grilling`, `governance`. |
+| `status` | Yes | Enum | Lifecycle status; see `triage-labels.md`. |
+| `triage` | Yes | Enum | Intake/routing role; see `triage-labels.md`. |
+| `executor` | Yes | Enum | Expected implementer; see `triage-labels.md`. |
+| `blocked_by` | Yes | List of stable IDs | `[]` when nothing blocks it; otherwise `LOCAL-...` / `GH-...` entries. |
+| `created_at` | Yes | ISO-8601 minute precision | Creation timestamp, e.g. `2026-08-29T16:52+08:00`. |
+| `updated_at` | Yes | ISO-8601 minute precision | Last meaningful update timestamp. |
+| `tags` | Optional | String list | Search and grouping keywords. |
+| `related` | Optional | Path or URL list | Closely related documents, specs, Issues, or evidence. |
 
-The body contains `What to build`, acceptance criteria, and relevant context.
-Terminal tickets contain a `## Completion evidence` section with the commit,
-development log, changelog, release evidence, or verification command that
-proves delivery. Conversation history, if needed, is appended under
-`## Comments`. The ticket may remain as a durable record after it leaves the
-Work Register.
+No other keys are allowed. Unknown keys fail the governance check rather than
+being silently ignored, so the vocabulary cannot drift ticket by ticket.
+
+`status` is the lifecycle field. `resolved` is the single completion status;
+`completed`, `done`, and `in-progress` are not accepted spellings. `triage` is
+an intake/routing role and `executor` identifies who is expected to do the
+work; their vocabularies are defined in `triage-labels.md` and must not be
+merged into `status`.
+
+A blocked committed ticket uses `status: blocked`, lists its dependencies in
+`blocked_by`, and belongs in `Waiting`. An optional future dependency belongs
+in `Roadmap` until its trigger occurs.
+
+Timestamps follow the project timestamp rule: ISO-8601 with minute precision
+and a timezone offset, no seconds. For a historical ticket whose exact time is
+unknown, use `18:00` on the known date.
+
+### Body structure
+
+The H1 heading is `# <id> — <title>`. The body then contains:
+
+- `## What to build` — the scope, in user-visible terms.
+- `## Acceptance criteria` — a checkable list.
+- Optional sections such as `## Context`, `## Confirmed decisions`, or
+  `## Comments` for discussion history.
+- `## Completion evidence` — required once `status` is `resolved` or
+  `archived`; records the commit, development log, changelog entry, release
+  evidence, or verification command that proves delivery.
+
+The ticket may remain as a durable record after it leaves the Work Register.
+
+### Storage layout
 
 Active tickets live directly under `.scratch/<effort>/issues/`. Once every
 ticket in an effort is `resolved`, the resolved files are filed under
 `.scratch/<effort>/issues/resolved/` so that `issues/` shows only unfinished
 work. Archiving is a move with history preserved (`git mv`): the ticket keeps
-its ID, `Status: resolved`, and full completion evidence, remains the
+its ID, `status: resolved`, and full completion evidence, remains the
 authority for its record, and its ID stays reserved — archived IDs are still
 checked for uniqueness and must never be reused.
 
@@ -113,6 +169,14 @@ checked for uniqueness and must never be reused.
 data, logs, databases, credentials, and secret-bearing files do not belong
 there. The release projection policy classifies `.scratch/**` as private and
 forbids it in public output.
+
+### Effort map files
+
+An optional `.scratch/<effort>/map.md` groups an effort's tickets. It uses the
+generic documentation front matter from `docs/documentation-standard.md`
+(`title`, `doc_type: reference`, `status`, `created_at`, `updated_at`, `owner`,
+`source_of_truth: false`), not the ticket front matter above. A map is a
+navigation record, never a second Work Register.
 
 ## Ticket-first threshold and flow
 
@@ -129,11 +193,11 @@ The normal flow is:
 2. When work is committed, create one local ticket by default, or use one
    GitHub Issue when public collaboration is genuinely needed. Add exactly one
    pointer to `Now`, `Next`, or `Waiting` before implementation starts.
-3. Set the ticket's triage role and executor independently from its lifecycle
-   status. Move the portfolio lane as planning changes.
-4. Record a blocking dependency in `Blocked by:` and use `Waiting` for
+3. Set the ticket's `triage` role and `executor` independently from its
+   lifecycle `status`. Move the portfolio lane as planning changes.
+4. Record a blocking dependency in `blocked_by` and use `Waiting` for
    committed blocked work. Do not use `Blocked` as a synonym for Roadmap.
-5. When delivery is verified, set `Status: resolved`, record completion
+5. When delivery is verified, set `status: resolved`, record completion
    evidence, remove the pointer from `TODOS.md`, and move user-visible facts to
    `CHANGELOG.md` or implementation evidence to a development log.
 6. Keep the resolved ticket for auditability; when an effort's tickets are

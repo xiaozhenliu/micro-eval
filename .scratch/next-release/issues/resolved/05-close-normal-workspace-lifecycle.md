@@ -1,13 +1,19 @@
+---
+id: LOCAL-NEXT-05
+title: 闭合正常 workspace 生命周期
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-05 — 闭合正常 workspace 生命周期
 
 **What to build:** 让 `blank`、`files`、`git_repo` 三类本地 workspace 在正常控制流中遵守同一条最终化顺序：agent 返回后，系统在 workspace 仍存在时完成终态观察、Artifact/Evidence、deterministic validation 与可选 judgment；随后 cleanup，并通过 Store Interface 提交可复核的结果。
-
-ID: LOCAL-NEXT-05
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
 
 - [x] single 与 conversational 路径共用一条 cell finalization：`prepare → snapshot gate → invoke → observe → persist facts → validate → optional judge → cleanup → commit`；不得继续维护两套 Artifact/Evidence/Evaluation/CellResult 尾段。
 - [x] `blank` 和 `files` workspace 中，agent 创建或修改的文件能被 `file_exists` / command expectation 在 live workspace 中正确观察；提交后 workspace 已删除且 `cleanup_status=cleaned`。

@@ -114,7 +114,8 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 ### Issue tracker
 
 Work tracking uses one `TODOS.md` Work Register and durable local Markdown
-tickets by the contract in `docs/agents/issue-tracker.md`.
+tickets by the contract in `docs/agents/issue-tracker.md`. 写新 ticket 时照抄
+`docs/agents/ticket-template.md`，不要凭记忆写 front matter 字段。
 
 ### Triage labels
 

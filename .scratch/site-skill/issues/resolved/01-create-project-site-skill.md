@@ -1,11 +1,17 @@
-# LOCAL-SITE-SKILL-01 — 创建项目站点更新 skill
+---
+id: LOCAL-SITE-SKILL-01
+title: 创建项目站点更新 skill
+effort: site-skill
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T16:22+08:00
+updated_at: 2026-08-29T16:22+08:00
+---
 
-ID: LOCAL-SITE-SKILL-01
-Type: task
-Status: in_progress
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
+# LOCAL-SITE-SKILL-01 — 创建项目站点更新 skill
 
 ## What to build
 
@@ -24,4 +30,10 @@ Blocked by: None
 
 ## Completion evidence
 
-待完成。
+- 权威 skill：`.agents/skills/micro-eval-site/SKILL.md`。
+- 兼容入口：`.claude/skills/micro-eval-site` 与
+  `.codex/skills/micro-eval-site`，均为指向权威副本的相对链接。
+- Development log：`docs/dev/log/2026-08-29-1622-dev-log-project-site-skill.md`。
+- 验证：三个发现路径均通过 `quick_validate.py`；`npm run docs:build`、
+  `public_projection.py plan --source WORKTREE --json`、
+  `scripts/check-work-governance.py` 与 `git diff --check` 均通过。

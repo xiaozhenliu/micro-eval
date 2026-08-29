@@ -1,13 +1,19 @@
+---
+id: LOCAL-NEXT-04
+title: 支持仅本地的发布投影
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-04 — 支持仅本地的发布投影
 
 **What to build:** 让维护者可以通过正式发布入口只把 `dev` 投影到本地 `main` 并完成验证，而不会隐式推送远端；远端 push 必须成为单独、显式授权的动作。
-
-ID: LOCAL-NEXT-04
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
 
 - [x] 发布入口提供明确的 local-only/no-push 模式，默认行为和帮助文本不会让维护者误判远端副作用。
 - [x] 只有显式选择 push 模式时才执行 `git push origin main`，并在执行前显示目标 remote/branch。

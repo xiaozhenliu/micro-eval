@@ -1,13 +1,19 @@
+---
+id: LOCAL-WORK-GOVERNANCE-01
+title: 重建项目工作追踪治理
+effort: work-governance
+type: governance
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by: []
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-WORK-GOVERNANCE-01 — 重建项目工作追踪治理
 
 **What to build:** 建立一套只有一个工作总入口、详情只有一个权威来源、完成记录有明确归宿的项目治理机制。`TODOS.md` 应覆盖所有未完成工作；进入本地 ticket 或 GitHub Issue 的事项只在 `TODOS.md` 保留可导航的指针；尚未进入执行阶段的远期规划继续以内联 Roadmap 项存在。
-
-ID: LOCAL-WORK-GOVERNANCE-01
-Type: governance
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: None
 
 ## Confirmed decisions
 

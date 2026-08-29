@@ -19,19 +19,29 @@ def _write_ticket(
     identifier: str = "LOCAL-EXAMPLE-01",
     status: str = "ready",
     completion_evidence: bool = False,
+    effort: str = "example",
+    extra_fields: str = "",
+    body: str = "## What to build\n\nDo the work.\n",
 ) -> Path:
     path = root / ".scratch/example/issues/01-first-ticket.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     evidence = "\n## Completion evidence\n\n- Verification: passed.\n" if completion_evidence else ""
     path.write_text(
+        "---\n"
+        f"id: {identifier}\n"
+        "title: First ticket\n"
+        f"effort: {effort}\n"
+        "type: task\n"
+        f"status: {status}\n"
+        "triage: ready-for-agent\n"
+        "executor: agent\n"
+        "blocked_by: []\n"
+        "created_at: 2026-08-29T16:52+08:00\n"
+        "updated_at: 2026-08-29T16:52+08:00\n"
+        f"{extra_fields}"
+        "---\n\n"
         f"# {identifier} — First ticket\n\n"
-        f"ID: {identifier}\n"
-        "Type: task\n"
-        f"Status: {status}\n"
-        "Triage: ready-for-agent\n"
-        "Executor: agent\n"
-        "Blocked by: None\n\n"
-        "What to build: do the work.\n"
+        f"{body}"
         f"{evidence}",
         encoding="utf-8",
     )
@@ -82,6 +92,64 @@ def test_ticket_contract_rejects_completed_alias(tmp_path: Path) -> None:
     _, errors = work_governance._read_tickets(tmp_path)
 
     assert any("invalid lifecycle Status 'completed'" in error for error in errors)
+
+
+def test_ticket_contract_rejects_missing_frontmatter(tmp_path: Path) -> None:
+    path = tmp_path / ".scratch/example/issues/01-first-ticket.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# LOCAL-EXAMPLE-01 — First ticket\n\n"
+        "ID: LOCAL-EXAMPLE-01\n"
+        "Type: task\n"
+        "Status: ready\n"
+        "Triage: ready-for-agent\n"
+        "Executor: agent\n"
+        "Blocked by: None\n",
+        encoding="utf-8",
+    )
+
+    tickets, errors = work_governance._read_tickets(tmp_path)
+
+    assert tickets == []
+    assert any("must start with YAML front matter" in error for error in errors)
+
+
+def test_ticket_contract_rejects_unknown_frontmatter_key(tmp_path: Path) -> None:
+    _write_ticket(tmp_path, extra_fields="priority: P1\n")
+
+    _, errors = work_governance._read_tickets(tmp_path)
+
+    assert any("unknown front matter key 'priority'" in error for error in errors)
+
+
+def test_ticket_contract_rejects_legacy_metadata_in_body(tmp_path: Path) -> None:
+    _write_ticket(tmp_path, body="Status: ready\n\n## What to build\n\nDo the work.\n")
+
+    _, errors = work_governance._read_tickets(tmp_path)
+
+    assert any("legacy plain-text metadata lines" in error for error in errors)
+
+
+def test_ticket_contract_rejects_effort_mismatch(tmp_path: Path) -> None:
+    _write_ticket(tmp_path, effort="other")
+
+    _, errors = work_governance._read_tickets(tmp_path)
+
+    assert any("does not match directory 'example'" in error for error in errors)
+
+
+def test_ticket_contract_rejects_dateonly_timestamp(tmp_path: Path) -> None:
+    path = _write_ticket(tmp_path)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "updated_at: 2026-08-29T16:52+08:00", "updated_at: 2026-08-29"
+        ),
+        encoding="utf-8",
+    )
+
+    _, errors = work_governance._read_tickets(tmp_path)
+
+    assert any("updated_at must be an ISO-8601" in error for error in errors)
 
 
 def _archive_ticket(root: Path, identifier: str = "LOCAL-EXAMPLE-01") -> Path:

@@ -1,13 +1,20 @@
+---
+id: LOCAL-NEXT-07
+title: 从白名单构造确定性公开树
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by:
+  - LOCAL-NEXT-06
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-07 — 从白名单构造确定性公开树
 
 **What to build:** 发布 Module 从空的候选树恢复 public 路径并生成公开文件，而不是先 merge 全部再删除黑名单；本机 `main` 必须等于候选树。
-
-ID: LOCAL-NEXT-07
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: LOCAL-NEXT-06
 
 - [x] 候选树只来自已提交的 source SHA、public 分类和 generated 映射，不读取未跟踪工作区内容。
 - [x] `AGENTS.md` 与公开 `.gitignore` 从唯一模板生成，历史上误入 `main` 的文件会在下一次投影自动消失。

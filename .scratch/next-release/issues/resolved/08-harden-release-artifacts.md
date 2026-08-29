@@ -1,13 +1,21 @@
+---
+id: LOCAL-NEXT-08
+title: 收紧 wheel 与 sdist 公开产物
+effort: next-release
+type: task
+status: resolved
+triage: ready-for-agent
+executor: agent
+blocked_by:
+  - LOCAL-NEXT-06
+  - LOCAL-NEXT-07
+created_at: 2026-08-29T13:00+08:00
+updated_at: 2026-08-29T16:19+08:00
+---
+
 # LOCAL-NEXT-08 — 收紧 wheel 与 sdist 公开产物
 
 **What to build:** wheel 和 sdist 使用显式内容白名单，从候选公开树构建，并对归档文件清单做 fail-closed 验证。
-
-ID: LOCAL-NEXT-08
-Type: task
-Status: resolved
-Triage: ready-for-agent
-Executor: agent
-Blocked by: LOCAL-NEXT-06, LOCAL-NEXT-07
 
 - [x] sdist 不再包含 `.omx`、`.scratch`、`.superpowers`、`.codex`、内部 docs、缓存或其他未跟踪本地文件。
 - [x] wheel 继续只包含 `micro_eval` 包、dist-info 和许可证所需文件。
