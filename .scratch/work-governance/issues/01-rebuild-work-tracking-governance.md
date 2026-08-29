@@ -101,6 +101,7 @@ Blocked by: None
 
 ## Completion evidence
 
+- Implementation commit: `c72b18814a29ffc83455c64a212fcf89fe807952` (`docs: rebuild work tracking governance`).
 - Migration: `TODOS.md` now has only the five portfolio lanes, the single
   `GH-15` Next pointer, and triggered Roadmap options; stale completed,
   monitoring-only, and duplicated detail entries were removed.

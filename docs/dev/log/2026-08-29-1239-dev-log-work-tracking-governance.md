@@ -3,7 +3,7 @@ title: Development Log - Work Tracking Governance
 doc_type: dev_log
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T12:59+08:00
+updated_at: 2026-08-29T13:01+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -36,6 +36,7 @@ intentionally private.
 
 ## Changes
 
+- Implementation commit: `c72b18814a29ffc83455c64a212fcf89fe807952`.
 - Replaced the old Ready/Blocked/Done list with `Now`, `Next`, `Waiting`,
   `Roadmap`, and `Inbox` portfolio lanes.
 - Added the `GH-15` pointer and moved conditional future work into Roadmap
