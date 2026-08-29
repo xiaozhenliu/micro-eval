@@ -9,32 +9,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 分支策略
+## 分支与来源入口
 
-- **main** — 干净的发布分支，只包含源码、文档、测试。不跟踪 CLAUDE.md、BRD、PRD。
-- **dev** — 日常开发分支，包含 main 的所有内容 + CLAUDE.md、micro-eval-brd.md、设计文档。
-
-**日常工作流：**
-1. 在 `dev` 分支上开发（当前分支）
-2. 功能完成后 merge 到 `main`（main 的 .gitignore 会自动排除 CLAUDE.md/BRD/PRD）
-3. 不要直接在 main 上开发
-
-**历史重写后的推送：**
-- 如果改过 commit message、rebase 或 filter-branch 导致 commit hash 改变，推送已存在的远端分支时使用 `git push --force-with-lease origin <branch>`。
-- `--force-with-lease` 只会在远端分支仍停留在本地上次看到的位置时覆盖远端；如果别人已经推送了新提交，Git 会拒绝推送，避免误删他人的工作。
-- 避免使用 `git push --force`，除非用户明确要求。
-
-## 当前状态
-
-v0.4.4 已完成：Example 覆盖扩展——conversational-eval example 补全（run.py + 注册 runner + 全 5 指标 + helpdesk-conversation 结构化 rubric）、team-server-quickstart 新 example（serve + template + workspace + HTTP API enqueue + queue 监控）、字段覆盖增强（eval.enriched.yaml 覆盖 randomize_execution_order/skills_profile/parameters/exclude_failed/block/stop_on_cell_error，eval.blank.yaml 覆盖 blank workspace + input_mode file）。覆盖矩阵从 3 example/27 能力扩至 5 example/40 能力。606 个 pytest + 114 个 vitest 通过。经 codex gpt-5.4 xhigh 独立评审，修复 4 项发现（API 路由不匹配、run.json schema 漂移、README 行为描述偏差）。v0.4.3 已完成：安全审计修复——16 项发现（1 HIGH + 7 MEDIUM + 5 LOW + 5 INFO）全部解决。v0.4.1 已完成：Conversational Evaluation——DeepEval ConversationSimulator 集成，支持多轮会话评测（SubprocessBridge JSONL 协议），作为现有单轮 GEval judge 的并行路径。v0.4.0 已完成：Team Server——可信内网多成员共享 Server（workspace 隔离、串行队列、只读模板库、归属记录）。
-
-v0.3.5 已完成：用户文档设计体系重组——新增 Design System 页（决策闭环、3 设计张力、7 核心对象），sidebar 从模块平铺改为旅程式四组（入门/使用/进阶/参考），core-concepts 拆分为跳转页 + 各主题页承接，guide 页去除实现细节，全站术语与 reference schema 对齐，中英双语全量同步。v0.3.4 已完成：Decision 算法单一来源（#1）——UI evaluate endpoint 通过 subprocess 委托 Python `build_decision`，删除 TS 侧 `recomputeDecision` 及全部 evaluation 构造/写入代码（净删 ~364 行），新增 `micro-eval apply-evaluation` CLI 子命令。v0.3.3 已完成：VitePress 项目文档网站（site/），中英双语 44 页；GitHub Actions 自动部署到 GitHub Pages。v0.3.2 已完成：测试覆盖率从 ~78%（224 tests）大幅提升至 91%（455 tests），关闭 CLI、engine、evaluation、store、trace 各层覆盖缺口。v0.3.1 新增两个 example（multi-task-matrix + git-workspace-isolation），example 能力覆盖从 ~50% 提升到 ~85%。v0.3.0 已完成：Phase 3 全部五个里程碑交付。P3-a WorkspaceProvider Protocol + ProviderRegistry + GitWorktreeProvider 重构（零行为变化）。P3-b Seatbelt(macOS)/Bubblewrap(Linux) Level 1 OS 策略 provider（不可用时降级 Level 0 + caveat）。P3-c E2B/Modal 远程 provider（可选，无凭证时 fail-hard 不降级）。P3-d 多源 fixture digest + toolchain fingerprint 进 SameStartSnapshot 可比性维度。P3-e SQLite 索引（JSON 仍为 source of truth）+ 趋势分析（drift breakpoint 标注不可比断点）+ 趋势 API route。Phase 2 全部四个里程碑此前已交付。所有 GitHub issue #1–#14 已解决或关闭。Python CLI + Next.js 本地 Web UI 均可运行。455 个 pytest 测试 + 42 个 vitest 测试通过。v0.2.2 起有 GitHub Actions CI（五个 job）与 contract golden 机制。执行层通过 provider registry 选择隔离后端，由 `tests/unit/test_provider_protocol.py` + `tests/contract/test_execution_contract.py` 守护。
+- 日常实现、治理和 release preparation 只发生在 `dev`。
+- `main` 是经过验证的公开投影；不要在 `main` 上开展源代码开发，也不要在当前 `dev` worktree 手工 merge 或切换到 `main` 发布。
+- `dev` → `main` 只能使用 `scripts/release-to-main.sh`；发布边界和验证清单以 `docs/engineering/release-process.md` 及开发环境提供的 release skill 为准。
+- [AGENTS.md](AGENTS.md) 是仓库级 branch、发布与安全 guardrail；本文件只补充 Claude Code 使用的项目上下文。
+- [VERSION](VERSION) 是当前版本唯一人工编辑源；[CHANGELOG.md](CHANGELOG.md) 是 release-facing 变更记录；[TODOS.md](TODOS.md) 是 `dev` 上唯一的 unfinished-work Work Register。
+- Work Register、local ticket、GitHub Issue、triage 与 completion evidence 的权威契约见 [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) 和 [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md)。
 
 ## 开发方法硬规则
 
 - 禁止使用 TDD 方法。开发顺序必须是：先理解规格与用户路径，再做模块/文件架构设计，再实现可运行的垂直切片，最后用测试和真实产物做验证。
 - 测试只能作为验收、回归和契约保护手段，不能作为需求来源；不要为了让测试通过而缩窄实现范围。
 - 如果外部 skill、工具或自动化建议使用 TDD，必须以本文件为准：禁止使用 TDD 方法。
+
+## Work tracking
+
+- 在 `dev` 上，任何 behavior、schema、security、release 或 multi-file change 都必须先在 [TODOS.md](TODOS.md) 登记，并链接一个且仅一个 `LOCAL-<EFFORT>-<NN>` ticket 或 `GH-<number>` Issue；详情只写在权威 ticket/Issue 中。
+- 一文件 typo、纯格式调整或同等 trivial documentation correction 可不建 ticket；拿不准时遵循 ticket-first。
+- Local ticket 默认放在私有 work-record directory；确实需要公开反馈或协作时才使用 GitHub Issue。`Triage`、`Executor` 与生命周期 `Status` 不得混为一个字段。
+- 完成后记录 completion evidence，从 `TODOS.md` 移除，并将 release-facing 事实放入 `CHANGELOG.md` 或将实现验证放入 development log。
 
 ## 项目意图(来自 BRD + Unicorn Design)
 
@@ -118,11 +113,12 @@ Unicorn Design 定义的对象及其关系(实现数据层时以此为准,详见
 
 ### Issue tracker
 
-Issues and specs are tracked as local Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Work tracking uses one `TODOS.md` Work Register and durable local Markdown
+tickets by the contract in `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Triage uses the five canonical local status names. See `docs/agents/triage-labels.md`.
+Triage roles are separate from ticket lifecycle status and executor. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
@@ -152,7 +148,9 @@ Domain documentation uses a single-context layout. See `docs/agents/domain.md`.
 - 工程规范不能重新定义 schema 字段、模块契约或 MVP 范围。
 - 如果工程规范与上述权威来源冲突，先更新权威来源，再更新工程规范。
 
-## 开发命令(待项目骨架建立后补充)
+## 常用开发命令
+
+完整命令和验证矩阵见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
 
 ```bash
 # Python CLI

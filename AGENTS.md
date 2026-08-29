@@ -27,7 +27,26 @@ branch-sensitive rule, determine the actual current branch with
 - A public remote must never contain `dev`; never push `dev`, `--all`, or `--mirror`. An optional tag must be the annotated `vX.Y.Z` tag for the same verified SHA and be pushed atomically with `main`.
 - Never bypass candidate-tree, generated-file, sensitive-path, wheel/sdist, or verified-receipt gates.
 
-This file is generated into `main` from
-`.codex/skills/micro-eval-release/assets/templates/agents-publish-template.md`
-during release. On `dev`, edit that template and keep this file synchronized
-with it. Do not hand-edit the generated `AGENTS.md` on `main`.
+## Work tracking
+
+- On `dev`, `TODOS.md` is the only Work Register for unfinished work. Before a
+  non-trivial behavior, schema, security, release, or multi-file change, add
+  one `LOCAL-<EFFORT>-<NN>` ticket or `GH-<number>` Issue pointer there; keep
+  the details only in that authority source.
+- Local tickets are the default for internal work. Use a GitHub Issue only
+  when public feedback or collaboration is genuinely needed. The ticket-first
+  threshold and the separate `Triage`, `Executor`, and lifecycle `Status`
+  fields are defined in `docs/agents/issue-tracker.md`.
+- A one-file typo, formatting-only edit, or similarly trivial documentation
+  correction may proceed without a ticket. When uncertain, create the ticket
+  first.
+- Resolve work with completion evidence, remove it from `TODOS.md`, and record
+  user-visible facts in `CHANGELOG.md` or implementation evidence in a dev log.
+- `.scratch/**`, `TODOS.md`, and dev logs are development-only records. Keep
+  them tracked on `dev` and out of public projection; never use `main` for
+  source development.
+
+This file is generated into `main` from the development-only release
+instruction template during release. On `dev`, edit that template and keep
+this file synchronized with it. Do not hand-edit the generated `AGENTS.md` on
+`main`.

@@ -3,7 +3,7 @@ title: micro-eval Release Process
 doc_type: reference
 status: active
 created_at: 2026-06-03T13:09+08:00
-updated_at: 2026-08-29T09:41+08:00
+updated_at: 2026-08-29T12:39+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -12,6 +12,7 @@ tags:
   - versioning
 related:
   - AGENTS.md
+  - docs/agents/issue-tracker.md
   - CHANGELOG.md
   - VERSION
   - docs/DEVELOPMENT.md
@@ -23,7 +24,7 @@ related:
 
 # micro-eval Release Process
 
-This document is the human-readable release reference. The release scripts live in repository `scripts/release/*` and `scripts/release-to-main.sh` (single copy, tracked on both branches). The release checklist skill is `.codex/skills/micro-eval-release/SKILL.md` (restored 2026-07-02 after being lost in the 2026-06-15 branch-rebuild incident — see `docs/releases/2026-07-02-release-backfill-record.md`). If this document and the skill disagree, fix both in the same change.
+This document is the human-readable release reference. The release scripts live in repository `scripts/release/*` and `scripts/release-to-main.sh` (single copy, tracked on both branches). The development environment also provides the executable release checklist skill; if that skill and this document disagree, fix both in the same change. Public release consumers should use the repository scripts and this reference, which do not depend on private development records.
 
 ## Goals
 

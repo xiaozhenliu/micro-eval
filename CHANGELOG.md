@@ -4,6 +4,10 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+### Changed
+
+- Rebuilt development work tracking around one `TODOS.md` Work Register, durable local tickets with stable IDs, explicit triage/executor/lifecycle fields, and completion evidence that moves into the changelog or development logs.
+
 ## 0.4.6 - 2026-08-29
 
 ### Fixed

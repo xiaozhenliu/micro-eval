@@ -3,7 +3,7 @@ title: micro-eval 工程规范索引
 doc_type: reference
 status: active
 created_at: 2026-06-02T18:00+08:00
-updated_at: 2026-06-03T13:55+08:00
+updated_at: 2026-08-29T12:39+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -50,11 +50,12 @@ related:
 | Next.js / TypeScript / zod / API route / UI data access | `frontend-guidelines.md` |
 | 测试计划、contract tests、flaky 控制 | `testing-guidelines.md` |
 | ResultMatrix、Decision、Artifact/Evidence 展示 | `ux-guidelines.md` |
+| Work Register、local ticket、GitHub Issue、triage 与完成证据 | `../agents/issue-tracker.md`；`../agents/triage-labels.md` |
 | 安全规范索引 / 不确定读哪份安全规范 | `security-guidelines.md` |
 | 产品/服务安全：CLI、本地 UI/API、报告、发布包、未来服务化 | `security-service-guidelines.md` |
 | 用户 run 安全：secrets、workspace、network caveat、artifact、evidence | `security-user-run-guidelines.md` |
 | 开发实施安全：subprocess、env、redaction、workspace、artifact、decision safety | `security-development-guidelines.md` |
-| 版本号、CHANGELOG、release evidence、依赖清单、发布提交、tag、dev→main 发布 | `.codex/skills/micro-eval-release/SKILL.md`；`release-process.md` 仅作人工参考 |
+| 版本号、CHANGELOG、release evidence、依赖清单、发布提交、tag、dev→main 发布 | `release-process.md` 与开发环境中的 release skill；脚本唯一副本在 `scripts/release/` |
 
 ## Implementation Plan Ready Gate
 

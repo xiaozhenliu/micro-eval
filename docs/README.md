@@ -3,7 +3,7 @@ title: Docs Directory Guide
 doc_type: reference
 status: active
 created_at: 2026-06-03T08:35+08:00
-updated_at: 2026-07-02T12:00+08:00
+updated_at: 2026-08-29T12:39+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -33,6 +33,7 @@ Use this README as the entry point for deciding where a document belongs.
 | `documentation-standard.md` | Project-wide documentation standard and metadata format. |
 | `analysis/` | Research, comparisons, investigations, trade-off analysis, and non-authoritative exploration notes. |
 | `bug_reports/` | Review findings, defect inventories, and tracked remediation/tech-debt todo lists derived from code reviews. |
+| `agents/` | Public agent-facing contracts, including work tracking and triage vocabulary. |
 | `dev/` | Development-time records such as logs, decisions, implementation notes, and future engineering journals. |
 | `dev/log/` | Chronological development logs. File names in this folder must include `dev-log`. |
 | `dev/decisions/` | Development decisions and lightweight design records. File names in this folder should include `decision`. |
@@ -47,13 +48,23 @@ Use this README as the entry point for deciding where a document belongs.
 | Document | Purpose |
 | --- | --- |
 | `_archive/invocation-evidence.md` | Archived historical notes related to legacy invocation evidence behavior. |
+| `agents/issue-tracker.md` | Work Register, local ticket, GitHub Issue, and completion-evidence contract. |
+| `agents/triage-labels.md` | Triage role, executor, and lifecycle status vocabulary. |
 | `releases/2026-06-02-mvp-release-evidence.md` | MVP release-readiness evidence and verification summary. |
 | `releases/2026-06-12-v0.2.0-release-evidence.md` | Phase 2 / v0.2.0 release-readiness evidence and verification summary. |
 | `releases/2026-06-12-v0.2.0-dependency-inventory.md` | Dependency inventory for v0.2.0 release preparation. |
-| `.codex/skills/micro-eval-release/SKILL.md` | Project-level executable release skill for versioning, release evidence, dependency inventory, dev commits, tags, and dev-to-main publishing. |
-| `engineering/release-process.md` | Human-readable release reference that points back to the release skill. |
+| `engineering/release-process.md` | Human-readable release reference for the repository release scripts and projection gates. |
 
 For the most accurate and up-to-date version record, see the root [`CHANGELOG.md`](../CHANGELOG.md) — dedicated release evidence documents have not been produced for every release since v0.3.0.
+
+## Work governance
+
+On `dev`, `TODOS.md` is the private Work Register and `.scratch/` contains
+durable local tickets, specs, maps, and necessary attachments. The public
+contract for choosing a local ticket versus a GitHub Issue is
+`agents/issue-tracker.md`; the public projection omits `.scratch/` and the
+development log directory. Do not add links from public docs to those omitted
+records.
 
 ## Source-of-truth hierarchy
 

@@ -12,7 +12,7 @@
 - 设计体系页：`site/guide/design-system.md`（决策闭环、3 张力、7 核心对象）
 - 用户文档不包含实现细节；内部文档不重述用户概念。两套文档服务不同受众。
 
-Release evidence 见 `docs/releases/`。完整 release 流程见 `docs/engineering/release-process.md`，配套脚本在 `scripts/release/`。
+Work Register 与 local ticket 规则见 `docs/agents/issue-tracker.md`；在 `dev` 上可运行 `uv run python scripts/check-work-governance.py` 做离线治理检查。Release evidence 见 `docs/releases/`。完整 release 流程见 `docs/engineering/release-process.md`，配套脚本在 `scripts/release/`。
 
 ## 开发原则
 

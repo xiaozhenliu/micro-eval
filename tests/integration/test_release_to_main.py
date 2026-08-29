@@ -194,6 +194,11 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
         "node_modules/.vite/vitest/cache/results.json",
         '{"local": true}\n',
     )
+    _write_project_file(
+        worktree,
+        ".scratch/historical-ticket.md",
+        "private historical work item\n",
+    )
     _git(worktree, "add", "-f", ".")
     _git(worktree, "commit", "-m", "base main with historical leak")
     _git(worktree, "remote", "add", "origin", str(origin))
@@ -206,6 +211,11 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
         (PROJECT_ROOT / PUBLIC_AGENTS).read_text(encoding="utf-8"),
     )
     _write_project_file(worktree, ".codex/private.md", "dev only\n")
+    _write_project_file(
+        worktree,
+        ".scratch/current-ticket.md",
+        "private current work item\n",
+    )
     _write_project_file(worktree, "CONTEXT.md", "internal domain notes\n")
     _write_project_file(
         worktree, "src/micro_eval/release_change.txt", "projected\n"
@@ -270,6 +280,8 @@ def _assert_projection(repo: ReleaseRepo) -> str:
     )
     for private_path in (
         ".codex/private.md",
+        ".scratch/current-ticket.md",
+        ".scratch/historical-ticket.md",
         "CONTEXT.md",
         "node_modules/.vite/vitest/cache/results.json",
     ):
@@ -283,6 +295,18 @@ def _assert_projection(repo: ReleaseRepo) -> str:
             ).returncode
             != 0
         )
+    assert (
+        _git(
+            repo.worktree,
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "main",
+            "--",
+            ".scratch",
+        ).stdout
+        == ""
+    )
     assert _git(repo.worktree, "show", "main:AGENTS.md").stdout == (
         repo.worktree / AGENTS_TEMPLATE
     ).read_text(encoding="utf-8")

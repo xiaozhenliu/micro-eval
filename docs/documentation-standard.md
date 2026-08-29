@@ -3,7 +3,7 @@ title: Documentation Standard
 doc_type: reference
 status: active
 created_at: 2026-06-03T08:35+08:00
-updated_at: 2026-06-03T09:35+08:00
+updated_at: 2026-08-29T12:39+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -13,6 +13,7 @@ tags:
 related:
   - docs/README.md
   - docs/DEVELOPMENT.md
+  - docs/agents/issue-tracker.md
 ---
 
 # Documentation Standard
@@ -164,3 +165,23 @@ Use `doc_type: decision` for these files.
 - Do not use documentation to redefine schema fields, module contracts, or MVP scope if an authoritative spec already exists.
 - For release claims, include verification evidence or link to a release evidence document.
 - For docs that mention subprocess, environment variables, artifacts, or workspace boundaries, link to `docs/engineering/security-guidelines.md` when relevant.
+
+## Work records and tickets
+
+The generic documentation metadata above applies to documents under `docs/`.
+Development-only work records use the ticket contract in
+`docs/agents/issue-tracker.md` instead of pretending that a ticket is a public
+documentation page.
+
+- `TODOS.md` is the single Work Register for unfinished work on `dev`; it is
+  not a completion archive or a detailed specification.
+- A local ticket uses a stable `LOCAL-<EFFORT>-<NN>` ID, separate `Status`,
+  `Triage`, and `Executor` fields, and a `## Completion evidence` section when
+  it reaches `resolved` or `archived`.
+- A GitHub reference uses `GH-<number>` and leaves the Issue body as the sole
+  public detail source.
+- Completed work leaves the Work Register and is recorded in `CHANGELOG.md`, a
+  development log, and/or the ticket's completion evidence as appropriate.
+- Public documentation must not link to development-only `TODOS.md`,
+  `.scratch/`, ticket, or log paths that the public projection intentionally
+  omits.
