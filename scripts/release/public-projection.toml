@@ -78,6 +78,7 @@ forbidden_public = [
   "**/.env.*",
   ".omx/**",
   ".scratch/**",
+  "TODOS.md",
   ".superpowers/**",
   "**/.next/**",
   "**/.pytest_cache/**",

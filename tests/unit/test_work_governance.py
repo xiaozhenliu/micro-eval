@@ -41,16 +41,16 @@ def _write_ticket(
 def _write_register(root: Path, local_pointer: str) -> None:
     todos = root / "TODOS.md"
     todos.write_text(
-        "# Work Register\n\n"
-        "## Now\n\n"
+        "# 未完成工作总目录\n\n"
+        "## 当前执行（Now）\n\n"
         f"- [{local_pointer}](.scratch/example/issues/01-first-ticket.md) — active work.\n\n"
-        "## Next\n\n"
-        "- [GH-15](https://github.com/xiaozhenliu/micro-eval/issues/15) — upgrade.\n\n"
-        "## Waiting\n\n"
+        "## 下一步（Next）\n\n"
+        "- [GH-15](https://github.com/xiaozhenliu/micro-eval/issues/15) — 升级。\n\n"
+        "## 等待解除（Waiting）\n\n"
         "（无）\n\n"
-        "## Roadmap\n\n"
-        "- Future option. Planning state: Roadmap (not blocked). Trigger / promote when: a real need appears.\n\n"
-        "## Inbox\n\n"
+        "## 路线图（Roadmap）\n\n"
+        "- Future option. 规划状态：路线图（未阻塞）。触发/晋升时机：a real need appears.\n\n"
+        "## 收件箱（Inbox）\n\n"
         "（无）\n",
         encoding="utf-8",
     )

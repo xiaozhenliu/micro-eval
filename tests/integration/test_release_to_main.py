@@ -199,6 +199,7 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
         ".scratch/historical-ticket.md",
         "private historical work item\n",
     )
+    _write_project_file(worktree, "TODOS.md", "private historical work register\n")
     _git(worktree, "add", "-f", ".")
     _git(worktree, "commit", "-m", "base main with historical leak")
     _git(worktree, "remote", "add", "origin", str(origin))
@@ -216,6 +217,7 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
         ".scratch/current-ticket.md",
         "private current work item\n",
     )
+    _write_project_file(worktree, "TODOS.md", "private current work register\n")
     _write_project_file(worktree, "CONTEXT.md", "internal domain notes\n")
     _write_project_file(
         worktree, "src/micro_eval/release_change.txt", "projected\n"
@@ -282,6 +284,7 @@ def _assert_projection(repo: ReleaseRepo) -> str:
         ".codex/private.md",
         ".scratch/current-ticket.md",
         ".scratch/historical-ticket.md",
+        "TODOS.md",
         "CONTEXT.md",
         "node_modules/.vite/vitest/cache/results.json",
     ):

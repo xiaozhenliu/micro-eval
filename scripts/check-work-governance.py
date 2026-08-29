@@ -15,6 +15,18 @@ from typing import Any
 
 LANES = ("Now", "Next", "Waiting", "Roadmap", "Inbox")
 ACTIVE_LANES = ("Now", "Next", "Waiting")
+LANE_ALIASES = {
+    "Now": "Now",
+    "Next": "Next",
+    "Waiting": "Waiting",
+    "Roadmap": "Roadmap",
+    "Inbox": "Inbox",
+    "当前执行（Now）": "Now",
+    "下一步（Next）": "Next",
+    "等待解除（Waiting）": "Waiting",
+    "路线图（Roadmap）": "Roadmap",
+    "收件箱（Inbox）": "Inbox",
+}
 TICKET_STATUSES = {"inbox", "ready", "in_progress", "blocked", "resolved", "archived"}
 TRIAGE_ROLES = {
     "needs-triage",
@@ -154,11 +166,12 @@ def _read_tickets(root: Path) -> tuple[list[Ticket], list[str]]:
 
 
 def _lane_bodies(text: str) -> dict[str, str]:
-    matches = list(re.finditer(r"^## (Now|Next|Waiting|Roadmap|Inbox)\s*$", text, re.M))
+    heading_pattern = "|".join(re.escape(alias) for alias in LANE_ALIASES)
+    matches = list(re.finditer(rf"^## ({heading_pattern})\s*$", text, re.M))
     bodies: dict[str, str] = {}
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        bodies[match.group(1)] = text[match.end() : end]
+        bodies[LANE_ALIASES[match.group(1)]] = text[match.end() : end]
     return bodies
 
 
@@ -242,17 +255,17 @@ def _check_todos(root: Path, tickets: list[Ticket]) -> list[str]:
             if not stripped.startswith("-"):
                 continue
             if not re.search(
-                r"(?:Trigger\s*/\s*promote\s+when|Trigger|Promote\s+when|触发条件)\s*[:：]\*{0,2}",
+                r"(?:Trigger\s*/\s*promote\s+when|Trigger|Promote\s+when|触发/晋升时机|触发条件)\s*[:：]\*{0,2}",
                 stripped,
                 re.IGNORECASE,
             ):
-                errors.append(f"TODOS.md {lane} line {line_number}: missing Trigger/promote-when field")
+                errors.append(f"TODOS.md {lane} line {line_number}: missing trigger/promote-when field")
             if not re.search(
-                r"Planning\s+state\s*[:：]\*{0,2}\s*Roadmap\s*\([^)]*not\s+blocked",
+                r"(?:Planning\s+state|规划状态)\s*[:：]\*{0,2}\s*(?:Roadmap|路线图)\s*(?:\([^)]*not\s+blocked[^)]*\)|（[^）]*(?:未\s*blocked|未阻塞)[^）]*）)",
                 stripped,
                 re.IGNORECASE,
             ):
-                errors.append(f"TODOS.md {lane} line {line_number}: Roadmap item must say not blocked")
+                errors.append(f"TODOS.md {lane} line {line_number}: Roadmap item must say not blocked/未阻塞")
 
     for ticket in tickets:
         if ticket.status not in TERMINAL_STATUSES and ticket.identifier not in active_ids:
@@ -339,6 +352,12 @@ def _check_scratch(root: Path) -> list[str]:
             errors.append("public projection policy classifies .scratch/** as public")
         if not module._matches_any(probe, policy.forbidden_public):
             errors.append("public projection policy must forbid .scratch/** in public output")
+        if not module._matches_any("TODOS.md", policy.private_patterns):
+            errors.append("public projection policy must classify TODOS.md as private")
+        if module._matches_any("TODOS.md", policy.public_patterns):
+            errors.append("public projection policy classifies TODOS.md as public")
+        if not module._matches_any("TODOS.md", policy.forbidden_public):
+            errors.append("public projection policy must forbid TODOS.md in public output")
         plan = policy.plan(root, "WORKTREE")
         for path in paths:
             relative = path.relative_to(root).as_posix()

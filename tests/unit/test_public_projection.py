@@ -136,6 +136,16 @@ def test_project_policy_keeps_scratch_private_and_forbidden() -> None:
     assert public_projection._matches_any(probe, policy.forbidden_public)
 
 
+def test_project_policy_keeps_work_register_private_and_forbidden() -> None:
+    policy = public_projection.ProjectionPolicy.load(
+        PROJECT_ROOT / "scripts/release/public-projection.toml"
+    )
+
+    assert public_projection._matches_any("TODOS.md", policy.private_patterns)
+    assert not public_projection._matches_any("TODOS.md", policy.public_patterns)
+    assert public_projection._matches_any("TODOS.md", policy.forbidden_public)
+
+
 def test_artifact_verifier_rejects_unknown_sdist_entry(tmp_path: Path) -> None:
     policy = public_projection.ProjectionPolicy.load(
         _write_policy(

@@ -3,7 +3,7 @@ title: Development Log - Work Tracking Governance
 doc_type: dev_log
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T13:10+08:00
+updated_at: 2026-08-29T14:08+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -42,6 +42,9 @@ intentionally private.
 - Expanded the Roadmap after audit to retain each genuine future item from the
   previous Register, including schema generation, CLI/provider coverage, task
   scope, three cost paths, run-wide controls, SQLite, OpenHands, and Windows.
+- Kept `TODOS.md` as a Chinese developer-only Work Register (retaining only
+  necessary technical identifiers) and added an explicit private/forbidden
+  policy assertion plus release-fixture coverage.
 - Added the `GH-15` pointer and moved conditional future work into Roadmap
   entries with explicit triggers.
 - Removed the root `.scratch/` ignore rule, added durable effort maps, and

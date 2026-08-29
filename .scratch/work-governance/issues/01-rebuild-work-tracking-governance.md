@@ -124,3 +124,8 @@ Blocked by: None
 - Post-completion audit: the Roadmap was expanded to preserve every genuine
   unfinished route from the former Register; only completed, stale, and
   monitoring-only entries remain removed.
+- Follow-up correction: `TODOS.md` is now a Chinese developer record with only
+  necessary technical identifiers, and it is both `private` and
+  `forbidden_public` in the projection policy;
+  release integration coverage verifies that a force-tracked Work Register is
+  absent from the public candidate.
