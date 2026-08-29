@@ -1,7 +1,0 @@
-interface:
-  display_name: "Monid Free Search"
-  short_description: "Search and fetch the live web with free TinyFish endpoints"
-  default_prompt: "Use $monid to search or fetch the live web through TinyFish, and run an endpoint only when its current price is explicitly zero."
-
-policy:
-  allow_implicit_invocation: true

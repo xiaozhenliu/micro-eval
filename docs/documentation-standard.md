@@ -3,7 +3,7 @@ title: Documentation Standard
 doc_type: reference
 status: active
 created_at: 2026-06-03T08:35+08:00
-updated_at: 2026-08-29T16:52+08:00
+updated_at: 2026-08-29T18:09+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -176,7 +176,7 @@ documentation page.
 - `TODOS.md` is the single Work Register for unfinished work on `dev`; it is
   not a completion archive or a detailed specification.
 - A local ticket carries its own YAML front matter — a stable
-  `LOCAL-<EFFORT>-<NN>` `id`, separate `status`, `triage`, and `executor`
+  `LOCAL-<WORKSTREAM>-<NN>` `id`, separate `status`, `triage`, and `executor`
   fields, and `created_at` / `updated_at` under the same timestamp rules as
   above — plus a `## Completion evidence` section when it reaches `resolved`
   or `archived`. The exact field list is defined in

@@ -38,6 +38,17 @@ TRIAGE_ROLES = {
 EXECUTORS = {"unassigned", "agent", "human", "pair"}
 TICKET_TYPES = {"task", "research", "prototype", "grilling", "governance"}
 TERMINAL_STATUSES = {"resolved", "archived"}
+WORKSTREAM_MAP_STATUSES = {"active", "archived"}
+VAGUE_ACTIVE_WORKSTREAMS = {
+    "backlog",
+    "current-release",
+    "general",
+    "later",
+    "misc",
+    "next",
+    "next-release",
+}
+LEGACY_ID_STEMS = {"next-release": "LOCAL-NEXT"}
 POINTER_RE = re.compile(
     r"\b(?:LOCAL-[A-Z0-9]+(?:-[A-Z0-9]+)*-[0-9]{2}|GH-[0-9]+)\b"
 )
@@ -196,6 +207,11 @@ def _check_ticket_frontmatter(
         errors.append("invalid or missing id")
     elif LOCAL_ID_RE.fullmatch(identifier).group(1) != sequence:
         errors.append(f"id {identifier} does not match the file number {sequence}")
+    elif identifier.rsplit("-", 1)[0] != LEGACY_ID_STEMS.get(
+        effort, f"LOCAL-{effort.upper()}"
+    ):
+        expected = LEGACY_ID_STEMS.get(effort, f"LOCAL-{effort.upper()}")
+        errors.append(f"id {identifier} must use workstream stem {expected}")
 
     ticket_effort = fields.get("effort")
     if not isinstance(ticket_effort, str) or not EFFORT_RE.fullmatch(ticket_effort):
@@ -297,6 +313,10 @@ def _read_tickets(root: Path) -> tuple[list[Ticket], list[str]]:
         if ticket is None:
             continue
         relative = path.relative_to(root).as_posix()
+        if ticket.status in TERMINAL_STATUSES:
+            errors.append(
+                f"{relative}: terminal ticket must be filed under issues/resolved"
+            )
         if ticket.identifier in identifiers:
             errors.append(
                 f"{relative}: duplicate ID {ticket.identifier} also used by "
@@ -517,6 +537,51 @@ def _check_scratch(root: Path) -> list[str]:
     return errors
 
 
+def _check_workstream_maps(root: Path) -> list[str]:
+    scratch = root / ".scratch"
+    if not scratch.is_dir():
+        return []
+    errors: list[str] = []
+    workstreams = sorted(path for path in scratch.iterdir() if path.is_dir())
+    for workstream in workstreams:
+        name = workstream.name
+        map_path = workstream / "map.md"
+        relative = map_path.relative_to(root).as_posix()
+        if not map_path.is_file():
+            errors.append(f"{relative}: every workstream needs a map.md")
+            continue
+        fields, body, structural = _parse_frontmatter(
+            map_path.read_text(encoding="utf-8")
+        )
+        errors.extend(f"{relative}: {error}" for error in structural)
+        if structural and not fields:
+            continue
+        status = fields.get("status")
+        if status not in WORKSTREAM_MAP_STATUSES:
+            errors.append(
+                f"{relative}: workstream map status must be active or archived"
+            )
+        if fields.get("doc_type") != "reference":
+            errors.append(f"{relative}: workstream map doc_type must be reference")
+        if fields.get("source_of_truth") != "true":
+            errors.append(f"{relative}: workstream map must be source_of_truth")
+        if status == "active" and name in VAGUE_ACTIVE_WORKSTREAMS:
+            errors.append(
+                f"{relative}: active workstream name {name!r} is relative-time or catch-all"
+            )
+        body_text = "\n".join(body)
+        if "## Scope" not in body_text:
+            errors.append(f"{relative}: workstream map needs a Scope section")
+        if "## Boundaries" not in body_text:
+            errors.append(f"{relative}: workstream map needs a Boundaries section")
+        active_tickets = sorted((workstream / "issues").glob("*.md"))
+        if status == "archived" and active_tickets:
+            errors.append(
+                f"{relative}: archived workstream cannot contain active tickets"
+            )
+    return errors
+
+
 def _archived_ticket_paths(root: Path) -> list[Path]:
     scratch = root / ".scratch"
     if not scratch.is_dir():
@@ -561,6 +626,7 @@ def check_repository(root: Path) -> list[str]:
     return [
         *ticket_errors,
         *_check_todos(root, tickets),
+        *_check_workstream_maps(root),
         *_check_scratch(root),
         *_check_archived_tickets(root, tickets),
     ]

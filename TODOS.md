@@ -18,6 +18,7 @@
 
 ## 下一步（Next）
 
+- [LOCAL-COMPARATIVE-DECISION-01](.scratch/comparative-decision/issues/01-emit-comparative-verdict.md) — 为单 baseline/candidate run 产出证据受保护的比较结论。
 - [GH-15](https://github.com/xiaozhenliu/micro-eval/issues/15) — Next.js 16.3.x 升级。
 
 ## 等待解除（Waiting）

@@ -31,7 +31,7 @@ branch-sensitive rule, determine the actual current branch with
 
 - On `dev`, `TODOS.md` is the only Work Register for unfinished work. Before a
   non-trivial behavior, schema, security, release, or multi-file change, add
-  one `LOCAL-<EFFORT>-<NN>` ticket or `GH-<number>` Issue pointer there; keep
+  one `LOCAL-<WORKSTREAM>-<NN>` ticket or `GH-<number>` Issue pointer there; keep
   the details only in that authority source.
 - Local tickets are the default for internal work. Use a GitHub Issue only
   when public feedback or collaboration is genuinely needed.
@@ -41,6 +41,9 @@ branch-sensitive rule, determine the actual current branch with
   `docs/agents/issue-tracker.md` and the field vocabularies are
   `docs/agents/triage-labels.md`; read them for an edge case, not to write an
   ordinary ticket.
+- Before choosing a local ticket's workstream, follow `Workstream routing` in
+  `docs/agents/issue-tracker.md`; the `TODOS.md` lane, not the workstream name,
+  expresses timing.
 - A one-file typo, formatting-only edit, or similarly trivial documentation
   correction may proceed without a ticket. When uncertain, create the ticket
   first.

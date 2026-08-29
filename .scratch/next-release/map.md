@@ -1,23 +1,31 @@
 ---
-title: LOCAL-NEXT — Release hardening effort map
+title: LOCAL-NEXT — Archived release hardening workstream map
 doc_type: reference
-status: active
+status: archived
 created_at: 2026-08-29T13:00+08:00
-updated_at: 2026-08-29T16:19+08:00
+updated_at: 2026-08-29T18:09+08:00
 owner: micro-eval maintainers
-source_of_truth: false
+source_of_truth: true
 tags:
   - work-record
-  - effort-map
+  - workstream-map
 related:
   - docs/agents/issue-tracker.md
 ---
 
-# LOCAL-NEXT — Release hardening effort map
+# LOCAL-NEXT — Archived release hardening workstream map
 
-This map groups the durable release-preparation tickets. It is a navigation
-record, not a second Work Register; unfinished work is indexed only by
-`TODOS.md`.
+## Scope
+
+Historical record of the completed release-hardening initiative that made the
+`dev` → verified public `main` projection fail closed and reproducible.
+
+## Boundaries
+
+This workstream is archived and accepts no new ticket. New release work uses a
+stable release-specific workstream when it forms a coherent initiative;
+product, documentation, and subsystem work use their own domain workstreams.
+Portfolio timing remains in `TODOS.md`.
 
 ## Decisions-so-far
 

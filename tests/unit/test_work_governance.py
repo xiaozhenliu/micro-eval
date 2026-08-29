@@ -66,6 +66,29 @@ def _write_register(root: Path, local_pointer: str) -> None:
     )
 
 
+def _write_workstream_map(
+    root: Path, *, effort: str = "example", status: str = "active"
+) -> Path:
+    path = root / f".scratch/{effort}/map.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "---\n"
+        "title: Example workstream\n"
+        "doc_type: reference\n"
+        f"status: {status}\n"
+        "created_at: 2026-08-29T16:52+08:00\n"
+        "updated_at: 2026-08-29T16:52+08:00\n"
+        "owner: maintainers\n"
+        "source_of_truth: true\n"
+        "---\n\n"
+        "# Example workstream\n\n"
+        "## Scope\n\nExample work.\n\n"
+        "## Boundaries\n\nOther work belongs elsewhere.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_work_register_accepts_ticket_pointer_and_trigger(tmp_path: Path) -> None:
     _write_ticket(tmp_path)
     _write_register(tmp_path, "LOCAL-EXAMPLE-01")
@@ -80,7 +103,10 @@ def test_work_register_rejects_terminal_ticket_in_active_lane(tmp_path: Path) ->
     _write_register(tmp_path, "LOCAL-EXAMPLE-01")
     tickets, ticket_errors = work_governance._read_tickets(tmp_path)
 
-    assert ticket_errors == []
+    assert any(
+        "terminal ticket must be filed under issues/resolved" in error
+        for error in ticket_errors
+    )
     errors = work_governance._check_todos(tmp_path, tickets)
 
     assert any("active pointer LOCAL-EXAMPLE-01 targets resolved" in error for error in errors)
@@ -138,6 +164,16 @@ def test_ticket_contract_rejects_effort_mismatch(tmp_path: Path) -> None:
     assert any("does not match directory 'example'" in error for error in errors)
 
 
+def test_ticket_contract_rejects_id_stem_from_another_workstream(
+    tmp_path: Path,
+) -> None:
+    _write_ticket(tmp_path, identifier="LOCAL-OTHER-01")
+
+    _, errors = work_governance._read_tickets(tmp_path)
+
+    assert any("must use workstream stem LOCAL-EXAMPLE" in error for error in errors)
+
+
 def test_ticket_contract_rejects_dateonly_timestamp(tmp_path: Path) -> None:
     path = _write_ticket(tmp_path)
     path.write_text(
@@ -184,3 +220,34 @@ def test_archived_ticket_rejects_duplicate_of_active_id(tmp_path: Path) -> None:
         "archived ID LOCAL-EXAMPLE-01 duplicates an active ticket" in error
         for error in errors
     )
+
+
+def test_workstream_rejects_missing_map(tmp_path: Path) -> None:
+    _write_ticket(tmp_path)
+
+    errors = work_governance._check_workstream_maps(tmp_path)
+
+    assert any("every workstream needs a map.md" in error for error in errors)
+
+
+def test_workstream_rejects_vague_active_name(tmp_path: Path) -> None:
+    _write_workstream_map(tmp_path, effort="next-release")
+
+    errors = work_governance._check_workstream_maps(tmp_path)
+
+    assert any("relative-time or catch-all" in error for error in errors)
+
+
+def test_workstream_allows_archived_legacy_name(tmp_path: Path) -> None:
+    _write_workstream_map(tmp_path, effort="next-release", status="archived")
+
+    assert work_governance._check_workstream_maps(tmp_path) == []
+
+
+def test_archived_workstream_rejects_active_ticket(tmp_path: Path) -> None:
+    _write_ticket(tmp_path)
+    _write_workstream_map(tmp_path, status="archived")
+
+    errors = work_governance._check_workstream_maps(tmp_path)
+
+    assert any("archived workstream cannot contain active tickets" in error for error in errors)
