@@ -239,10 +239,20 @@ def _check_todos(root: Path, tickets: list[Ticket]) -> list[str]:
     for lane in ("Roadmap",):
         for line_number, line in enumerate(bodies.get(lane, "").splitlines(), start=1):
             stripped = line.strip()
-            if stripped.startswith("-") and not re.search(
-                r"(?:Trigger|触发条件)\s*[:：]", stripped, re.IGNORECASE
+            if not stripped.startswith("-"):
+                continue
+            if not re.search(
+                r"(?:Trigger\s*/\s*promote\s+when|Trigger|Promote\s+when|触发条件)\s*[:：]\*{0,2}",
+                stripped,
+                re.IGNORECASE,
             ):
-                errors.append(f"TODOS.md {lane} line {line_number}: missing Trigger/触发条件")
+                errors.append(f"TODOS.md {lane} line {line_number}: missing Trigger/promote-when field")
+            if not re.search(
+                r"Planning\s+state\s*[:：]\*{0,2}\s*Roadmap\s*\([^)]*not\s+blocked",
+                stripped,
+                re.IGNORECASE,
+            ):
+                errors.append(f"TODOS.md {lane} line {line_number}: Roadmap item must say not blocked")
 
     for ticket in tickets:
         if ticket.status not in TERMINAL_STATUSES and ticket.identifier not in active_ids:

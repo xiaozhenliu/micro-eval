@@ -49,7 +49,7 @@ def _write_register(root: Path, local_pointer: str) -> None:
         "## Waiting\n\n"
         "（无）\n\n"
         "## Roadmap\n\n"
-        "- Future option. Trigger: a real need appears.\n\n"
+        "- Future option. Planning state: Roadmap (not blocked). Trigger / promote when: a real need appears.\n\n"
         "## Inbox\n\n"
         "（无）\n",
         encoding="utf-8",

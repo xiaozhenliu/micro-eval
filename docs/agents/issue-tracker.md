@@ -53,14 +53,17 @@ execution state:
 - `Now` — committed work being executed immediately.
 - `Next` — specified work queued for execution.
 - `Waiting` — committed work waiting on an external dependency or decision.
-- `Roadmap` — future options that are not yet committed; every item includes
-  `Trigger:` or `触发条件:`.
+- `Roadmap` — future options that are not yet committed and are not blocked
+  tickets; every item records `Planning state: Roadmap (not blocked)` and a
+  `Trigger / promote when:` condition.
 - `Inbox` — untriaged ideas or requests; keep the description short until a
   decision is made.
 
 `Now`, `Next`, and committed `Waiting` entries must each contain exactly one
 `LOCAL-...` or `GH-...` pointer. `Roadmap` and `Inbox` may contain a brief
-inline description and do not need a ticket before commitment.
+inline description and do not need a ticket before commitment. A Roadmap item
+must retain its remaining scope and the condition that promotes it into a
+ticket and an execution lane; it must not silently become a blocked item.
 
 ## Local ticket contract
 
