@@ -58,7 +58,7 @@ tasks:
       - type: file_exists
         path: utils.py
       - type: command
-        command: ["python", "-c", "import utils; assert utils.sort([3,1,2]) == [1,2,3]"]
+        command: ["{python}", "-c", "import utils; assert utils.sort([3,1,2]) == [1,2,3]"]
         cwd: "{output_dir}"
 ```
 

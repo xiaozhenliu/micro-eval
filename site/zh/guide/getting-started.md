@@ -49,7 +49,7 @@ cd ui && npm install && cd ..
 
 ```bash
 uv run micro-eval --version
-# micro-eval 0.4.1
+# micro-eval 0.4.6
 ```
 
 ::: tip Shell 别名

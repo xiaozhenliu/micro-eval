@@ -656,11 +656,14 @@ uv run micro-eval index import-json
 
 ```json
 {
-  "version": "0.4.1",
-  "mode": "server",
-  "worker_alive": true,
-  "queue_depth": 2,
-  "data_root": "/srv/micro-eval",
-  "uptime_s": 3601
+  "server_mode": true,
+  "configured": true,
+  "workspace_count": 3,
+  "template_count": 1,
+  "queue": {
+    "queued": 2,
+    "running": 1
+  },
+  "ui_version": "0.4.6"
 }
 ```

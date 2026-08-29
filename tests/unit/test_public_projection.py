@@ -14,6 +14,7 @@ import pytest
 MODULE_PATH = (
     Path(__file__).parents[2] / "scripts" / "release" / "public_projection.py"
 )
+PROJECT_ROOT = Path(__file__).parents[2]
 SPEC = importlib.util.spec_from_file_location("public_projection", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 public_projection = importlib.util.module_from_spec(SPEC)
@@ -122,6 +123,27 @@ def test_candidate_scan_rejects_private_key_marker(tmp_path: Path) -> None:
 
     with pytest.raises(public_projection.ProjectionError, match="private-key marker"):
         public_projection._scan_candidate(policy, repo, ("src/key.txt",))
+
+
+def test_project_policy_keeps_scratch_private_and_forbidden() -> None:
+    policy = public_projection.ProjectionPolicy.load(
+        PROJECT_ROOT / "scripts/release/public-projection.toml"
+    )
+    probe = ".scratch/governance-probe.md"
+
+    assert public_projection._matches_any(probe, policy.private_patterns)
+    assert not public_projection._matches_any(probe, policy.public_patterns)
+    assert public_projection._matches_any(probe, policy.forbidden_public)
+
+
+def test_project_policy_keeps_work_register_private_and_forbidden() -> None:
+    policy = public_projection.ProjectionPolicy.load(
+        PROJECT_ROOT / "scripts/release/public-projection.toml"
+    )
+
+    assert public_projection._matches_any("TODOS.md", policy.private_patterns)
+    assert not public_projection._matches_any("TODOS.md", policy.public_patterns)
+    assert public_projection._matches_any("TODOS.md", policy.forbidden_public)
 
 
 def test_artifact_verifier_rejects_unknown_sdist_entry(tmp_path: Path) -> None:

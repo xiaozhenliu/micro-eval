@@ -1,15 +1,62 @@
-# Triage Labels
+---
+title: Triage Roles and Ticket Fields
+doc_type: reference
+status: active
+created_at: 2026-08-29T12:39+08:00
+updated_at: 2026-08-29T16:52+08:00
+owner: micro-eval maintainers
+source_of_truth: true
+tags:
+  - triage
+  - ticket
+  - lifecycle
+related:
+  - docs/agents/issue-tracker.md
+---
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+# Triage Roles and Ticket Fields
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
+Triage answers “what routing decision is needed?” It does not describe
+execution progress. A local ticket therefore carries separate `triage`,
+`executor`, and `status` front matter fields, defined in
+`issue-tracker.md`.
 
-When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
+## Triage role
 
-Edit the right-hand column to match whatever vocabulary you actually use.
+These are the accepted values of the `triage` field. They are intake and
+routing labels:
+
+| Role | Meaning |
+| --- | --- |
+| `needs-triage` | Maintainer still needs to evaluate scope and priority. |
+| `needs-info` | Work is waiting for information from the requester or reporter. |
+| `ready-for-agent` | Scope and acceptance criteria are ready for an agent. |
+| `ready-for-human` | A human must implement or decide the next step. |
+| `wontfix` | The request has been evaluated and will not be actioned. |
+
+## Executor
+
+`executor` identifies the expected implementer: `unassigned`, `agent`,
+`human`, or `pair`. It may change without changing the lifecycle status.
+
+## Lifecycle status
+
+`status` records the ticket lifecycle:
+
+| Status | Meaning |
+| --- | --- |
+| `inbox` | Recorded but not yet ready for execution. |
+| `ready` | Accepted with clear criteria and ready to start. |
+| `in_progress` | Work is currently being implemented or investigated. |
+| `blocked` | Committed work cannot proceed until `blocked_by` is cleared. |
+| `resolved` | Acceptance criteria and completion evidence are satisfied. |
+| `archived` | A resolved record was intentionally retired from active history. |
+
+Use `resolved` as the only normal completion spelling. Do not substitute
+`completed`, `done`, `in-progress`, or a triage label for lifecycle status.
+
+## Portfolio lane mapping
+
+`Now`, `Next`, `Waiting`, `Roadmap`, and `Inbox` are Work Register planning
+lanes, not ticket statuses. A `blocked` committed ticket belongs in `Waiting`;
+an uncommitted future option belongs in `Roadmap` and may have no ticket yet.

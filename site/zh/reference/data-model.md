@@ -28,6 +28,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 | `status` | `"planned" \| "running" \| "completed" \| "failed" \| "partial"` | 生命周期状态。`partial` 表示部分 cell 执行出错。 |
 | `created_at` | `string` | ISO-8601 UTC 时间戳。 |
 | `completed_at` | `string \| null` | run 完成或失败时设置。 |
+| `failure_reason` | `string \| null` | run 失败或异常终止时的说明信息；成功时为 `null`。 |
 | `output_dir` | `string` | `.micro-eval/runs/<run-id>/` 的绝对路径。 |
 | `config_hash` | `string` | 所用 eval.yaml 的 SHA-256 哈希值。 |
 | `tasks` | `TaskSpec[]` | 每个 task 定义的内联副本。 |
@@ -45,7 +46,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 | `decision` | `DecisionReport \| null` | 最终裁决，所有 cell 完成前为 `null`。 |
 | `denominator_policy` | `"all_cells" \| "successful_cells"` | 计算 run 通过率时的分母策略。 |
 | `owner` | `string \| null` | 发起本次 run 的成员。本地模式下为 `null`；服务器模式下由 worker 从任务的 `X-Micro-Eval-Member` 请求头中设置。 |
-| `server_context` | `object \| null` | 服务器元数据（workspace_id、job_id、server_name、模板信息）。本地模式下为 `null`。 |
+| `server_context` | `ServerContext \| null` | 强类型的团队服务器归属溯源信息（`workspace_id`、`owner`、`template_id`、`template_version`、`job_id`、`server_name`）；本地模式下为 `null`。 |
 
 ```json
 {
@@ -54,6 +55,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
   "status": "completed",
   "created_at": "2026-06-15T09:00:00Z",
   "completed_at": "2026-06-15T09:04:22Z",
+  "failure_reason": null,
   "output_dir": "/home/user/project/.micro-eval/runs/run-2026-0615-a3f9",
   "config_hash": "sha256:4e3d1a...",
   "tasks": ["..."],
