@@ -1,6 +1,6 @@
 # CLI Commands
 
-Complete reference for all `micro-eval` commands. Current version: **0.4.1**.
+Complete reference for all `micro-eval` commands. Current version: **0.4.6**.
 
 ## Configuration Lookup Order
 
@@ -855,7 +855,7 @@ These options are accepted by every command:
 
 ```bash
 micro-eval --version
-# micro-eval 0.4.1
+# micro-eval 0.4.6
 ```
 
 ---

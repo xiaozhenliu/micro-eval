@@ -172,7 +172,19 @@ workspace:
     - ["test", "-d", "workspace/sample-project"]
 ```
 
-setup 命令在单元格的 workspace 根目录中按顺序执行，在 agent 进程启动之前运行。每条命令是普通的 argv 列表——无 shell 展开、无 glob 模式、无 `{python}` 或其他占位符。如果任何 setup 命令以非零退出码退出，该单元格将被标记为错误，agent 不会运行。
+setup 命令在单元格的 workspace 根目录中按顺序执行，在 agent 进程启动之前运行。每条命令是普通的 argv 列表——无 shell 插值——并支持 `{python}` 表示当前活跃的 Python 解释器。如果任何 setup 命令以非零退出码退出，该单元格将被标记为错误，agent 不会运行。
+
+## 命令占位符
+
+所有可执行命令均为 argv 数组。占位符替换在每个参数级别进行，绝不调用 shell。
+
+| 命令入口点 | 支持的占位符 |
+| --- | --- |
+| Agent 命令 | `{python}`, `{input_file}`, `{output_file}`, `{output_dir}` |
+| Workspace setup 命令 | `{python}` |
+| Command 期望 | `{python}`, `{output_dir}` |
+
+`{python}` 始终解析为运行 micro-eval 的当前 Python 解释器。由于 setup 在单元格 artifact 路径可用之前运行，输入/输出占位符被故意限制在 agent 和验证上下文中。
 
 setup 命令的适用场景：
 - 验证所需文件或目录是否存在

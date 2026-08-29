@@ -172,7 +172,19 @@ workspace:
     - ["test", "-d", "workspace/sample-project"]
 ```
 
-Setup commands run in the cell workspace root, in order, before the agent process starts. Each command is a plain argv list — no shell expansion, no glob patterns, no `{python}` or other placeholders. If any setup command exits non-zero, the cell is marked as an error and the agent does not run.
+Setup commands run in the cell workspace root, in order, before the agent process starts. Each command is a plain argv list — no shell interpolation — and supports `{python}` for the active Python interpreter. If any setup command exits non-zero, the cell is marked as an error and the agent does not run.
+
+## Command Placeholders
+
+All executable commands are argv arrays. Placeholder replacement happens per argument and never invokes a shell.
+
+| Command entry point | Supported placeholders |
+| --- | --- |
+| Agent command | `{python}`, `{input_file}`, `{output_file}`, `{output_dir}` |
+| Workspace setup command | `{python}` |
+| Command expectation | `{python}`, `{output_dir}` |
+
+`{python}` always resolves to the interpreter running micro-eval. Setup runs before cell artifact paths are available, so input/output placeholders are intentionally limited to agent and validation contexts.
 
 Use setup commands to:
 - Verify required files or directories exist

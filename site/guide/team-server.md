@@ -204,7 +204,7 @@ This stored name is what the UI sends as the `X-Micro-Eval-Member` header for ev
 | Cancel run | Yes |
 | Create / update template | Yes |
 
-The member name is stored in the workspace metadata and in the run result as `submitted_by`. It appears in the UI on run history and workspace details pages.
+The member name is stored in the workspace metadata and recorded in the run record as `owner` and within `server_context`. It appears in the UI on run history and workspace details pages.
 
 ::: warning Identity is self-reported, not verified
 Any member can claim any name. The header exists for attribution and audit trails — not for access control. If a member claims the wrong identity, they can attribute runs incorrectly, but they cannot gain any capabilities they would not otherwise have.

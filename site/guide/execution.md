@@ -173,7 +173,7 @@ expectations:
 ```yaml [command]
 expectations:
   - type: command
-    command: ["python", "-m", "pytest", "tests/", "-q"]
+    command: ["{python}", "-m", "pytest", "tests/", "-q"]
     cwd: "{output_dir}"
 ```
 

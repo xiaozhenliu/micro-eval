@@ -28,6 +28,7 @@ The top-level record written when a run completes. It captures the full configur
 | `status` | `"planned" \| "running" \| "completed" \| "failed" \| "partial"` | Lifecycle status. `partial` means some cells errored. |
 | `created_at` | `string` | ISO-8601 UTC timestamp. |
 | `completed_at` | `string \| null` | Set when the run finishes or fails. |
+| `failure_reason` | `string \| null` | Human-readable explanation when a run fails or crashes; `null` on success. |
 | `output_dir` | `string` | Absolute path to `.micro-eval/runs/<run-id>/`. |
 | `config_hash` | `string` | SHA-256 of the canonical eval.yaml used. |
 | `tasks` | `TaskSpec[]` | Inline copies of every task definition. |
@@ -45,7 +46,7 @@ The top-level record written when a run completes. It captures the full configur
 | `decision` | `DecisionReport \| null` | Final verdict. `null` until all cells complete. |
 | `denominator_policy` | `"all_cells" \| "successful_cells"` | How pass rates are computed across the run. |
 | `owner` | `string \| null` | Member who initiated the run. `null` in local mode; set by the worker from the job's `X-Micro-Eval-Member` header in server mode. |
-| `server_context` | `object \| null` | Server metadata (workspace_id, job_id, server_name, template info). `null` in local mode. |
+| `server_context` | `ServerContext \| null` | Typed Team Server provenance (`workspace_id`, `owner`, `template_id`, `template_version`, `job_id`, `server_name`). `null` in local mode. |
 
 ```json
 {
@@ -54,6 +55,7 @@ The top-level record written when a run completes. It captures the full configur
   "status": "completed",
   "created_at": "2026-06-15T09:00:00Z",
   "completed_at": "2026-06-15T09:04:22Z",
+  "failure_reason": null,
   "output_dir": "/home/user/project/.micro-eval/runs/run-2026-0615-a3f9",
   "config_hash": "sha256:4e3d1a...",
   "tasks": ["..."],
