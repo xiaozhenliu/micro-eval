@@ -75,7 +75,7 @@ intentionally private.
   wheel/sdist allowlists, version consistency, projection plan, and shell-safety
   gates. The existing Turbopack NFT tracing warning did not prevent the build.
 - `uv run python scripts/release/public_projection.py plan --source WORKTREE --json` — passed with 425 public, 103 private, 2 generated, and 427 candidate paths.
-- `git check-ignore` returned no match for the governance ticket; `git ls-files .scratch/` listed all 15 durable work-record files.
+- `git check-ignore` returned no match for the governance ticket; `git ls-files .scratch/` listed all 14 durable work-record files.
 - `git diff --check` and `git diff --cached --check` — passed.
 
 ## Risks and follow-ups
