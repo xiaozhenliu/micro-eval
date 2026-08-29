@@ -4,6 +4,12 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- The `dev` → `main` release now uses a fail-closed public/private/generated path policy, constructs `main` from an empty candidate tree, builds allowlisted wheel/sdist artifacts from that public tree, and removes previously tracked local test cache files.
+- Local projection writes a policy-bound verified receipt. Remote publication is a separate `publish --expected-sha <FULL_SHA>` action and rejects missing, stale, or unverified receipts before announcing `origin/main`.
+- One-command release staging leaves local `main` unchanged until every candidate gate passes and can be retried safely. Optional annotated tags are version-bound to the verified SHA and pushed atomically with `main`; publication aborts if the public remote contains `dev`.
+
 ## 0.4.5 - 2026-08-08
 
 ### Fixed

@@ -3,7 +3,7 @@ title: micro-eval 产品/服务安全规范
 doc_type: reference
 status: active
 created_at: 2026-06-03T09:28+08:00
-updated_at: 2026-06-12T13:05+08:00
+updated_at: 2026-08-29T09:41+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -36,7 +36,11 @@ related:
 
 ## 发布与分支边界
 
-- `main` 发布分支不得跟踪 `.codex/`、`.understand-anything/`、`docs/dev/`、`docs/superpowers/`、`docs/_archive/`、`docs/references/`、`docs/bug_reports/`、BRD、PRD。
+- `scripts/release/public-projection.toml` 是公开路径分类的唯一 source of truth；所有 tracked 路径必须明确属于 public、private 或 generated，未知/冲突路径必须中止发布。
+- `main` 必须与白名单生成的候选公开树完全一致；private、本地产物和历史泄漏路径不得因 merge 继承进入候选树。
+- 候选版本必须先完成测试、构建和归档验证，再通过 compare-and-swap 原子更新本地 `main`；失败不得移动 `main`。
+- wheel/sdist 必须从候选公开树构建并逐项校验归档清单，不能读取日常 `dev` 工作区中的未跟踪日志、缓存或本地 issue。
+- public Git remote 只能接收 verified `main` 和明确批准、指向同一 SHA 的 annotated tag；public remote 出现 `dev` 时发布必须中止，禁止 `--all` 和 `--mirror`。
 - 发布 evidence 必须记录安全相关验证结果。
 - 发布脚本生成的 `AGENTS.md` / `CLAUDE.md` 只能提供 main 分支必要 guardrails，不应泄露 dev-only 内容。
 

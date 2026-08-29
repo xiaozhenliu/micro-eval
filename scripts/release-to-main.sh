@@ -1,216 +1,240 @@
 #!/usr/bin/env bash
-# release-to-main.sh — Safely publish dev to main with dev-only file filtering.
-#
-# Usage:  scripts/release-to-main.sh [--dry-run]
-#
-# Strategy: merge --no-commit (never auto-commit), strip dev-only files from
-# the index, VERIFY nothing dev-only survives, then commit and push.
-# The script never pushes dev. Dev stays local-only.
+# release-to-main.sh — Build and verify the fail-closed public projection.
 
 set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-cd "$REPO_ROOT"
+usage() {
+  cat <<'USAGE'
+Usage:
+  scripts/release-to-main.sh stage [--dry-run] [dev] [main]
+  scripts/release-to-main.sh publish --expected-sha SHA [--tag vX.Y.Z] [--dry-run] [dev] [main]
 
-DRY_RUN=false
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
+Compatibility forms:
+  scripts/release-to-main.sh [--dry-run] [--local-only|--no-push] [dev] [main]
+  scripts/release-to-main.sh --push --expected-sha SHA [--tag vX.Y.Z] [--dry-run] [dev] [main]
 
-# ─── Dev-only paths: tracked on dev, MUST NOT appear on main ─────────
-# Update this list when adding new dev-only directories or files.
-DEV_ONLY_PATTERNS=(
-  "*CLAUDE.md"
-  "TODOS.md"
-  "micro-eval-brd.md"
-  "micro-eval-prd.md"
-  "docs/dev"
-  "docs/superpowers"
-  "docs/_archive"
-  "docs/references"
-  "docs/bug_reports"
-  "docs/analysis"
-  "docs/security"
-  ".codex"
-)
+Default/local-only mode:
+  Classify every tracked dev path, build a deterministic public main tree in an
+  isolated worktree, validate that tree and its wheel/sdist, then write a local
+  verified receipt. It never contacts a remote.
 
-# ─── Gitignore block that main needs but dev doesn't ─────────────────
-read -r -d '' MAIN_GITIGNORE_EXTRAS << 'GITIGNORE_EOF' || true
+Push mode:
+  A separate action that requires the full SHA from a verified local receipt.
+  It atomically pushes only that exact SHA to origin/main and, when explicitly
+  requested, an annotated vX.Y.Z tag pointing to the same commit.
 
-# Dev-only docs (tracked on dev branch; never published to main)
-CLAUDE.md
-micro-eval-brd.md
-micro-eval-prd.md
-TODOS.md
-
-# Dev-only internal docs
-docs/dev/
-docs/superpowers/
-docs/_archive/
-docs/references/
-docs/bug_reports/
-docs/analysis/
-docs/security/
-.codex/
-GITIGNORE_EOF
-
-# ─── Helpers ──────────────────────────────────────────────────────────
+Options:
+  --local-only       Build and verify local main only (default).
+  --no-push          Alias for --local-only.
+  --push             Push-only mode; does not create or re-project main.
+  --expected-sha SHA Full verified main commit required by --push.
+  --tag vX.Y.Z       Also create and atomically push this exact release tag.
+  --dry-run          Plan projection, or validate a push receipt without pushing.
+  -h, --help         Show this help text and exit.
+USAGE
+}
 
 die() {
   echo "FATAL: $*" >&2
   exit 1
 }
 info() { echo "==> $*"; }
-warn() { echo "WARNING: $*" >&2; }
 
-abort_merge() {
-  warn "Aborting merge on main..."
-  git merge --abort 2>/dev/null || true
-  git checkout dev 2>/dev/null || true
-  die "$1"
-}
+MODE="local-only"
+DRY_RUN=false
+EXPECTED_SHA=""
+RELEASE_TAG=""
+EXPLICIT_MODE=""
+POSITIONAL_ARGS=()
 
-# ─── Precondition checks ─────────────────────────────────────────────
+if [[ "${1:-}" == "stage" ]]; then
+  EXPLICIT_MODE="local-only"
+  shift
+elif [[ "${1:-}" == "publish" ]]; then
+  MODE="push"
+  EXPLICIT_MODE="push"
+  shift
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --local-only|--no-push)
+      [[ "$EXPLICIT_MODE" != "push" ]] \
+        || die "Cannot combine --push with --local-only/--no-push."
+      MODE="local-only"
+      EXPLICIT_MODE="local-only"
+      ;;
+    --push)
+      [[ "$EXPLICIT_MODE" != "local-only" ]] \
+        || die "Cannot combine --push with --local-only/--no-push."
+      MODE="push"
+      EXPLICIT_MODE="push"
+      ;;
+    --expected-sha)
+      shift
+      [[ $# -gt 0 ]] || die "--expected-sha requires a full commit SHA."
+      EXPECTED_SHA="$1"
+      ;;
+    --tag)
+      shift
+      [[ $# -gt 0 ]] || die "--tag requires vX.Y.Z."
+      RELEASE_TAG="$1"
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        POSITIONAL_ARGS+=("$1")
+        shift
+      done
+      break
+      ;;
+    -*)
+      die "Unknown option: $1. Run with --help for usage."
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      ;;
+  esac
+  shift
+done
+
+[[ ${#POSITIONAL_ARGS[@]} -le 2 ]] \
+  || die "Expected at most source and target branches."
+
+SOURCE_BRANCH="${POSITIONAL_ARGS[0]:-dev}"
+TARGET_BRANCH="${POSITIONAL_ARGS[1]:-main}"
+PUSH_REMOTE="origin"
+
+[[ "$SOURCE_BRANCH" == "dev" ]] || die "Source branch must be dev."
+[[ "$TARGET_BRANCH" == "main" ]] || die "Target branch must be main."
+if [[ "$MODE" == "push" ]]; then
+  [[ -n "$EXPECTED_SHA" ]] || die "--push requires --expected-sha with the verified full SHA."
+elif [[ -n "$EXPECTED_SHA" ]]; then
+  die "--expected-sha is only valid with --push."
+fi
+if [[ "$MODE" != "push" && -n "$RELEASE_TAG" ]]; then
+  die "--tag is only valid with publish/--push."
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+PROJECTION_TOOL="scripts/release/public_projection.py"
+PROJECTION_POLICY="scripts/release/public-projection.toml"
 
 current_branch="$(git branch --show-current)"
-[[ "$current_branch" == "dev" ]] || die "Must be on dev branch (currently on $current_branch)"
-[[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash first."
+[[ "$current_branch" == "$SOURCE_BRANCH" ]] \
+  || die "Must be on $SOURCE_BRANCH branch (currently on $current_branch)."
+[[ -z "$(git status --porcelain)" ]] \
+  || die "Working tree is not clean. Commit or stash first."
 
-info "Running Python tests..."
-pytest_out="$(uv run pytest -q --timeout=60 2>&1)"
-if ! echo "$pytest_out" | grep -qE "^[0-9]+ passed"; then
-  echo "$pytest_out" | tail -5
-  die "Python tests failed"
-fi
-echo "$pytest_out" | tail -1
-
-info "Running UI tests..."
-vitest_out="$(cd ui && npx vitest run 2>&1)"
-if echo "$vitest_out" | grep -q "FAIL"; then
-  echo "$vitest_out" | tail -5
-  die "UI tests failed"
-fi
-echo "$vitest_out" | grep -E "PASS|Tests"
-
-info "Verifying UI build..."
-build_out="$(cd ui && npm run build 2>&1)"
-if ! echo "$build_out" | grep -q "Compiled successfully"; then
-  echo "$build_out" | tail -10
-  die "UI build failed"
-fi
-echo "$build_out" | grep "Compiled successfully"
-
-# ─── Version consistency ──────────────────────────────────────────────
-
-version_file="$(cat VERSION | tr -d '[:space:]')"
-version_py="$(grep '__version__' src/micro_eval/__init__.py | sed 's/.*"\(.*\)".*/\1/')"
-version_pkg="$(node -p "require('./ui/package.json').version")"
-[[ "$version_file" == "$version_py" ]] || die "VERSION ($version_file) != __init__.py ($version_py)"
-[[ "$version_file" == "$version_pkg" ]] || die "VERSION ($version_file) != package.json ($version_pkg)"
-info "Version: $version_file"
-
-# ─── Dry-run gate ─────────────────────────────────────────────────────
-
-if $DRY_RUN; then
-  info "[DRY RUN] All preconditions passed. Would merge dev → main, filter dev-only files, push main."
+if [[ "$MODE" == "push" ]]; then
+  push_args=(
+    uv run python "$PROJECTION_TOOL" --policy "$PROJECTION_POLICY" push
+    --target "$TARGET_BRANCH"
+    --remote "$PUSH_REMOTE"
+    --expected-sha "$EXPECTED_SHA"
+  )
+  $DRY_RUN && push_args+=(--dry-run)
+  [[ -z "$RELEASE_TAG" ]] || push_args+=(--tag "$RELEASE_TAG")
+  "${push_args[@]}"
+  if $DRY_RUN; then
+    info "[DRY RUN] Verified receipt accepted. No remote push performed."
+  else
+    info "Verified commit $EXPECTED_SHA pushed to $PUSH_REMOTE/$TARGET_BRANCH."
+  fi
   exit 0
 fi
 
-# ─── Merge dev → main (--no-commit: never auto-commit) ───────────────
+info "Checking fail-closed public path classification..."
+plan_json="$(
+  uv run python "$PROJECTION_TOOL" --policy "$PROJECTION_POLICY" \
+    plan --source "$SOURCE_BRANCH" --json
+)"
+info "Projection plan: $plan_json"
 
-dev_sha="$(git rev-parse HEAD)"
-info "Switching to main..."
-git checkout main
+version_file="$(tr -d '[:space:]' < VERSION)"
+info "Version: $version_file"
+info "Running the complete release preflight on dev..."
+scripts/release/preflight-release.sh "$version_file"
 
-info "Merging dev ($dev_sha) into main (--no-commit)..."
-# --no-commit prevents auto-commit so we can strip dev-only files first.
-# --no-ff ensures a merge commit even for fast-forward cases.
-git merge dev --no-commit --no-ff || true
-# "|| true" because --no-commit makes git exit 0 on success but the merge
-# may report conflicts.
-#
-# Auto-resolve modify/delete conflicts for dev-only paths. main never tracks
-# these files, so we always take the delete side. dev routinely edits them
-# (CLAUDE.md, docs/superpowers, docs/dev, ...); because main's copy is deleted,
-# git reports each as a modify/delete conflict. Their dev-side content is
-# irrelevant to main and is stripped below anyway, so removing them here clears
-# the conflict without dropping anything main should keep.
-for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
-  while IFS= read -r conflicted; do
-    [[ -n "$conflicted" ]] || continue
-    info "Auto-resolving dev-only conflict (delete): $conflicted"
-    git rm -f --quiet "$conflicted" 2>/dev/null \
-      || git rm -f --cached --quiet "$conflicted" 2>/dev/null || true
-  done < <(git diff --name-only --diff-filter=U -- "$pattern")
-done
-
-# Any conflict left now is a real content conflict on a file main keeps.
-if git ls-files -u | grep -q .; then
-  abort_merge "Merge conflicts detected. Resolve manually."
+if $DRY_RUN; then
+  info "[DRY RUN] Full preflight passed. Would build and verify local $TARGET_BRANCH only."
+  exit 0
 fi
 
-# ─── Restore main .gitignore ─────────────────────────────────────────
+info "Building deterministic public $TARGET_BRANCH tree..."
+project_json="$(
+  uv run python "$PROJECTION_TOOL" --policy "$PROJECTION_POLICY" project \
+    --source "$SOURCE_BRANCH" --target "$TARGET_BRANCH" \
+    --version "$version_file" --json
+)"
+candidate_sha="$(
+  echo "$project_json" \
+    | sed -n 's/.*"candidate_sha": "\([0-9a-f]\{40\}\)".*/\1/p'
+)"
+[[ -n "$candidate_sha" ]] || die "Projection did not return a candidate SHA."
+info "Candidate main: $candidate_sha"
 
-if ! grep -q "Dev-only internal docs" .gitignore 2>/dev/null; then
-  info "Appending dev-only exclusions to .gitignore..."
-  echo "$MAIN_GITIGNORE_EXTRAS" >> .gitignore
-  git add .gitignore
+validation_parent="$(mktemp -d)"
+validation_worktree="$validation_parent/main"
+cleanup_validation() {
+  git worktree remove --force "$validation_worktree" >/dev/null 2>&1 || true
+  rmdir "$validation_parent" >/dev/null 2>&1 || true
+}
+trap cleanup_validation EXIT
+
+git worktree add --detach "$validation_worktree" "$candidate_sha" >/dev/null
+
+info "Running Python tests on candidate public tree..."
+candidate_pytest="$(
+  cd "$validation_worktree"
+  PYTHONPATH="$validation_worktree/src" \
+    uv run --project "$REPO_ROOT" pytest -q --timeout=60 2>&1
+)"
+echo "$candidate_pytest" | grep -qE "^[0-9]+ passed" || {
+  echo "$candidate_pytest" | tail -5
+  die "Python tests failed on candidate public tree."
+}
+echo "$candidate_pytest" | tail -1
+
+if [[ -d "$REPO_ROOT/ui/node_modules" ]]; then
+  ln -s "$REPO_ROOT/ui/node_modules" "$validation_worktree/ui/node_modules"
 fi
+info "Running UI tests and build on candidate public tree..."
+candidate_vitest="$(cd "$validation_worktree/ui" && npx vitest run 2>&1)"
+echo "$candidate_vitest" | grep -q "FAIL" && {
+  echo "$candidate_vitest" | tail -5
+  die "UI tests failed on candidate public tree."
+}
+candidate_build="$(cd "$validation_worktree/ui" && npm run build 2>&1)"
+echo "$candidate_build" | grep -q "Compiled successfully" || {
+  echo "$candidate_build" | tail -10
+  die "UI build failed on candidate public tree."
+}
 
-# ─── Strip dev-only files from the index ──────────────────────────────
+mkdir -p "$REPO_ROOT/dist"
+info "Building wheel and sdist from candidate public tree..."
+(cd "$validation_worktree" && uv build --out-dir "$REPO_ROOT/dist")
 
-for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
-  if git ls-files "$pattern" | grep -q .; then
-    info "Stripping dev-only: $pattern"
-    git rm --cached -r "$pattern" 2>/dev/null || true
-  fi
-done
+cleanup_validation
+trap - EXIT
 
-# ─── HARD VERIFICATION: no dev-only file may be staged ────────────────
+info "Verifying local main tree, artifact contents, and release receipt..."
+uv run python "$PROJECTION_TOOL" --policy "$PROJECTION_POLICY" verify \
+  --candidate-sha "$candidate_sha" --target "$TARGET_BRANCH" \
+  --dist-dir "$REPO_ROOT/dist" \
+  --version "$version_file"
 
-info "Verifying no dev-only files are staged..."
-leaked=""
-for pattern in "${DEV_ONLY_PATTERNS[@]}"; do
-  # Only flag files that would be ADDED or MODIFIED (not deleted).
-  # After git rm --cached, deleted files in diff are expected and safe.
-  staged="$(git diff --cached --name-only --diff-filter=ACMR -- "$pattern" 2>/dev/null || true)"
-  if [[ -n "$staged" ]]; then
-    leaked="$leaked  $pattern ($staged)\n"
-  fi
-done
-
-if [[ -n "$leaked" ]]; then
-  echo ""
-  echo "!!! DEV-ONLY FILES LEAKED INTO MAIN STAGING AREA !!!"
-  echo -e "$leaked"
-  abort_merge "Dev-only files detected in staging. Release aborted."
-fi
-info "Verification passed: no dev-only files in staging."
-
-# ─── Commit the merge ────────────────────────────────────────────────
-
-git commit -m "release: merge dev v$version_file into main
-
-Source: dev @ $dev_sha
-Automated by scripts/release-to-main.sh — dev-only files stripped."
-
-# ─── Final test on main ──────────────────────────────────────────────
-
-info "Running tests on main..."
-pytest_main="$(uv run pytest -q --timeout=60 2>&1)"
-if ! echo "$pytest_main" | grep -qE "^[0-9]+ passed"; then
-  echo "$pytest_main" | tail -5
-  die "Tests failed on main after merge! NOT pushing. Fix manually."
-fi
-echo "$pytest_main" | tail -1
-
-# ─── Push main only ──────────────────────────────────────────────────
-
-info "Pushing main to origin..."
-git push origin main
-
-# ─── Return to dev ────────────────────────────────────────────────────
-
-info "Switching back to dev..."
-git checkout dev
-
-echo ""
-info "Release complete: main @ v$version_file pushed. Dev is local-only."
+info "Local projection complete. No remote push performed."
+info "Verified main commit: $candidate_sha"
+info "To push this exact verified commit after explicit authorization:"
+info "scripts/release-to-main.sh publish --expected-sha $candidate_sha dev main"
+info "To atomically publish main plus its annotated version tag:"
+info "scripts/release-to-main.sh publish --expected-sha $candidate_sha --tag v$version_file dev main"

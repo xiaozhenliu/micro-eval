@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+ui/node_modules/
+ui/.next/
+site/node_modules/
+site/.vitepress/dist/
+site/.vitepress/cache/
+
+# micro-eval runtime
+.micro-eval/
+examples/**/report.html
+
+# Local tools and work records
+.agents/
+.claude/
+.codex/
+.omx/
+.plan/
+.scratch/
+.superpowers/
+.understand-anything/
+.playwright-mcp/
+.rtk/
+.gstack/
+
+# Dev-only tracked paths
+CLAUDE.md
+CONTEXT.md
+TODOS.md
+micro-eval-brd.md
+micro-eval-prd.md
+docs/dev/
+docs/superpowers/
+docs/_archive/
+docs/references/
+docs/bug_reports/
+docs/analysis/
+docs/security/
+
+# Local reports and editor files
+.coverage
+.DS_Store
+.vscode/
+.idea/
+.zed/

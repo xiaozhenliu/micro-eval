@@ -7,6 +7,7 @@ dist/
 .pytest_cache/
 
 # Node
+node_modules/
 ui/node_modules/
 ui/.next/
 site/node_modules/
@@ -40,6 +41,9 @@ micro-eval-prd.md
 # Local analysis/tool caches
 .understand-anything/
 .coverage
+.omx/
+.scratch/
+.superpowers/
 
 # rtk (Rust Token Killer) local cache/filters — not project content
 .rtk/

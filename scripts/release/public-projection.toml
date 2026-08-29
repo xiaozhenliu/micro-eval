@@ -1,0 +1,126 @@
+version = 1
+
+[paths]
+public = [
+  ".github/**",
+  "CHANGELOG.md",
+  "LICENSE",
+  "NOTICE",
+  "README.md",
+  "README.zh-CN.md",
+  "VERSION",
+  "docs/DEVELOPMENT.md",
+  "docs/README.md",
+  "docs/agents/**",
+  "docs/documentation-standard.md",
+  "docs/engineering/**",
+  "docs/releases/**",
+  "eval.yaml.example",
+  "examples/**",
+  "pyproject.toml",
+  "scripts/**",
+  "site/**",
+  "src/**",
+  "tests/**",
+  "ui/.gitignore",
+  "ui/AGENTS.md",
+  "ui/README.md",
+  "ui/eslint.config.mjs",
+  "ui/next-env.d.ts",
+  "ui/next.config.ts",
+  "ui/package-lock.json",
+  "ui/package.json",
+  "ui/postcss.config.mjs",
+  "ui/public/**",
+  "ui/src/**",
+  "ui/tsconfig.json",
+  "ui/vitest.config.ts",
+  "uv.lock",
+]
+private = [
+  ".agents/**",
+  ".claude/**",
+  ".codex/**",
+  ".omx/**",
+  ".plan/**",
+  ".scratch/**",
+  ".superpowers/**",
+  ".understand-anything/**",
+  "**/CLAUDE.md",
+  "CLAUDE.md",
+  "CONTEXT.md",
+  "TODOS.md",
+  "docs/_archive/**",
+  "docs/analysis/**",
+  "docs/bug_reports/**",
+  "docs/dev/**",
+  "docs/references/**",
+  "docs/security/**",
+  "docs/superpowers/**",
+  "micro-eval-brd.md",
+  "micro-eval-prd.md",
+  "node_modules/**",
+]
+required_public = [
+  "LICENSE",
+  "README.md",
+  "VERSION",
+  "pyproject.toml",
+  "scripts/release/public-projection.toml",
+  "scripts/release/public_projection.py",
+  "scripts/release-to-main.sh",
+  "src/micro_eval/__init__.py",
+]
+forbidden_public = [
+  ".env",
+  ".env.*",
+  "**/.env",
+  "**/.env.*",
+  ".omx/**",
+  ".scratch/**",
+  ".superpowers/**",
+  "**/.next/**",
+  "**/.pytest_cache/**",
+  "**/.vite/**",
+  "**/CLAUDE.md",
+  "**/node_modules/**",
+  "*.key",
+  "*.pem",
+  "**/*.key",
+  "**/*.pem",
+  "node_modules/**",
+]
+forbidden_content_markers = [
+  "-----BEGIN RSA PRIVATE KEY-----",
+  "-----BEGIN OPENSSH PRIVATE KEY-----",
+  "-----BEGIN EC PRIVATE KEY-----",
+  "-----BEGIN DSA PRIVATE KEY-----",
+]
+content_scan_exclude = [
+  "scripts/release/public-projection.toml",
+]
+
+[[generated]]
+source = ".codex/skills/micro-eval-release/assets/templates/agents-publish-template.md"
+target = "AGENTS.md"
+
+[[generated]]
+source = "scripts/release/main.gitignore"
+target = ".gitignore"
+
+[artifacts]
+sdist = [
+  ".gitignore",
+  "LICENSE",
+  "NOTICE",
+  "PKG-INFO",
+  "README.md",
+  "README.zh-CN.md",
+  "VERSION",
+  "pyproject.toml",
+  "src/micro_eval/**",
+]
+wheel = [
+  "micro_eval/**",
+  "micro_eval-*.dist-info/**",
+]
