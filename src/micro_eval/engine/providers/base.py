@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from micro_eval.models.artifact import ArtifactRef
-from micro_eval.models.task import IsolationLevel, NetworkPolicy, TrustLevel
+from micro_eval.models.environment import WorkspaceObservation
+from micro_eval.models.task import IsolationLevel, NetworkPolicy, TrustLevel, WorkspaceType
 
 
 @dataclass
@@ -19,6 +19,8 @@ class WorkspaceHandle:
     isolation_level: IsolationLevel
     metadata: dict[str, str] = field(default_factory=dict)
     source_repo: Path | None = None
+    workspace_type: WorkspaceType = WorkspaceType.blank
+    setup_exit_code: int | None = None
 
 
 @dataclass
@@ -56,9 +58,12 @@ class WorkspaceProvider(Protocol):
         timeout_s: float | None = None,
     ) -> CommandResult: ...
 
-    def collect_artifacts(self, handle: WorkspaceHandle) -> list[ArtifactRef]: ...
-
-    def collect_diff(self, handle: WorkspaceHandle) -> str | None: ...
+    def observe_final(
+        self,
+        handle: WorkspaceHandle,
+        *,
+        byte_limit: int,
+    ) -> WorkspaceObservation: ...
 
     def snapshot(self, handle: WorkspaceHandle) -> str: ...
 

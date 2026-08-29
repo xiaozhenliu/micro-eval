@@ -3,7 +3,7 @@ title: micro-eval Release Process
 doc_type: reference
 status: active
 created_at: 2026-06-03T13:09+08:00
-updated_at: 2026-07-02T14:10+08:00
+updated_at: 2026-08-29T09:41+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -32,29 +32,82 @@ This document is the human-readable release reference. The release scripts live 
 - Keep executable release automation inside `scripts/release/` and `scripts/release-to-main.sh`.
 - Record release evidence and dependency inventory before publishing.
 - Publish `main` only through the existing projection script from a clean `dev` checkout.
+- Make `scripts/release/public-projection.toml` the single path-classification source of truth.
+- Keep local projection as the default; require a separate verified-SHA push action before updating `origin/main`.
+- Keep the public remote free of `dev`; public repositories have no private branches.
+- Move local `main` only after every candidate test, build, and artifact gate passes.
 - Avoid leaking secrets or runtime artifacts into release documentation or commits.
 
 ## Release boundaries
 
 - Daily development happens on `dev`.
+- Keep `dev` local or on a separate private remote. A branch inside a public
+  repository is public even when it is not the default branch.
+- Public GitHub CI runs on projected `main` and public pull requests; it does
+  not require pushing private `dev` to the public repository.
 - Do not manually switch the current worktree to `main` for publishing.
-- Publish to `main` only with:
+- Stage local `main` only with the release script. This one-command stage is
+  local-only and never contacts a remote:
 
 ```bash
-scripts/release-to-main.sh dev main
+scripts/release-to-main.sh stage dev main
 ```
 
-- `main` must not track:
-  - `.codex/`
-  - `.understand-anything/`
-  - `docs/dev/`
-  - `docs/superpowers/`
-  - `docs/_archive/`
-  - `docs/references/`
-  - `docs/bug_reports/`
-  - `micro-eval-brd.md`
-  - `micro-eval-prd.md`
-- `main` `AGENTS.md` is the single source of agent instructions and must equal `.codex/skills/micro-eval-release/assets/templates/agents-publish-template.md`. `CLAUDE.md` is dev-only: it is a `@AGENTS.md` stub matched by the `*CLAUDE.md` exclusion and is intentionally NOT projected to `main` (Claude Code on a `main` checkout reads `AGENTS.md` directly). `main` has never tracked a root `CLAUDE.md`.
+The equivalent explicit spelling is:
+
+```bash
+scripts/release-to-main.sh --local-only dev main
+```
+
+`--no-push` is an alias for `--local-only`. Local projection prints a verified
+full SHA. Only after explicit authorization may that exact SHA be published in
+a separate action:
+
+```bash
+scripts/release-to-main.sh publish --expected-sha <FULL_VERIFIED_SHA> dev main
+```
+
+The publish action rejects missing, unverified, stale, abbreviated, or
+non-`main` SHAs, and it aborts if the public remote contains `dev`. It displays
+`origin/main` and the exact commit before running Git.
+
+If both `main` and the release tag are explicitly approved, publish them in one
+atomic remote update:
+
+```bash
+scripts/release-to-main.sh publish --expected-sha <FULL_VERIFIED_SHA> \
+  --tag vX.Y.Z dev main
+```
+
+The tag must be annotated, must equal `v` plus the receipt version, and must
+point to the same verified commit as `main`. Never push `dev`, `--all`, or
+`--mirror` to the public remote.
+
+## Public projection policy
+
+`scripts/release/public-projection.toml` classifies every tracked source path:
+
+- `public`: restored from the committed `dev` SHA into the candidate tree;
+- `private`: retained on `dev` and never restored into `main`;
+- `generated`: written from an explicit source/target mapping.
+
+A path matching zero or multiple classes aborts release. Known-sensitive paths
+and private-key markers are additional deny checks, not the publication source
+of truth. The projection implementation lives in
+`scripts/release/public_projection.py` and is exercised through the same
+interface used by the release script and tests.
+
+The Module constructs the candidate from an empty index in an isolated worktree,
+so an old leak already present on `main` disappears unless the current public
+policy restores it. It generates `AGENTS.md` from the release Skill asset and
+`.gitignore` from `scripts/release/main.gitignore`; both are verified as part of
+the exact candidate tree rather than by duplicated post-release path lists.
+
+Candidate construction writes a `staged` local receipt but does not move
+`main`. After candidate Python/UI tests, builds, sensitive-path checks, and
+wheel/sdist validation pass, verification updates local `main` with an atomic
+compare-and-swap and marks the receipt `verified`. A failed candidate leaves
+`main` unchanged, so the stage can be retried after fixing the cause.
 
 ## Version source strategy
 
@@ -92,7 +145,7 @@ Before preparing a release, identify:
 - Release type: patch, minor, major, or prerelease.
 - User-visible changes for `CHANGELOG.md`.
 - Verification scope and any known risks.
-- Whether to create a local annotated tag.
+- Whether to atomically publish an annotated `vX.Y.Z` tag for the verified SHA.
 - Whether pushing branches/tags is allowed. Default: no push unless explicitly confirmed.
 
 ## Version bump workflow
@@ -188,7 +241,7 @@ The release evidence should include:
 - Code review / architecture review status, when performed.
 - UltraQA or adversarial smoke status, when performed.
 - Known caveats.
-- Main projection verification after `scripts/release-to-main.sh dev main`.
+- Main projection verification after `scripts/release-to-main.sh stage dev main`.
 
 ## Preflight validation matrix
 
@@ -198,6 +251,10 @@ Run the release checks appropriate to the changed files. For release work, the d
 scripts/release/check-version-consistency.py --version "$(cat VERSION)"
 scripts/release/preflight-release.sh "$(cat VERSION)"
 ```
+
+Preflight classifies the current worktree, builds wheel/sdist from explicit
+Hatch inputs, and verifies every archive entry against the artifact allowlist.
+Unknown, absolute, traversing, or linked archive entries fail the release.
 
 Security-oriented greps must check that trusted paths do not introduce shell subprocess execution:
 
@@ -224,31 +281,49 @@ Before committing:
 git commit -m "Prepare vX.Y.Z release"
 ```
 
-## Publish dev to main
+## Project dev to main
 
-From a clean `dev` working tree:
-
-```bash
-scripts/release-to-main.sh dev main
-```
-
-After publishing, verify:
+From a clean `dev` working tree, perform the one-command local stage:
 
 ```bash
-test -z "$(git ls-files '.codex/*' '.understand-anything/*' 'docs/dev/*' 'docs/superpowers/*' 'docs/_archive/*' 'docs/references/*' 'docs/bug_reports/*')"
+scripts/release-to-main.sh stage dev main
 ```
 
-Also confirm the release commit exists on `main`, that `AGENTS.md` matches the skill asset template, and that no root `CLAUDE.md` is tracked on `main` (it is dev-only).
+Use `scripts/release-to-main.sh --help` to inspect the behavior before running
+it. The stage never switches the active `dev` worktree or contacts a remote. It
+first invokes the complete release preflight, constructs a candidate in an
+isolated worktree, reruns Python/UI gates against the public tree, builds
+wheel/sdist from that tree, verifies their contents, then atomically moves local
+`main` and stores a verified receipt under the Git common directory. Any failed
+gate leaves local `main` unchanged.
 
-## Local tag workflow
-
-If the user approves tagging, create an annotated local tag after `dev` and `main` are aligned for the release:
+Review the printed full SHA. If and only if the user authorizes updating
+`origin/main`, execute the separate publish action with that exact value:
 
 ```bash
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+scripts/release-to-main.sh publish --expected-sha <FULL_VERIFIED_SHA> dev main
 ```
 
-Do not push branches or tags unless the user explicitly confirms pushing.
+The command rechecks that local `main` equals the SHA, the receipt is `verified`,
+its policy digest still matches, and public `origin` does not contain `dev`. It
+then announces `Push target: origin/main` and `Verified commit: <SHA>` before
+pushing only `<SHA>:refs/heads/main`. Authorization to publish `main` does not
+authorize a tag unless `--tag vX.Y.Z` is also explicitly present.
+
+## Atomic tag workflow
+
+Do not run an unqualified `git tag` while the active worktree remains on `dev`;
+that could tag the private development commit. If the user explicitly approves
+both the public branch and tag, use the verified publish interface:
+
+```bash
+scripts/release-to-main.sh publish --expected-sha <FULL_VERIFIED_SHA> \
+  --tag vX.Y.Z dev main
+```
+
+The Module creates or validates an annotated tag for the exact verified SHA and
+uses `git push --atomic` so remote `main` and the tag update together or neither
+updates.
 
 ## Abort conditions
 
@@ -259,6 +334,14 @@ Abort the release and fix the cause when any of these are true:
 - Release evidence or dependency inventory is missing.
 - Security grep finds shell subprocess execution in trusted paths.
 - Tests or build fail.
+- A candidate gate fails; local `main` must remain at its previous SHA.
 - `dev` working tree is dirty before `scripts/release-to-main.sh`.
 - `main` projection still tracks dev-only docs.
+- A tracked path is unknown, multiply classified, or forbidden in public output.
+- A wheel/sdist entry is outside the artifact allowlist.
+- The local `main` tree differs from the policy-derived candidate tree.
+- The expected push SHA lacks a current `verified` receipt.
+- The public remote contains `dev`, or a requested tag is not the annotated
+  version tag for the same verified SHA.
+- `--push` was selected without explicit authorization; use the default local-only mode.
 - Secrets, credential paths, or runtime artifacts are present in release docs or staged changes.

@@ -64,7 +64,13 @@ def main() -> int:
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         if "replay_canonical" in fixture:
             fixture["replay_canonical"]["tool_version"] = version
-            write_text_if_changed(fixture_path, json.dumps(fixture, indent=2) + "\n")
+            fixture_text = json.dumps(fixture, indent=2) + "\n"
+            write_text_if_changed(fixture_path, fixture_text)
+            golden_fixture_path = (
+                ROOT / "tests" / "contract" / "golden" / "run-p0-contract.json"
+            )
+            if golden_fixture_path.exists():
+                write_text_if_changed(golden_fixture_path, fixture_text)
 
     print(f"Synced current version surfaces to {version}")
     return 0

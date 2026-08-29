@@ -12,7 +12,12 @@ from micro_eval.engine.providers.base import IsolationLevel, ProviderRegistry, W
 from micro_eval.engine.providers.git_worktree import GitWorktreeProvider, WorkspaceProviderError
 from micro_eval.engine.providers.os_policy import BubblewrapProvider, SeatbeltProvider
 from micro_eval.engine.providers.remote import E2BProvider, ModalProvider
-from micro_eval.models.environment import CellSnapshot, SameStartSnapshot, SnapshotGateResult
+from micro_eval.models.environment import (
+    CellSnapshot,
+    SameStartSnapshot,
+    SnapshotGateResult,
+    WorkspaceObservation,
+)
 from micro_eval.models.ids import canonical_digest, safe_path_segment
 from micro_eval.models.task import TaskSpec, WorkspaceSpec, WorkspaceType
 
@@ -119,7 +124,7 @@ class WorkspaceManager:
 
         snapshot = self.collect_cell_snapshot(
             handle.workspace_path,
-            setup_exit_code=None,
+            setup_exit_code=handle.setup_exit_code,
             cleanup_status=None,
         )
         prepared = PreparedWorkspace(
@@ -174,13 +179,39 @@ class WorkspaceManager:
             self.cleanup_workspace(prepared)
         self._prepared.clear()
 
-    def collect_diff(self, worktree_path: Path) -> Optional[str]:
-        """Collect git diff from a worktree."""
+    def observe_final(self, prepared: PreparedWorkspace, *, byte_limit: int) -> WorkspaceObservation:
+        """Collect raw, bounded facts before any validator can mutate the workspace."""
+        if prepared.handle is None:
+            workspace_type = WorkspaceType.blank
+            return WorkspaceObservation(
+                workspace_type=workspace_type,
+                warnings=("observation_unavailable",),
+            )
+        provider = self._registry.select(prepared.handle.isolation_level)
+        if provider is None:
+            return WorkspaceObservation(
+                workspace_type=prepared.handle.workspace_type,
+                warnings=("observation_unavailable",),
+            )
         try:
-            result = _run_git(["diff", "--no-color"], cwd=worktree_path, check=True)
-            return result.stdout if result.stdout.strip() else None
-        except WorkspaceError:
-            return None
+            return provider.observe_final(prepared.handle, byte_limit=max(0, byte_limit))
+        except Exception as exc:  # noqa: BLE001 - preserve a normal result with an explicit caveat.
+            return WorkspaceObservation(
+                workspace_type=prepared.handle.workspace_type,
+                warnings=(f"observation_failed:{exc.__class__.__name__}",),
+            )
+
+    def collect_diff(self, worktree_path: Path) -> Optional[str]:
+        """Legacy raw-diff helper retained for ad-hoc callers."""
+        handle = WorkspaceHandle(
+            workspace_path=worktree_path,
+            provider_name="git_worktree",
+            isolation_level=IsolationLevel.logical,
+            workspace_type=WorkspaceType.git_repo,
+        )
+        return self._git_worktree_provider.observe_final(
+            handle, byte_limit=50 * 1024 * 1024
+        ).diff_text
 
     def _resolve_source_path(self, path_value: str | None) -> Path:
         """Delegate to provider for containment-guarded source resolution."""

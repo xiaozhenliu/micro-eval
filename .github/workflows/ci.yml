@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches:
-      - dev
       - main
 
 permissions:
@@ -48,6 +47,24 @@ jobs:
             echo "FAIL: forbidden shell pattern found"
             exit 1
           fi
+
+  release-policy:
+    name: Public projection and artifact policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Verify every tracked path is classified
+        run: python scripts/release/public_projection.py plan --source HEAD
+      - name: Build allowlisted wheel and sdist
+        run: uv build
+      - name: Verify archive contents
+        run: >-
+          python scripts/release/public_projection.py verify-artifacts
+          --dist-dir dist --version "$(cat VERSION)"
 
   golden-sync:
     name: Golden contract sync check
