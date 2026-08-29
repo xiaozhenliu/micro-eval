@@ -4,11 +4,23 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+## 0.4.6 - 2026-08-29
+
 ### Fixed
 
+- Normal single-turn and conversational cells now share one finalization path: observe and persist the live workspace, validate it before cleanup, then commit the canonical cell/run result. `blank`, `files`, and `git_repo` workspaces no longer disappear before their final validator observation.
+- Git workspaces persist bounded, redacted tracked and safe-untracked final diffs before cleanup; setup state, validator side effects, artifact ownership, evaluation persistence, and cleanup status now follow explicit Module seams.
 - The `dev` → `main` release now uses a fail-closed public/private/generated path policy, constructs `main` from an empty candidate tree, builds allowlisted wheel/sdist artifacts from that public tree, and removes previously tracked local test cache files.
 - Local projection writes a policy-bound verified receipt. Remote publication is a separate `publish --expected-sha <FULL_SHA>` action and rejects missing, stale, or unverified receipts before announcing `origin/main`.
 - One-command release staging leaves local `main` unchanged until every candidate gate passes and can be retried safely. Optional annotated tags are version-bound to the verified SHA and pushed atomically with `main`; publication aborts if the public remote contains `dev`.
+
+### Security
+
+- Public releases fail closed on unclassified, conflicting, sensitive, or private-key-bearing paths; public Git remotes may receive only the verified `main` SHA and an explicitly approved annotated version tag, never private `dev`, `--all`, or `--mirror` output.
+
+### Verification
+
+- Added real Kernel/Adapter/Workspace/Store lifecycle E2E coverage and temporary Git/bare-origin release coverage for candidate failure, retry, exact receipts, private-path exclusion, public-`dev` rejection, and atomic tag publication.
 
 ## 0.4.5 - 2026-08-08
 
