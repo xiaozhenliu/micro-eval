@@ -92,6 +92,22 @@ def test_policy_rejects_sensitive_path_even_when_public(tmp_path: Path) -> None:
         policy.plan(repo, "HEAD")
 
 
+def test_policy_accepts_brackets_in_concrete_git_path(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path, {"src/app/[jobId]/route.py": "value = 1\n"})
+    policy = public_projection.ProjectionPolicy.load(
+        _write_policy(
+            tmp_path,
+            public="src/**",
+            private="private/**",
+            forbidden="never/**",
+        )
+    )
+
+    plan = policy.plan(repo, "HEAD")
+
+    assert plan.public_paths == ("src/app/[jobId]/route.py",)
+
+
 def test_candidate_scan_rejects_private_key_marker(tmp_path: Path) -> None:
     private_key_marker = "-----BEGIN OPENSSH " "PRIVATE KEY-----"
     repo = _init_repo(tmp_path, {"src/key.txt": f"{private_key_marker}\n"})

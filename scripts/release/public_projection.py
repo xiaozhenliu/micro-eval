@@ -183,7 +183,7 @@ def _validate_repo_path(path: str, *, allow_glob: bool = False) -> None:
     parts = PurePosixPath(path).parts
     if ".." in parts or "." in parts:
         raise ProjectionError(f"path traversal is not allowed: {path!r}")
-    if not allow_glob and any(char in path for char in "*?["):
+    if not allow_glob and any(char in path for char in "*?"):
         raise ProjectionError(f"unexpected glob in concrete path: {path!r}")
 
 
