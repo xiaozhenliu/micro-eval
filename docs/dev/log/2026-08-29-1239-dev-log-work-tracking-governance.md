@@ -3,7 +3,7 @@ title: Development Log - Work Tracking Governance
 doc_type: dev_log
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T14:08+08:00
+updated_at: 2026-08-29T14:10+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:
@@ -69,9 +69,9 @@ intentionally private.
 ## Verification
 
 - `uv run python scripts/check-work-governance.py` — passed.
-- Focused governance and projection tests — passed: 13 tests.
+- Focused governance and projection tests — passed: 14 tests.
 - `uv run pytest tests/integration/test_release_to_main.py -q` — passed: 18 tests.
-- Full release preflight — passed: 658 Python tests, 115 UI tests, UI lint/build,
+- Full release preflight — passed: 659 Python tests, 115 UI tests, UI lint/build,
   wheel/sdist allowlists, version consistency, projection plan, and shell-safety
   gates. The existing Turbopack NFT tracing warning did not prevent the build.
 - `uv run python scripts/release/public_projection.py plan --source WORKTREE --json` — passed with 425 public, 103 private, 2 generated, and 427 candidate paths.

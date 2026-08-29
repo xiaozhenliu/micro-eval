@@ -114,9 +114,9 @@ Blocked by: None
   enforce the model without contacting GitHub.
 - Verification: `uv run python scripts/check-work-governance.py` passed; the
   public projection plan reported 425 public, 103 private, 2 generated, and
-  427 candidate paths; focused governance/public-projection tests passed (13);
+  427 candidate paths; focused governance/public-projection tests passed (14);
   `uv run pytest tests/integration/test_release_to_main.py -q` passed (18);
-  full release preflight passed (658 Python tests, 115 UI tests, UI lint/build,
+  full release preflight passed (659 Python tests, 115 UI tests, UI lint/build,
   wheel/sdist allowlists, and version consistency); both `git diff --check`
   modes passed.
 - Follow-up: `GH-15` open/closed state still requires human triage; no GitHub
