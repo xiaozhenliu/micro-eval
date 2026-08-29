@@ -1,0 +1,7 @@
+interface:
+  display_name: "micro-eval Site"
+  short_description: "Update and verify the bilingual site from code changes"
+  default_prompt: "Use $micro-eval-site to analyze the current repository changes, update every affected English and Chinese site page, and verify the result."
+
+policy:
+  allow_implicit_invocation: true

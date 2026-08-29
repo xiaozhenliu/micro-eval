@@ -1,0 +1,219 @@
+version = 1
+
+behavior_globs = [
+  "VERSION",
+  "CHANGELOG.md",
+  "README.md",
+  "README.zh-CN.md",
+  "pyproject.toml",
+  "eval.yaml.example",
+  "src/micro_eval/*.py",
+  "src/micro_eval/**/*.py",
+  "ui/src/**",
+  "examples/**",
+  "docs/engineering/security*.md",
+]
+
+[[checks]]
+id = "site-build"
+cwd = "site"
+argv = ["npm", "run", "docs:build"]
+always = true
+
+[[checks]]
+id = "version-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_version_consistency.py"]
+
+[[checks]]
+id = "cli-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/integration/test_cli_commands.py"]
+
+[[checks]]
+id = "model-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_canonical_models.py", "tests/unit/test_configuration_validators.py", "tests/unit/test_config_loader.py"]
+
+[[checks]]
+id = "task-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_validator.py", "tests/unit/test_canonical_models.py"]
+
+[[checks]]
+id = "execution-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_command.py", "tests/unit/test_provider_protocol.py", "tests/unit/test_workspace_containment.py"]
+
+[[checks]]
+id = "evaluation-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_validator.py", "tests/unit/test_llm_judge.py", "tests/unit/test_conversational_judge.py"]
+
+[[checks]]
+id = "decision-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_aggregation.py", "tests/unit/test_trend_compute.py"]
+
+[[checks]]
+id = "storage-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_sqlite_store.py", "tests/unit/test_run_store_boundaries.py", "tests/unit/test_artifact_store_boundaries.py"]
+
+[[checks]]
+id = "trace-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/test_trace_provider.py", "tests/unit/test_langfuse_provider.py"]
+
+[[checks]]
+id = "server-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/server"]
+
+[[checks]]
+id = "ui-contract"
+cwd = "ui"
+argv = ["npx", "vitest", "run"]
+
+[[checks]]
+id = "examples-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/e2e/test_mvp_dogfood_cli.py"]
+
+[[checks]]
+id = "security-contract"
+cwd = "."
+argv = ["uv", "run", "pytest", "-q", "tests/unit/server/test_security_negative.py", "tests/unit/test_workspace_containment.py"]
+
+[[rules]]
+id = "version-and-installation"
+summary = "Release identity, installation, or top-level positioning changed."
+globs = ["VERSION", "CHANGELOG.md", "README.md", "README.zh-CN.md", "pyproject.toml", "src/micro_eval/__init__.py"]
+pages = ["site/index.md", "site/zh/index.md", "site/guide/getting-started.md", "site/zh/guide/getting-started.md"]
+checks = ["version-contract"]
+
+[[rules]]
+id = "cli"
+summary = "CLI commands, options, output, or command journeys changed."
+globs = ["src/micro_eval/cli/**"]
+pages = ["site/reference/cli.md", "site/zh/reference/cli.md", "site/guide/getting-started.md", "site/zh/guide/getting-started.md"]
+checks = ["cli-contract"]
+
+[[rules]]
+id = "configuration"
+summary = "Evaluation configuration or environment contracts changed."
+globs = ["eval.yaml.example", "src/micro_eval/config/**", "src/micro_eval/models/configuration.py", "src/micro_eval/models/environment.py"]
+pages = ["site/guide/configuration.md", "site/zh/guide/configuration.md", "site/reference/eval-yaml.md", "site/zh/reference/eval-yaml.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["model-contract"]
+
+[[rules]]
+id = "task-schema"
+summary = "Task, expectation, validation, or rubric contracts changed."
+globs = ["src/micro_eval/models/task.py"]
+pages = ["site/guide/tasks.md", "site/zh/guide/tasks.md", "site/reference/task-yaml.md", "site/zh/reference/task-yaml.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["task-contract"]
+
+[[rules]]
+id = "result-model"
+summary = "Run, artifact, identifier, or persisted result contracts changed."
+globs = ["src/micro_eval/models/run.py", "src/micro_eval/models/artifact.py", "src/micro_eval/models/ids.py", "src/micro_eval/models/__init__.py"]
+pages = ["site/guide/execution.md", "site/zh/guide/execution.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["model-contract"]
+
+[[rules]]
+id = "execution-and-sandbox"
+summary = "Execution lifecycle, workspace, command, provider, or sandbox behavior changed."
+globs = ["src/micro_eval/engine/**"]
+pages = ["site/guide/execution.md", "site/zh/guide/execution.md", "site/guide/workspace-isolation.md", "site/zh/guide/workspace-isolation.md", "site/guide/security.md", "site/zh/guide/security.md"]
+checks = ["execution-contract", "security-contract"]
+
+[[rules]]
+id = "evaluation"
+summary = "Validation, human evaluation, LLM judge, or conversational evaluation changed."
+globs = ["src/micro_eval/evaluation/**", "src/micro_eval/models/evaluation.py"]
+pages = ["site/guide/evaluation.md", "site/zh/guide/evaluation.md", "site/guide/conversational-evaluation.md", "site/zh/guide/conversational-evaluation.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["evaluation-contract"]
+
+[[rules]]
+id = "decision-and-trends"
+summary = "Aggregation, decision, status, or trend computation changed."
+globs = ["src/micro_eval/decision/**", "src/micro_eval/models/decision.py"]
+pages = ["site/guide/decision.md", "site/zh/guide/decision.md", "site/guide/trend-analysis.md", "site/zh/guide/trend-analysis.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["decision-contract"]
+
+[[rules]]
+id = "storage"
+summary = "Run, artifact, or SQLite persistence and lookup behavior changed."
+globs = ["src/micro_eval/store/**"]
+pages = ["site/guide/execution.md", "site/zh/guide/execution.md", "site/guide/trend-analysis.md", "site/zh/guide/trend-analysis.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["storage-contract"]
+
+[[rules]]
+id = "trace-and-cost"
+summary = "Trace collection, cost provenance, or observability behavior changed."
+globs = ["src/micro_eval/trace/**"]
+pages = ["site/guide/execution.md", "site/zh/guide/execution.md", "site/guide/evaluation.md", "site/zh/guide/evaluation.md", "site/reference/data-model.md", "site/zh/reference/data-model.md"]
+checks = ["trace-contract"]
+
+[[rules]]
+id = "team-server"
+summary = "Team Server workspace, queue, template, worker, or service contracts changed."
+globs = ["src/micro_eval/server/**"]
+pages = ["site/guide/team-server.md", "site/zh/guide/team-server.md", "site/reference/api-routes.md", "site/zh/reference/api-routes.md"]
+checks = ["server-contract", "security-contract"]
+
+[[rules]]
+id = "web-ui"
+summary = "Next.js routes, screens, client contracts, or visible UI behavior changed."
+globs = ["ui/src/**"]
+pages = ["site/reference/web-ui.md", "site/zh/reference/web-ui.md", "site/reference/api-routes.md", "site/zh/reference/api-routes.md", "site/guide/team-server.md", "site/zh/guide/team-server.md"]
+checks = ["ui-contract"]
+
+[[rules]]
+id = "agent-codefix-example"
+summary = "The agent code-fix example changed."
+globs = ["examples/agent-codefix-showdown/**"]
+pages = ["site/examples/agent-codefix-showdown.md", "site/zh/examples/agent-codefix-showdown.md", "site/examples/index.md", "site/zh/examples/index.md"]
+checks = ["examples-contract"]
+
+[[rules]]
+id = "multi-task-example"
+summary = "The multi-task matrix example changed."
+globs = ["examples/multi-task-matrix/**"]
+pages = ["site/examples/multi-task-matrix.md", "site/zh/examples/multi-task-matrix.md", "site/examples/index.md", "site/zh/examples/index.md"]
+checks = ["examples-contract"]
+
+[[rules]]
+id = "workspace-isolation-example"
+summary = "The git workspace isolation example changed."
+globs = ["examples/git-workspace-isolation/**"]
+pages = ["site/examples/git-workspace-isolation.md", "site/zh/examples/git-workspace-isolation.md", "site/examples/index.md", "site/zh/examples/index.md"]
+checks = ["examples-contract"]
+
+[[rules]]
+id = "conversational-example"
+summary = "The conversational evaluation example changed."
+globs = ["examples/conversational-eval/**"]
+pages = ["site/guide/conversational-evaluation.md", "site/zh/guide/conversational-evaluation.md", "site/examples/index.md", "site/zh/examples/index.md"]
+checks = ["examples-contract", "evaluation-contract"]
+
+[[rules]]
+id = "team-server-example"
+summary = "The Team Server quick-start example changed."
+globs = ["examples/team-server-quickstart/**"]
+pages = ["site/guide/team-server.md", "site/zh/guide/team-server.md", "site/examples/index.md", "site/zh/examples/index.md"]
+checks = ["examples-contract", "server-contract"]
+
+[[rules]]
+id = "example-inventory"
+summary = "The example inventory or runner changed."
+globs = ["examples/README.md", "examples/run-example.py"]
+pages = ["site/examples/index.md", "site/zh/examples/index.md"]
+checks = ["examples-contract"]
+
+[[rules]]
+id = "security-guidance"
+summary = "The enforced security guidance changed."
+globs = ["docs/engineering/security*.md"]
+pages = ["site/guide/security.md", "site/zh/guide/security.md", "site/guide/workspace-isolation.md", "site/zh/guide/workspace-isolation.md"]
+checks = ["security-contract"]

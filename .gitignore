@@ -27,7 +27,11 @@ examples/**/report.html
 # IDE
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/micro-eval-site
+!.claude/skills/monid
 .zed/
 
 # Plan files (local only)
