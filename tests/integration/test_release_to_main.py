@@ -218,6 +218,10 @@ def release_repo(tmp_path: Path) -> ReleaseRepo:
     _write_executable(
         fake_bin / "npm",
         "#!/bin/sh\n"
+        "if [ -L node_modules ]; then\n"
+        "  echo 'candidate dependencies must not be symlinked' >&2\n"
+        "  exit 1\n"
+        "fi\n"
         "if [ \"${FAIL_CANDIDATE_BUILD:-}\" = 1 ] && [ -f ../.git ]; then\n"
         "  echo 'candidate build failed' >&2\n"
         "  exit 1\n"

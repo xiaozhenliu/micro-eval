@@ -40,6 +40,23 @@ die() {
 }
 info() { echo "==> $*"; }
 
+copy_dependency_tree() {
+  local source_dir="$1"
+  local target_dir="$2"
+
+  case "$(uname -s)" in
+    Darwin)
+      cp -cR "$source_dir" "$target_dir"
+      ;;
+    Linux)
+      cp -a --reflink=auto "$source_dir" "$target_dir"
+      ;;
+    *)
+      cp -R "$source_dir" "$target_dir"
+      ;;
+  esac
+}
+
 MODE="local-only"
 DRY_RUN=false
 EXPECTED_SHA=""
@@ -208,7 +225,10 @@ echo "$candidate_pytest" | grep -qE "^[0-9]+ passed" || {
 echo "$candidate_pytest" | tail -1
 
 if [[ -d "$REPO_ROOT/ui/node_modules" ]]; then
-  ln -s "$REPO_ROOT/ui/node_modules" "$validation_worktree/ui/node_modules"
+  info "Materializing UI dependencies inside candidate filesystem root..."
+  copy_dependency_tree \
+    "$REPO_ROOT/ui/node_modules" \
+    "$validation_worktree/ui/node_modules"
 fi
 info "Running UI tests and build on candidate public tree..."
 if ! candidate_vitest="$(cd "$validation_worktree/ui" && npx vitest run 2>&1)"; then
