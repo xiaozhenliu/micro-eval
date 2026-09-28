@@ -1,16 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { isServerMode } from "@/lib/server-mode";
+import { ServerNav } from "@/components/ServerNav";
 
 export const metadata: Metadata = {
   title: "micro-eval",
@@ -25,14 +16,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className="h-full antialiased dark"
     >
       <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-100">
         <header className="border-b border-neutral-800 px-6 py-4">
           <div className="max-w-6xl mx-auto">
-            <h1 className="text-lg font-semibold tracking-tight">
-              micro-eval
-            </h1>
+            <div className="flex items-center justify-between gap-4">
+              <h1 className="text-lg font-semibold tracking-tight">
+                micro-eval
+              </h1>
+              {isServerMode() && <ServerNav />}
+            </div>
           </div>
         </header>
         <main className="flex-1 px-6 py-8">

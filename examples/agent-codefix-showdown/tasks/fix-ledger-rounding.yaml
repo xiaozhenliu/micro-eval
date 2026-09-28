@@ -1,0 +1,39 @@
+id: fix-ledger-rounding
+name: Fix ledger rounding
+description: Fix a small Python ledger allocation bug in a copied workspace.
+input_payload: |
+  You are running inside a disposable copied workspace named `workspace/`.
+  The actual agent cwd is created under this example project's
+  `.micro-eval/workspaces/` directory and is cleaned up after the cell.
+
+  Goal:
+  - Fix `ledger.py` so `split_amount_cents(total_cents, weights)` preserves the
+    total number of cents while distributing rounding remainders fairly.
+  - The tests in `tests/test_ledger.py` describe the expected behavior.
+
+  Constraints:
+  - Edit only files inside this copied workspace.
+  - Do not write secrets or credentials into files or output.
+  - The wrapper will run the copied workspace's unittest suite after your turn
+    and will write the smoke-validation marker to the micro-eval output file.
+
+  Done means:
+  - The unittest suite passes in this copied workspace.
+  - Your final response briefly explains the change.
+expectations:
+  - type: contains
+    stream: output
+    value: "MICRO_EVAL_TASK_RESULT=PASS"
+  - type: contains
+    stream: output
+    value: "unit_test_exit_code=0"
+workspace:
+  type: files
+  files:
+    - workspace
+rubric: |
+  This is MVP smoke/use-case validation, not a benchmark-quality winner signal.
+  A useful result fixes the copied workspace, passes the fixed local unittest
+  suite, and includes enough final explanation for a human to inspect artifacts.
+business_impact_tier: 3
+tags: [example, mvp, smoke, codefix]

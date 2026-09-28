@@ -1,0 +1,17 @@
+project_name: legacy-project
+timeout_s: 30
+baseline:
+  name: echo-baseline
+  command: "cat"
+  input_mode: stdin
+  output_mode: stdout
+  timeout_s: 10
+candidate:
+  name: echo-candidate
+  command: "cat"
+  input_mode: stdin
+  output_mode: stdout
+  timeout_s: 10
+tasks_dir: ../tasks
+output_dir: .micro-eval/runs
+parallel: true

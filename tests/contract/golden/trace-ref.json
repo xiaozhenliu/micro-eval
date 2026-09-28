@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "trace_id": "cell-b1",
+  "provider": "langfuse",
+  "external_url": "https://cloud.langfuse.com/trace/abc111",
+  "cost": {
+    "schema_version": "1.0",
+    "amount": 0.001,
+    "currency": "USD",
+    "source": "langfuse"
+  },
+  "summary": {
+    "latency_ms": 100,
+    "tokens": 512
+  }
+}

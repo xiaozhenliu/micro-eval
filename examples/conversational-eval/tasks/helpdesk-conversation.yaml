@@ -1,0 +1,13 @@
+id: helpdesk-conversation
+name: "Helpdesk support conversation"
+description: "Test agent handling a multi-step helpdesk scenario with knowledge retention"
+input_payload: "You are a customer support agent for a software product."
+scenario: "A user reports a bug, provides error details across multiple turns, and asks for a workaround"
+expected_outcome: "The agent acknowledges the bug, asks clarifying questions, retains error details, and suggests a workaround"
+user_description: "A frustrated but polite user reporting a software crash with stack trace details"
+rubric:
+  text: "Evaluate whether the agent retains context across turns and provides helpful support"
+  dimensions:
+    - "Context retention: does the agent remember error details from earlier turns?"
+    - "Empathy: does the agent acknowledge the user's frustration?"
+    - "Solution quality: does the agent propose a concrete workaround?"

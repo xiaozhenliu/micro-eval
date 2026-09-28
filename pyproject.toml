@@ -4,8 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "micro-eval"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Agent/Skill evaluation assistant for small AI teams"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.9.0",
@@ -17,8 +19,10 @@ dependencies = [
 
 [project.optional-dependencies]
 scoring = ["deepeval>=0.20"]
+judge = ["deepeval>=0.20"]
 observability = ["langfuse>=2.0"]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+trace = ["langfuse>=2.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=1.4.0", "pytest-cov>=4.0", "pytest-timeout>=2.0"]
 
 [project.scripts]
 micro-eval = "micro_eval.cli.main:app"
@@ -26,11 +30,21 @@ micro-eval = "micro_eval.cli.main:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/micro_eval"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/LICENSE",
+    "/NOTICE",
+    "/README.md",
+    "/README.zh-CN.md",
+    "/VERSION",
+    "/pyproject.toml",
+    "/src/micro_eval",
+]
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = "^(?P<version>.+)$"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-
-[dependency-groups]
-dev = [
-    "pytest-asyncio>=1.4.0",
-]

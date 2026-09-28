@@ -1,0 +1,39 @@
+id: generate-report
+name: Generate analysis report
+description: Generate a structured JSON report of the code analysis. Demonstrates command expectation.
+input_payload: |
+  You are a report generator running inside a disposable copied workspace named `workspace/`.
+  The workspace contains a sample-project/ directory with Python source files.
+
+  Goal:
+  - Analyze the sample project and generate a structured summary report.
+  - Write the report to report/summary.json INSIDE the artifact output directory
+    (MICRO_EVAL_OUTPUT_DIR environment variable). Create the report/ subdirectory there.
+  - Write "REPORT_GENERATED" to your output file to confirm completion.
+
+  Keyword: report
+
+  Constraints:
+  - Create the report/ subdirectory inside MICRO_EVAL_OUTPUT_DIR if it does not exist.
+  - The report/summary.json file must be valid JSON (parseable by Python's json module).
+  - Edit only files inside this copied workspace.
+  - Do not write secrets or credentials into files or output.
+
+  Done means:
+  - report/summary.json exists and contains valid JSON.
+  - Your output file contains "REPORT_GENERATED".
+expectations:
+  - type: command
+    argv: ["python3", "-c", "import json; json.load(open('report/summary.json'))"]
+    cwd: "{output_dir}"
+    timeout_s: 10
+workspace:
+  type: files
+  files:
+    - workspace
+rubric: |
+  Report generator: the mock agent must create report/summary.json with valid JSON.
+  Alpha succeeds; Beta intentionally skips creating the file, causing this expectation
+  to fail and producing a mixed decision for the overall run.
+business_impact_tier: 3
+tags: [example, multi-task-matrix, smoke, command-expectation, mixed-decision]

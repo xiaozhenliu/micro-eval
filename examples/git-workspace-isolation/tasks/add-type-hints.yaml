@@ -1,0 +1,40 @@
+id: add-type-hints
+name: Add Type Hints
+description: >
+  Add Python type annotations to all functions in app.py.
+  Demonstrates git_repo workspace with fixture digest and stdout contains expectation.
+input_payload: |
+  You are a type annotation assistant running inside an isolated git worktree.
+  The repository contains app.py where all functions currently lack type hints.
+
+  Goal: add type annotations to every function signature in app.py.
+  When you have finished, print "TYPE_HINTS_ADDED" to stdout.
+
+  Constraints:
+  - The worktree is an isolated copy of the repository — your changes do not affect the source.
+  - Do not write secrets or credentials to files or stdout.
+
+  Done means:
+  - You have printed "TYPE_HINTS_ADDED" to stdout.
+expectations:
+  - type: contains
+    stream: output
+    value: "TYPE_HINTS_ADDED"
+workspace:
+  type: git_repo
+  path: fixture-repo
+  ref: HEAD
+  fixtures:
+    - path: fixture-repo/app.py
+  toolchain:
+    runtime: python3
+    lockfile: requirements.txt
+  isolation_level: os_policy
+  trust_level: semi_trusted
+  network_policy: none
+rubric: |
+  Smoke validation for git_repo workspace isolation.
+  A useful result confirms the agent ran inside an isolated git worktree
+  and TYPE_HINTS_ADDED was emitted to stdout.
+business_impact_tier: 3
+tags: [example, git-workspace, type-hints, smoke]

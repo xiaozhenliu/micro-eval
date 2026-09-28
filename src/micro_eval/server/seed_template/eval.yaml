@@ -1,0 +1,62 @@
+# Deterministic smoke version of the same use case.
+# This avoids model calls while proving the example config, task, workspace,
+# validation, list, and report paths work.
+project_name: agent-codefix-showdown-mock
+description: Offline smoke for the agent-codefix-showdown example.
+
+configurations:
+  - id: mock-local
+    name: Local mock fixer
+    role: baseline
+    # 3 deterministic repetitions: zero cost, and the report/decision.json
+    # show real pass@k / pass^k aggregation instead of a low_sample caveat.
+    repetitions: 3
+    agent:
+      name: Local mock fixer
+      command: ["{python}", "workspace/scripts/mock-fix-agent.py", "{output_file}"]
+      input_mode: stdin
+      output_mode: file
+      timeout_s: 60
+      env: {}
+      required_secrets: []
+
+tasks:
+  - tasks/fix-ledger-rounding.yaml
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 1
+  timeout_s: 60
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 1048576
+  stop_on_cell_error: false
+
+evaluation:
+  comparison_subject: "mock fixer smoke for the codefix use case"
+  task_set_version: "agent-codefix-showdown.v1"
+  success_criteria:
+    - The deterministic mock fixes the workspace and the unittest suite passes.
+    - The wrapper records MICRO_EVAL_TASK_RESULT=PASS.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+
+# Phase 2: process-level trace capture (wall clock, exit code, trace_id).
+# Switch provider to "langfuse" only after exporting LANGFUSE_PUBLIC_KEY /
+# LANGFUSE_SECRET_KEY; without credentials it degrades back to process.
+trace:
+  enabled: true
+  provider: process
+
+# Phase 2: optional supplemental LLM judge. Disabled here to keep the smoke
+# path offline; it never overrides deterministic validation failures.
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

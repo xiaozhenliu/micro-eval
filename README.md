@@ -1,284 +1,318 @@
 # micro-eval
 
-面向 1–20 人 AI 小团队的 Agent/Skill 评测助手。把"我觉得这个 agent 更强"变成"它在哪些任务上更强、为什么、延迟多少、值不值得继续投"。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## 什么是"被评测对象"
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Version: 0.4.6](https://img.shields.io/badge/version-0.4.6-6f42c1)](VERSION)
+[![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-micro-eval 评测的是**完整 agent 程序**，通过 shell command 调用。它不评测 LLM prompt 模板，而是评测可执行的 agent 系统。
+Current version: `0.4.6`
 
-支持的 agent 类型包括但不限于：
-- **Claude Code CLI** — `claude -p "..." --output-file ...`
-- **LangGraph workflow** — `python my_graph.py --task "..."`
-- **CrewAI / AutoGen / 任何自定义脚本** — 只要能通过命令行调用
+**A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
-**重要：** LangGraph、CrewAI 等框架**不是** micro-eval 的依赖。它们是你自己的 agent 项目的依赖。micro-eval 只是用 subprocess 调用你的 agent 命令、收集输出、计算评分。就像 pytest 测试 Django 项目时不需要把 Django 装成 pytest 的依赖一样。
+`micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-你的 agent 项目需要自己管理运行环境（Python 虚拟环境、依赖安装、API key 配置等）。micro-eval 通过 `eval.yaml` 中的 `env` 字段把必要的环境变量传递给 agent subprocess。
+The bilingual [documentation site](https://xiaozhenliu.github.io/micro-eval/) is organized around a clear design system — decision loop, three design tensions, and seven core objects — with guides structured by user journey (Get Started → Using → Advanced → Reference). Phase 3 provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints remain fully available. A shared **Team Server** (`micro-eval serve`) adds per-member workspace isolation, a serial run queue, a read-only template library, and attribution records for trusted-LAN teams (v0.4.0). **Conversational evaluation** adds multi-turn agent evaluation via DeepEval's ConversationSimulator over a JSONL subprocess bridge, as a parallel path to the single-turn GEval judge (v0.4.2). Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
 
-## 核心特性
+## Why micro-eval?
 
-- **A/B 对比执行** — 同一组任务同时跑 baseline 和 candidate，结果矩阵一目了然
-- **自写执行层** — ~200 行 asyncio 编排，完全可控，不依赖外部 test runner
-- **安全输入传递** — stdin/文件传参，禁止 shell 字符串插值
-- **Workspace 隔离** — git worktree 保证每次 run 起点一致
-- **并行/串行可选** — asyncio 并行执行，也支持 `--no-parallel` 串行调试
-- **自动评分** — MVP 精确匹配 + 包含匹配；可扩展 DeepEval 自定义指标
-- **HTML 报告** — 一条命令生成静态对比报告
-- **本地 Web UI** — Next.js 仪表盘，浏览历史 run、查看对比表格
-- **零外部依赖运行** — Langfuse/DeepEval 均为可选，核心功能开箱即用
+Small AI engineering teams often compare prompt, skill, agent, or tool changes with manual impressions. That breaks down when runs are flaky, starting states differ, artifacts disappear, or the UI makes a stronger claim than the evidence supports. `micro-eval` keeps the evaluation loop local and auditable:
 
-## 快速开始
+- Define tasks and configurations in YAML.
+- Expand `tasks × configurations × repetitions` into a canonical run matrix.
+- Run local agent CLIs through argv-only subprocess invocations.
+- Preserve stdout, stderr, generated artifacts, validation evidence, and human evaluation notes.
+- Downgrade decisions when snapshots, evidence, or sample size do not justify a strong claim.
 
-### 1. 安装
+## Features
+
+- **Canonical configuration matrix**: `tasks × configurations × repetitions` expands into `RunPlan` / `RunCell` records.
+- **Self-owned execution layer**: asyncio bounded concurrency, per-cell timeout, and non-blocking cell failures.
+- **Safe subprocess contract**: canonical `agent.command` is an argv list; legacy string commands only pass through a migration bridge with warnings.
+- **Same-start evidence**: `SameStartSnapshot`, `CellSnapshot`, `SnapshotGateResult`, and `ReplayCanonical` are persisted with the run.
+- **Multi-level workspace isolation**: Level 0 git worktree (default), Level 1 OS policy sandbox (Seatbelt macOS / Bubblewrap Linux), Level 3-4 remote container/VM (E2B / Modal, optional).
+- **Provider registry**: pluggable `WorkspaceProvider` Protocol selects isolation backend by level; unavailable OS policy degrades gracefully with a caveat; remote levels fail hard.
+- **Artifact / evidence / trace chain**: `manifest.json` indexes `ArtifactRef`, `EvidenceItem`, and optional `TraceRef` records.
+- **Deterministic validation**: supports `exit_code`, `contains`, `file_exists`, and argv-only `command` expectations.
+- **Pass@k / pass^k aggregation**: repeated cells produce per-configuration pass rates, latency summaries, low-sample caveats, and `CostMetric` source metadata.
+- **Human evaluation persistence**: the UI appends human `EvaluationResult` records through the local API; `localStorage` is not treated as trusted evaluation state.
+- **Default-off LLM judge**: an optional DeepEval adapter can append supplemental judge evaluations without overriding deterministic pass/fail results.
+- **Guarded decisions**: snapshot mismatch, missing evidence, or insufficient repetitions produce caveats instead of fake winner claims.
+- **Cross-run trend analysis**: SQLite-indexed run data enables time-series trend queries per configuration, with drift-aware breakpoints when configuration content changes across runs.
+- **Local review UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, trace, cost, trend, and decision data through zod schemas.
+- **Team Server** — shared server for trusted LANs: per-member workspace isolation, serial run queue, read-only template library, attribution records (v0.4.0)
+- **Conversational evaluation** — multi-turn agent evaluation via DeepEval ConversationSimulator with a JSONL subprocess bridge; parallel path to the single-turn GEval judge (v0.4.2)
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/) for local Python environment and command execution
+- Node.js/npm only when you want to run the source-checkout Web UI
+
+Install from a source checkout:
 
 ```bash
-# 推荐使用 uv（Python 3.11+）
-uv pip install -e .
-
-# 或带可选依赖
-uv pip install -e ".[scoring,observability,dev]"
+git clone https://github.com/xiaozhenliu/micro-eval.git
+cd micro-eval
+uv sync --all-extras
+cd ui && npm install && cd ..
+uv run micro-eval --help
 ```
 
-### 2. 配置
-
-复制示例配置并编辑：
+From an evaluation project directory, create and run a starter evaluation. If you have not installed the CLI into your active environment, replace `micro-eval` with `uv run --project /path/to/micro-eval micro-eval`.
 
 ```bash
-cp eval.yaml.example eval.yaml
+micro-eval init --force
+micro-eval validate
+micro-eval run --max-concurrency 2
+micro-eval list
+micro-eval report --format text
+micro-eval report --format html --output report.html
+micro-eval ui --port 3000
 ```
 
-### 3. 创建任务
+In the Web UI, follow: Run List → Decision Summary → Result Matrix → Cell Evidence → Review Page → Artifact / Trace Viewer → Human Evaluation → Decision/Caveats.
 
-在 `tasks/` 目录下创建 YAML 文件：
+### Ready-to-run example
+
+Use the repository example when you want a complete MVP flow without writing your own `eval.yaml`, task, or fixture workspace:
 
 ```bash
-mkdir tasks
+python examples/run-example.py
 ```
-创建 `tasks/hello.yaml`：
+
+The script is a cross-platform Python entrypoint: it uses `uv run --project` when `uv` is available, falls back to an installed `micro-eval`, runs from the example directory so `.micro-eval/runs` is easy to find, and writes `examples/agent-codefix-showdown/report.html`.
+
+For the real-agent matrix, run:
+
+```bash
+python examples/run-example.py --real
+```
+
+The real-agent matrix in [`examples/agent-codefix-showdown/`](examples/agent-codefix-showdown/) covers Claude Code, Codex CLI, OpenClaw, and Hermes. Additional examples cover multi-task matrices, git workspace isolation, and trend analysis:
+
+```bash
+python examples/run-example.py --example multi-task-matrix
+python examples/run-example.py --example git-workspace-isolation
+python examples/run-example.py --example all
+```
+
+[`examples/conversational-eval/`](examples/conversational-eval/) demonstrates multi-turn conversational evaluation (`judge.provider: deepeval_conversational`) with an echo agent; run it directly with `micro-eval run --config examples/conversational-eval/eval.yaml`.
+
+The example index and capability coverage matrix are in [`examples/`](examples/).
+
+## CLI Commands
+
+Config lookup order is `--config` → `$MICRO_EVAL_CONFIG` → `./eval.yaml`.
+
+| Command | Purpose |
+| --- | --- |
+| `micro-eval init [--force]` | Generate a canonical `eval.yaml`, `tasks/hello.yaml`, and starter task templates. |
+| `micro-eval validate [--format text\|json]` | Load config/tasks, build the RunPlan, and print actionable diagnostics without running agents. |
+| `micro-eval run [--config eval.yaml] [--max-concurrency N] [--dry-run] [--format text\|json]` | Execute the matrix run or print the RunPlan. |
+| `micro-eval list [--format text\|json]` | List `.micro-eval/runs/*/run.json` records. |
+| `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | Render the matrix, Basic Honest Stats, decision/caveats, and artifacts. |
+| `micro-eval apply-evaluation --run-id ID --cell-id ID` | Apply a human evaluation via stdin JSON and recompute the run decision (used by the UI). |
+| `micro-eval build-plan --workspace PATH [--overrides JSON]` | Construct a `RunPlan` from `eval.yaml` and print it as JSON to stdout. |
+| `micro-eval ui [--port 3000]` | Start the local Next.js UI from a source checkout. |
+| `micro-eval serve [--port 3000] [--host HOST] [--data-root PATH]` | Start the Team Server (Next.js + worker) for shared, trusted-LAN use. |
+| `micro-eval worker [--data-root PATH]` | Start the run worker standalone (used internally by `serve`, or independently). |
+| `micro-eval workspace create\|list\|update\|delete` | Manage server workspaces (create, list, update metadata, delete). |
+| `micro-eval template create\|update\|list\|delete` | Manage the read-only evaluation template library. |
+| `micro-eval queue status\|cancel` | Show run-queue status or cancel a queued/running job. |
+
+## Configuration and Tasks
+
+New projects should use canonical `configurations[]`; legacy `baseline` / `candidate` config files still load through an explicit migration bridge.
+
+A minimal config declares configurations, tasks, guardrails, and evaluation policy:
 
 ```yaml
-id: hello-test
-name: 基础回显测试
-description: 验证 agent 能正确回显输入
-input_payload: "你好，世界"
-expected_output: "你好，世界"
-rubric: 输出必须与输入完全一致
-business_impact_tier: 3
-tags: [smoke, basic]
+project_name: demo-agent-eval
+configurations:
+  - id: baseline
+    role: baseline
+    repetitions: 1
+    agent:
+      command: ["cat"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 10
+  - id: candidate
+    role: candidate
+    repetitions: 1
+    agent:
+      command: ["cat"]
+      input_mode: stdin
+      output_mode: stdout
+      timeout_s: 10
+tasks:
+  - tasks/hello.yaml
+guardrails:
+  max_concurrency: 2
+  timeout_s: 30
+evaluation:
+  comparison_subject: "candidate vs baseline"
+  min_repetitions: 1
+  required_evaluators: [validator]
+trace:
+  enabled: false
+  provider: process   # or langfuse when the optional extra and credentials are configured
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  pass_threshold: 0.5
+  required_secrets: []
 ```
 
-### 4. 运行评测
-
-```bash
-micro-eval run --config eval.yaml
-```
-
-### 5. 查看结果
-
-```bash
-# 生成 HTML 报告
-micro-eval report .micro-eval/runs/run-*.json
-
-# 或启动 Web UI
-micro-eval ui
-```
-
-## CLI 命令参考
-
-### `micro-eval run`
-
-执行一次评测，对比 baseline 与 candidate。
-
-```bash
-micro-eval run [OPTIONS]
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `-c, --config` | `eval.yaml` | 配置文件路径 |
-| `--parallel / --no-parallel` | `--parallel` | 是否并行执行 |
-| `-v, --verbose` | `false` | 详细输出 |
-
-输出：结果 JSON 保存到 `.micro-eval/runs/run-<timestamp>.json`，终端打印汇总表格。
-
-### `micro-eval report`
-
-从 run JSON 生成静态 HTML 对比报告。
-
-```bash
-micro-eval report <run-file> [OPTIONS]
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `-o, --output` | `<run-file>.html` | 输出 HTML 路径 |
-
-### `micro-eval ui`
-
-启动本地 Next.js Web UI。
-
-```bash
-micro-eval ui [OPTIONS]
-```
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `--port` | `3000` | UI 服务端口 |
-
-## eval.yaml 配置参考
+A task describes input, expectations, workspace, and optional rubric metadata:
 
 ```yaml
-# 项目名称
-project_name: my-agent-eval
-
-# 全局超时（秒），可被 agent 级别覆盖
-timeout_s: 120
-
-# Baseline agent 配置
-baseline:
-  name: gpt-4o-baseline          # 显示名称
-  command: "python agents/b.py"  # 执行命令
-  input_mode: stdin              # stdin | file
-  output_mode: stdout            # stdout | file | directory
-  timeout_s: 60                  # 单任务超时
-  env:                           # 环境变量
-    MODEL: gpt-4o
-
-# Candidate agent 配置（字段同 baseline）
-candidate:
-  name: claude-candidate
-  command: "python agents/c.py"
-  input_mode: stdin
-  output_mode: stdout
-  timeout_s: 60
-  env:
-    MODEL: claude-sonnet
-
-# 任务文件目录（相对于 eval.yaml）
-tasks_dir: tasks
-
-# 结果输出目录
-output_dir: .micro-eval/runs
-
-# 是否并行执行
-parallel: true
+id: hello
+name: Hello echo
+input_payload: "Hello, micro-eval!"
+expectations:
+  - type: contains
+    stream: output
+    value: "Hello, micro-eval!"
+workspace:
+  type: blank
+rubric: Output should contain the input exactly.
 ```
 
-### Agent 配置字段详解
+See [`eval.yaml.example`](eval.yaml.example), [`examples/`](examples/), and [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the current source-checkout workflow.
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `name` | string | 必填 | agent 显示名称 |
-| `command` | string | 必填 | 执行命令，支持 `{input_file}` 和 `{output_dir}` 模板变量 |
-| `input_mode` | enum | `stdin` | `stdin`：通过标准输入传递；`file`：写入临时文件，路径通过 `{input_file}` 注入 |
-| `output_mode` | enum | `stdout` | `stdout`：从标准输出收集；`file`：从 `{output_dir}` 读取第一个文件 |
-| `timeout_s` | float | `300.0` | 单任务超时秒数 |
-| `env` | map | `{}` | 传递给子进程的环境变量 |
+## Run Artifacts
 
-## Task YAML 格式
+Runs are stored under the project output directory, defaulting to `.micro-eval/runs/`:
 
-每个任务是 `tasks/` 目录下的一个 `.yaml` 文件：
-
-```yaml
-id: summarize-001              # 唯一标识（默认取文件名）
-name: 文章摘要测试
-description: 测试 agent 对长文的摘要能力
-input_payload: |
-  请对以下文章生成 100 字摘要：
-  ...（文章内容）...
-expected_output: null          # 可选，设置后用于自动评分
-rubric: |                      # 人工评分标准
-  - 摘要长度 80-120 字
-  - 覆盖主要论点
-  - 无事实错误
-business_impact_tier: 2        # 1=关键 2=重要 3=一般
-tags: [summarization, chinese]
+```text
+.micro-eval/runs/{run_id}/
+├── run.json
+├── decision.json
+├── manifest.json
+└── cells/{cell_id}/
+    ├── result.json
+    ├── stdout.txt
+    ├── stderr.txt
+    ├── output.txt
+    └── evaluation.json
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `id` | string | 否 | 唯一标识，默认取文件名 |
-| `name` | string | 否 | 任务显示名称 |
-| `description` | string | 否 | 任务描述 |
-| `input_payload` | string | 是 | 传递给 agent 的输入内容 |
-| `expected_output` | string | 否 | 期望输出，用于自动评分 |
-| `rubric` | string | 否 | 人工评分标准 |
-| `business_impact_tier` | int | 否 | 业务影响等级 1-3 |
-| `tags` | list | 否 | 标签列表 |
+The decision trace is explicit: `decision.evaluation_refs → EvaluationResult.evidence_refs → EvidenceItem.artifact_refs/source_ref → ArtifactRef.path`, with optional `TraceRef` links for process or Langfuse trace metadata.
+
+## Security and Local Data
+
+`micro-eval` runs local agent commands on your machine. Review tasks, workspaces, and credentials before running real agents.
+
+- Canonical agent and validation commands are argv lists; trusted paths do not use shell interpolation.
+- Agent cwd is the assigned cell workspace.
+- The local runner does not provide network isolation; local CLIs may call external services according to their own configuration.
+- Secrets must use `MICRO_EVAL_SECRET_*` environment variables and be explicitly declared by a configuration.
+- Declared and detected `MICRO_EVAL_SECRET_*` values are redacted before stdout/stderr/text artifacts/evidence/human comments are persisted.
+- Raw artifact access is mediated by manifest `artifact_id` plus run-directory boundary checks.
+- Trace and judge integrations are default-off optional extras. Credentials stay in environment variables, not `eval.yaml`, run JSON, artifacts, or release docs.
+
+For the authoritative security routing, see [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md).
 
 ## Web UI
 
-本地 Web UI 基于 Next.js，直接读取 `.micro-eval/runs/` 目录下的 JSON 文件。
+Launch the UI from the repository source checkout:
 
 ```bash
-# 启动方式一：通过 CLI
-micro-eval ui --port 3000
-
-# 启动方式二：直接运行
-cd ui && npm run dev
+MICRO_EVAL_PROJECT_ROOT=/path/to/eval-project uv run micro-eval ui --port 3000
 ```
 
-功能：
-- **Run 列表** — 按时间排序浏览所有评测记录
-- **对比表格** — 每个 task 的 baseline vs candidate 结果并排展示
-- **状态高亮** — pass/fail/error/timeout 颜色区分
+Routes:
 
-UI 通过环境变量 `MICRO_EVAL_PROJECT_ROOT` 指定项目根目录（默认为 `ui/` 的上级目录）。
+| Route | Purpose |
+| --- | --- |
+| `/` | Run List |
+| `/run/[id]` | Decision Summary, caveats, Result Matrix, Cell Evidence, and Human Evaluation |
+| `/run/[id]/review` | Human review surface with cost, trace, matrix heatmap, and per-cell evidence |
+| `/run/[id]/artifact/[artifactId]` | Artifact viewer by manifest `artifact_id` |
+| `/api/runs/[id]/cells/[cellId]/trace` | Manifest-bound trace lookup for one cell |
+| `/api/runs/...` | Read-only run/cell/artifact API plus append-only human evaluation API |
 
-## 架构概览
+Binary, oversized, skipped, or boundary-invalid artifacts return warnings/placeholders rather than raw content.
 
-```
-┌─────────────────────────────────────────────────┐
-│  CLI (Typer)                                    │
-│  micro-eval run / report / ui                   │
-├─────────────────────────────────────────────────┤
-│  Config Loader          │  Scorer (DeepEval)    │
-│  eval.yaml + tasks/*.yaml│  精确匹配 / 自定义   │
-├─────────────────────────────────────────────────┤
-│  Execution Engine (asyncio)                     │
-│  AgentRunner → subprocess → collect output      │
-├─────────────────────────────────────────────────┤
-│  Workspace Manager (git worktree)               │
-│  隔离执行环境，保证可复现                         │
-├─────────────────────────────────────────────────┤
-│  Data Layer (Pydantic models → JSON files)      │
-│  .micro-eval/runs/*.json                        │
-└─────────────────────────────────────────────────┘
-         ↕
-┌─────────────────────────────────────────────────┐
-│  Web UI (Next.js + React + Tailwind)            │
-│  读取 .micro-eval/runs/ 展示对比结果             │
-└─────────────────────────────────────────────────┘
+## Architecture
+
+```mermaid
+flowchart LR
+  TASKS["Tasks + rubrics"] --> PLAN["RunPlan"]
+  CONFIGS["Configurations"] --> PLAN
+  PLAN --> KERNEL["Execution Kernel"]
+  KERNEL --> WORKSPACES["Isolated workspaces"]
+  KERNEL --> TRACE["Optional TraceProvider"]
+  KERNEL --> JUDGE["Optional LLM judge"]
+  KERNEL --> STORE["RunStore + ArtifactStore"]
+  TRACE --> STORE
+  JUDGE --> STORE
+  STORE --> DECISION["Guarded DecisionReport + decision.json"]
+  STORE --> UI["Local Web UI / Reports"]
 ```
 
-## 路线图
+## Documentation
 
-### Phase 1（MVP）— 当前
+**Project website**: [https://xiaozhenliu.github.io/micro-eval/](https://xiaozhenliu.github.io/micro-eval/) — user-facing guides, reference, and examples in English and Chinese.
 
-- [x] 项目/任务/运行核心模型
-- [x] 自写执行层（asyncio 并行）
-- [x] 精确匹配评分
-- [x] 基础对比页（Web UI）
-- [x] 静态 HTML 报告
-- [x] CLI（run / report / ui）
+| Document | Purpose |
+| --- | --- |
+| [Project Website](https://xiaozhenliu.github.io/micro-eval/) | User-facing documentation site (VitePress, bilingual EN/ZH). |
+| [`docs/README.md`](docs/README.md) | Documentation directory map and source-of-truth hierarchy. |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Local setup, commands, module map, smoke flow, and release readiness checklist. |
+| [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md) | Security routing for development, user runs, service/API/report boundaries. |
+| [`examples/README.md`](examples/README.md) | Source-checkout examples and onboarding use cases. |
 
-### Phase 2 — 观测与复盘
+## Development
 
-- [ ] Langfuse trace 接入
-- [ ] 复盘页（trace 回放）
-- [ ] 成本分析（cost_usd 聚合）
-- [ ] Skill profile 对比
+```bash
+uv sync --all-extras
+uv run python -m compileall src/micro_eval tests
+uv run pytest -q
+(cd ui && npm run lint && npm run build)
+uv build
+git diff --check
+```
 
-### Phase 3 — 沙箱与高级任务
+Security regression greps used by the release gate:
 
-- [ ] OpenHands sandbox 接入
-- [ ] 复杂任务类型（多步骤、工具调用）
-- [ ] 趋势分析（跨 run 对比）
+```bash
+grep -R "create_subprocess_shell" src tests ui || true
+grep -R "shell=True" src tests ui || true
+grep -R "localStorage" ui/src || true
+grep -R "sessionStorage" ui/src || true
+```
 
-## 许可证
+Pure documentation edits can usually be validated with `git diff --check`, but command, schema, or release-claim changes should run the relevant smoke command as well.
 
-待定
+## License
 
+Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
 
+## Document metadata
 
-
+```yaml
+title: micro-eval README
+doc_type: tutorial
+status: active
+created_at: 2026-05-31T01:43+08:00
+updated_at: 2026-07-02
+owner: micro-eval maintainers
+source_of_truth: false
+tags:
+  - readme
+  - onboarding
+  - mvp
+  - phase2
+related:
+  - README.zh-CN.md
+  - docs/README.md
+  - docs/DEVELOPMENT.md
+  - docs/engineering/security-guidelines.md
+```

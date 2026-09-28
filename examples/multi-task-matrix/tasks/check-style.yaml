@@ -1,0 +1,35 @@
+id: check-style
+name: Check code style
+description: Verify that the sample project passes basic style checks. Demonstrates exit_code expectation and workspace setup commands.
+input_payload: |
+  You are a code style checker running inside a disposable copied workspace named `workspace/`.
+  The workspace contains a sample-project/ directory with Python source files.
+
+  Goal:
+  - Inspect the Python files in sample-project/ for style issues.
+  - Exit with code 0 if the code is acceptable, or non-zero if there are blocking style violations.
+  - Write a brief summary of your findings to the output file.
+
+  Keyword: style
+
+  Constraints:
+  - Edit only files inside this copied workspace.
+  - Do not write secrets or credentials into files or output.
+
+  Done means:
+  - You have reviewed the code and exited cleanly (exit code 0).
+expectations:
+  - type: exit_code
+    value: 0
+workspace:
+  type: files
+  files:
+    - workspace
+  setup:
+    # Verify the sample project directory exists (demonstrates setup commands).
+    - ["test", "-d", "workspace/sample-project"]
+rubric: |
+  Baseline style check: the mock agent should exit 0 and write a status line.
+  Alpha always passes; Beta also passes this task.
+business_impact_tier: 3
+tags: [example, multi-task-matrix, smoke, exit-code, setup-commands]

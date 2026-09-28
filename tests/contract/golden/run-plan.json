@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "run_id": "run-plan-fixture",
+  "project_name": "plan-fixture",
+  "created_at": "2026-06-12T00:00:00+00:00",
+  "output_dir": ".micro-eval/runs/run-plan-fixture",
+  "guardrails": {
+    "schema_version": "1.0",
+    "max_output_bytes": 1048576,
+    "max_stderr_bytes": 65536,
+    "allow_network": false
+  },
+  "trace": {
+    "schema_version": "1.0",
+    "enabled": false,
+    "provider": "process"
+  },
+  "judge": {
+    "schema_version": "1.0",
+    "enabled": false,
+    "model": "",
+    "temperature": 0.0,
+    "pass_threshold": 0.5,
+    "provider": "deepeval",
+    "required_secrets": []
+  },
+  "cells": [
+    {
+      "schema_version": "1.0",
+      "cell_id": "cell-plan-1",
+      "task": {
+        "schema_version": "1.0",
+        "id": "task-plan-1",
+        "name": "Hello World Task",
+        "description": "Smoke-test task for RunPlan golden fixture",
+        "input_payload": "Write hello world",
+        "expected_output": "hello world",
+        "workspace": {
+          "schema_version": "1.0",
+          "type": "blank",
+          "path": null,
+          "ref": null,
+          "files": [],
+          "setup": []
+        },
+        "expectations": [],
+        "rubric": null,
+        "business_impact_tier": 3,
+        "tags": [],
+        "revision_id": "rev-plan-1"
+      },
+      "configuration": {
+        "schema_version": "1.0",
+        "id": "baseline",
+        "name": "Baseline",
+        "agent": {
+          "schema_version": "1.0",
+          "name": "test-agent",
+          "command": [
+            "echo",
+            "hello world"
+          ],
+          "input_mode": "stdin",
+          "output_mode": "stdout",
+          "timeout_s": 30.0,
+          "env": {},
+          "required_secrets": []
+        },
+        "repetitions": 1,
+        "role": null,
+        "skills_profile": {},
+        "parameters": {}
+      },
+      "repetition": 1
+    }
+  ],
+  "config_hash": "config-hash-plan",
+  "migration_warnings": [],
+  "same_start_snapshot": null,
+  "replay_canonical": null,
+  "denominator_policy": "include_failed"
+}

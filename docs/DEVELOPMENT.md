@@ -1,267 +1,202 @@
 # 开发指南
 
-## 前置要求
+本文是工程入口。正式工程规范以 `docs/engineering/` 为准。
 
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv)（推荐）或 pip
-- Node.js 18+（Web UI 开发）
-- Git（workspace 隔离功能需要）
+**内部设计文档**（开发者参考）：
+- `docs/superpowers/specs/2026-06-02-unicorn-design.md` — 长期架构
+- `docs/superpowers/specs/2026-06-02-mvp-profile.md` — MVP 范围
+- `docs/superpowers/specs/2026-06-02-test-architecture.md` — 测试架构
 
-## 开发环境搭建
+**用户文档站点**（`site/`）：
+- 组织方式：Get Started → Using micro-eval → Advanced → Reference
+- 设计体系页：`site/guide/design-system.md`（决策闭环、3 张力、7 核心对象）
+- 用户文档不包含实现细节；内部文档不重述用户概念。两套文档服务不同受众。
 
-### Python CLI + 引擎
+Work Register 与 local ticket 规则见 `docs/agents/issue-tracker.md`；在 `dev` 上可运行 `uv run python scripts/check-work-governance.py` 做离线治理检查。Release evidence 见 `docs/releases/`。完整 release 流程见 `docs/engineering/release-process.md`，配套脚本在 `scripts/release/`。
 
-```bash
-# 克隆仓库
-git clone <repo-url> && cd micro-eval
+## 开发原则
 
-# 安装开发依赖
-uv pip install -e ".[dev,scoring,observability]"
+- 日常开发在 `dev` 分支；不要直接在 `main` 开发。
+- 禁止 TDD：先理解规格与用户路径，再设计模块边界，实现可运行垂直切片，最后补验收/回归/契约测试。
+- Python 代码注释使用英文；用户沟通使用简体中文。
+- subprocess 必须 argv-only，禁止 shell interpolation。
+- 涉及 env/stdout/stderr/artifact/workspace 的改动必须按 `docs/engineering/security-guidelines.md` 检查。
+- 不要绕过 canonical schema；Python Pydantic 与 TypeScript zod contract 必须保持一致。
 
-# 验证安装
-micro-eval --help
+## 环境准备
 
-# 运行测试
-uv run pytest
-```
-
-### Web UI
-
-```bash
-cd ui
-npm install
-npm run dev    # http://localhost:3000
-```
-
-UI 默认读取上级目录的 `.micro-eval/runs/` 数据。可通过环境变量覆盖：
+Python 要求 `>=3.11`。
 
 ```bash
-MICRO_EVAL_PROJECT_ROOT=/path/to/project npm run dev
+uv sync --all-extras
+cd ui && npm install
 ```
 
-## 项目结构
-
-```
-micro-eval/
-├── src/micro_eval/
-│   ├── cli/                 # CLI 入口与命令
-│   │   ├── main.py          # Typer app 注册
-│   │   ├── run.py           # run 命令实现
-│   │   └── report.py        # report 命令 + Jinja2 模板
-│   ├── config/
-│   │   └── loader.py        # YAML 配置加载与校验
-│   ├── engine/
-│   │   ├── runner.py        # 核心执行引擎（asyncio）
-│   │   ├── scorer.py        # 评分逻辑
-│   │   └── workspace.py     # git worktree 隔离
-│   └── models/
-│       └── schema.py        # Pydantic 领域模型
-├── tests/
-│   ├── unit/                # 单元测试
-│   └── e2e/                 # 端到端测试
-├── ui/                      # Next.js Web UI
-│   └── src/
-│       ├── app/             # App Router 页面
-│       ├── components/      # React 组件
-│       └── lib/             # 数据层 + zod schema
-├── eval.yaml.example        # 配置示例
-└── pyproject.toml           # Python 项目配置
-```
-## 架构图
-
-```
-用户
- │
- ▼
-┌──────────────────────────────────────────────────────────────┐
-│ CLI Layer (Typer)                                            │
-│ main.py → run.py / report.py / ui                           │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Config Layer                                                 │
-│ loader.py: load_config() → ProjectConfig                     │
-│            load_tasks()  → list[Task]                        │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Execution Layer                                              │
-│                                                              │
-│ AgentRunner.run_eval()                                       │
-│   ├─ asyncio.gather (parallel) 或 sequential loop            │
-│   └─ _run_single(agent, task)                                │
-│       ├─ 准备输入 (stdin / file)                              │
-│       ├─ asyncio.create_subprocess_shell                     │
-│       ├─ wait_for(timeout)                                   │
-│       └─ 收集输出 (stdout / file)                             │
-│                                                              │
-│ Scorer.score() → 0.0~1.0                                    │
-│ Scorer.judge_pass_fail() → TaskStatus                        │
-│                                                              │
-│ WorkspaceManager                                             │
-│   ├─ create() → git worktree add --detach                   │
-│   ├─ collect_diff() → git diff                              │
-│   └─ cleanup() → git worktree remove                        │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Data Layer                                                   │
-│ Pydantic models (schema.py) → JSON 序列化                     │
-│ 存储: .micro-eval/runs/<run-id>.json                         │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Web UI (Next.js 16 + React 19 + Tailwind 4)                 │
-│ api.ts: 读取 .micro-eval/runs/ JSON 文件                      │
-│ schema.ts: zod 校验（与 Python Pydantic 对齐）                 │
-│ ComparisonTable / RunList / AnnotationPanel                  │
-└──────────────────────────────────────────────────────────────┘
-```
-
-## 关键设计决策
-
-以下决策来自工程评审，是代码实现的约束边界：
-
-### 1. 自写执行层，不用 DeepEval 做编排
-
-**原因**：DeepEval 的 test runner 假设同步、单 agent 场景，无法满足 baseline/candidate 并行对比需求。自写 ~200 行 asyncio 代码完全可控。
-
-**体现**：`engine/runner.py` 中 `AgentRunner` 直接调用 `asyncio.create_subprocess_shell`，DeepEval 仅在 `scorer.py` 中作为可选评分库。
-
-### 2. stdin/文件传参，禁止 shell 字符串插值
-
-**原因**：防止注入攻击，保证输入完整性（含特殊字符、多行文本）。
-
-**体现**：`_run_single()` 中 `input_payload` 通过 `proc.communicate(input=...)` 传入 stdin，或写入临时文件后通过 `{input_file}` 模板变量注入路径。
-
-### 3. git worktree 隔离
-
-**原因**：保证每次 run 的起点一致（同一 commit），baseline 和 candidate 不互相污染。
-
-**体现**：`workspace.py` 中 `WorkspaceManager.create()` 调用 `git worktree add --detach`。
-
-### 4. asyncio 并行执行
-
-**原因**：baseline 和 candidate 独立运行，并行可将总耗时减半。
-
-**体现**：`run_eval()` 中 `asyncio.gather(*coros)` 并行执行所有 task × agent 组合。
-
-### 5. Pydantic + zod 双端 schema
-
-**原因**：Python 端和 TypeScript 端共享数据契约，JSON 文件是两端的桥梁。
-
-**体现**：`models/schema.py`（Pydantic）与 `ui/src/lib/schema.ts`（zod）字段一一对应。
-
-## 测试
-
-### 运行测试
+本项目使用 `uv` 管理本地 Python 环境。`uv sync --all-extras` 会在项目根目录创建或更新 `.venv/`，后续运行项目命令时优先使用 `uv run ...`，不要依赖当前 shell 中的 `python` 或全局安装的 `micro-eval`：
 
 ```bash
-# 全部测试
-uv run pytest
-
-# 仅单元测试
-uv run pytest tests/unit/
-
-# 仅 E2E 测试
-uv run pytest tests/e2e/
-
-# 带覆盖率
-uv run pytest --cov=micro_eval
-
-# 单个文件
-uv run pytest tests/unit/test_runner.py -v
+uv run python --version
+uv run micro-eval --help
+uv run pytest -q
 ```
 
-### 测试结构
+Zed 项目设置已关闭终端自动激活 `.venv`，这样集成终端会保持用户默认 zsh prompt；项目运行环境仍由 `uv run` 选择 `.venv`。
 
-```
-tests/
-├── conftest.py              # 共享 fixtures
-├── unit/
-│   ├── test_schema.py       # 模型序列化/反序列化
-│   ├── test_config_loader.py # 配置加载与校验
-│   └── test_runner.py       # 执行引擎（mock subprocess）
-└── e2e/
-    └── test_full_flow.py    # 完整 run 流程
+常用本地命令：
+
+```bash
+uv run micro-eval --help
+uv run micro-eval init --force
+uv run micro-eval validate
+uv run micro-eval run --dry-run --format json
 ```
 
-### 编写新测试
+## Example smoke
 
-测试使用 `pytest` + `pytest-asyncio`。异步测试标记 `@pytest.mark.asyncio`：
+源码 checkout 中的 example 提供一条跨平台入口，适合验证 CLI、workspace、run store 与 report 基本链路：
 
-```python
-import pytest
-from micro_eval.engine.runner import AgentRunner
-from micro_eval.models.schema import AgentConfig, Task
-
-@pytest.mark.asyncio
-async def test_my_feature(tmp_path):
-    agent = AgentConfig(name="test", command="echo hello")
-    task = Task(
-        id="t1",
-        name="test task",
-        input_payload="input",
-    )
-    runner = AgentRunner(work_dir=tmp_path)
-    result = await runner._run_single(agent, task)
-    assert result.status.value == "pass"
+```bash
+uv run python examples/run-example.py
 ```
 
-`pyproject.toml` 已配置 `asyncio_mode = "auto"`，无需手动设置 event loop。
+该脚本从 `examples/agent-codefix-showdown/` 作为 eval project 运行 deterministic mock matrix，并生成：
 
-## 添加新功能指南
+- run store：`examples/agent-codefix-showdown/.micro-eval/runs/`
+- cell workspace：`examples/agent-codefix-showdown/.micro-eval/workspaces/{run_id}/{cell_id}/`
+- static report：`examples/agent-codefix-showdown/report.html`
 
-### 添加新 CLI 命令
+`report.html` 与 `.micro-eval/` 属于运行时产物，已被 git ignore。默认情况下 cell workspace 会在 cell 结束后 cleanup；run 记录中的 `cell_snapshot.workspace_path` 保留路径证据。
 
-1. 在 `src/micro_eval/cli/` 下创建新模块（如 `compare.py`）
-2. 定义命令函数，使用 Typer 装饰器
-3. 在 `main.py` 中注册：`app.command(name="compare")(compare_command)`
+真实 agent matrix 仍需显式 opt-in：
 
-### 添加新评分策略
+```bash
+uv run python examples/run-example.py --real
+```
 
-1. 在 `engine/scorer.py` 的 `Scorer` 类中添加方法
-2. MVP 阶段使用简单逻辑；后续可引入 DeepEval 的 `CustomMetric`
-3. 在 `cli/run.py` 的评分循环中调用新方法
+## 本地验证
 
-### 添加新领域模型
+功能或 release 相关改动至少运行：
 
-1. 在 `models/schema.py` 中定义 Pydantic model
-2. 同步更新 `ui/src/lib/schema.ts` 中的 zod schema
-3. 确保字段名、类型、可选性完全对齐
+```bash
+uv run python -m compileall src/micro_eval tests
+uv run pytest -q
+cd ui && npm run lint && npm run build
+uv build
+git diff --check
+grep -R "create_subprocess_shell" src tests ui || true
+grep -R "shell=True" src tests ui || true
+grep -R "localStorage" ui/src || true
+grep -R "sessionStorage" ui/src || true
+```
 
-### 扩展 Web UI
+涉及 examples、workspace、subprocess、artifact 或安全边界的改动，还应至少抽样运行：
 
-1. 页面放在 `ui/src/app/` 下（App Router）
-2. 组件放在 `ui/src/components/`
-3. 数据读取通过 `ui/src/lib/api.ts`（Server Component 直接读文件系统）
+```bash
+uv run python examples/run-example.py
+grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples || true
+```
 
-## 代码风格与约定
+纯文档改动可只运行 `git diff --check`，但如果文档更新了命令、schema、workspace 路径或 release claims，应抽样运行相关命令确认。
 
-### Python
+## 主要模块
 
-- 类型注解：所有函数签名必须有类型标注
-- 使用 `from __future__ import annotations` 延迟求值
-- 模型定义使用 Pydantic v2 `BaseModel`
-- 异步代码使用 `asyncio`，不用 threading
-- 错误处理：自定义异常类（`ConfigError`, `RunnerError`, `WorkspaceError`）
+```text
+src/micro_eval/
+├── cli/                 # init / validate / run / list / report / apply-evaluation / ui / serve / worker / workspace / template / queue / build-plan
+├── config/              # loader bridge + RunPlan builder
+├── engine/              # AgentAdapter, ExecutionKernel, WorkspaceManager, providers/ (Seatbelt/Bubblewrap/E2B/Modal), agent_bridge.py (JSONL multi-turn bridge)
+├── evaluation/          # deterministic validator + human evaluation + optional LLM judge helper
+├── decision/            # guarded DecisionReport + pass@k/pass^k aggregation
+├── trace/               # optional TraceProvider adapters (process fallback, Langfuse optional)
+├── models/              # canonical Pydantic contracts
+├── server/              # Team Server layer: workspace, template registry, queue, worker (v0.4)
+└── store/               # RunStore / ArtifactStore
 
-### TypeScript
+ui/src/
+├── app/                 # pages and API routes (project-scoped + workspace-scoped)
+│   └── api/workspaces/  # server-mode workspace/run/queue/template API routes
+├── components/          # RunList, MatrixHeatmap, CellDetail, WorkspaceCard, QueueDashboard, etc.
+└── lib/                 # zod schema, fs data access, server-mode utilities, workspace API
+```
 
-- 严格模式（`strict: true`）
-- 数据校验使用 zod，不用 `any`
-- 组件使用函数式 + TypeScript interface 定义 props
-- 样式使用 Tailwind CSS utility classes
+## Canonical 数据流
 
-### 通用
+1. `load_config()` 读取 canonical `configurations[]`；legacy `baseline` / `candidate` 只通过 migration bridge 转换。
+2. `build_run_plan()` 展开 `tasks × configurations × repetitions`，生成 `SameStartSnapshot` 与 `ReplayCanonical`。
+3. `ExecutionKernel` 为每个 cell 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
+4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence；如 `judge.enabled=true`，可追加 supplemental judge evaluation，但不得覆盖 deterministic cell pass/fail。
+   - 当 `judge.provider == "deepeval_conversational"` 时，kernel 走 conversational 分支（`_execute_cell_conversational`）：`SubprocessBridge` 以 JSONL 逐轮驱动 agent 进程保活，`conversational_judge` 模块两阶段 `simulate_conversation()` → `score_conversation()` 产出评分；结果写入 `conversation.json` artifact 与 `conversational_judge` 类型 evidence，CellResult 通过 `conversation_ref` 指向该产物。deterministic pass/fail 语义不被此分支覆盖。
+5. `TraceProvider` 在 `trace.enabled=true` 时收集 `TraceRef`；`process` fallback 不需要 SDK，`langfuse` 通过 optional extra/importlib 接入。
+6. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json` 和 sibling `decision.json`，`ArtifactStore` 写入 `manifest.json`（含 artifacts/evidence/traces）。
+7. `build_decision()` 基于 pass@k/pass^k、latency、cost source 与 caveat 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
+8. UI/API 通过 zod 读取 canonical JSON；human evaluation POST append 到 cell `evaluation.json` 并重算 `decision.json` / `run.json.decision`。
 
-- 配置文件使用 YAML
-- 数据交换使用 JSON（Pydantic `model_dump_json()`）
-- 文件路径使用 `pathlib.Path`
-- 日志/输出使用 `rich` 库
+## Workspace boundary
 
+`WorkspaceManager` 是 workspace 路径与生命周期的唯一入口。开发时不要在 adapter、validator、report 或 UI 中自行创建 agent cwd。
 
+当前 MVP 支持三类 task workspace：
+
+| `workspace.type` | Runtime behavior |
+| --- | --- |
+| `blank` | 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下创建空目录。 |
+| `files` | 将声明的文件/目录复制到 `.micro-eval/workspaces/{run_id}/{cell_id}/`。 |
+| `git_repo` | 解析 `ref` 到 commit，并将 detached git worktree 创建到 `.micro-eval/workspaces/{run_id}/{cell_id}/`。 |
+
+安全边界：
+
+- agent cwd 必须位于当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/`。
+- 不得未经用户明确配置把 agent cwd 放到系统临时目录或项目外目录。
+- setup 命令和 agent 命令都必须 argv-only。
+- cell workspace cleanup 失败必须进入 snapshot/evidence，而不是静默吞掉。
+- raw workspace path 只能作为 snapshot/evidence 路径证据；UI/API 展示 artifact 内容仍必须走 manifest/ref 边界。
+
+## CLI smoke
+
+```bash
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+uv run --project /path/to/micro-eval micro-eval init --force
+uv run --project /path/to/micro-eval micro-eval validate --format json
+uv run --project /path/to/micro-eval micro-eval run --dry-run --format json
+uv run --project /path/to/micro-eval micro-eval run --max-concurrency 2 --format json
+uv run --project /path/to/micro-eval micro-eval list --format json
+uv run --project /path/to/micro-eval micro-eval report --format text
+uv run --project /path/to/micro-eval micro-eval report --format html --output report.html
+```
+
+## Contract fixture discipline
+
+- Python canonical models are the source for persisted run artifacts.
+- UI zod schemas must parse real run artifacts, not hand-written approximations.
+- Keep `ui/src/lib/fixtures/canonical-run-p0.json` and `tests/unit/test_contract_fixture.py` aligned when schema changes.
+- When changing `RunRecord`, `CellResult`, `ArtifactRef`, `EvidenceItem`, `EvaluationResult`, or `DecisionReport`, update both Python and TS contract coverage in the same vertical slice.
+
+## Security review checklist
+
+- **shell interpolation**：canonical agent commands and validation commands are argv lists; no `shell=True` or `create_subprocess_shell` in trusted execution paths.
+- **secrets redaction**：only declared `MICRO_EVAL_SECRET_*` values are injected, and all non-empty host `MICRO_EVAL_SECRET_*` values participate in redaction before text artifact/evidence/UI persistence.
+- **workspace boundary**：agent cwd is the assigned blank/files/git worktree workspace under the current eval project's `.micro-eval/workspaces/`; setup env is allowlisted and does not inherit secrets.
+- **output_dir boundary**：`output_dir` must be project-relative and must not contain `..`.
+- **artifact safety**：reserved stdout/stderr/output paths are written atomically; symlink, hardlink, non-regular, oversized, and binary artifacts are skipped or represented with warnings/placeholders.
+- **raw artifact access**：Decision/UI consume refs and summaries; raw text content is available only through explicit manifest `artifact_id` lookup plus run-dir `realpath` boundary validation.
+- **snapshot mismatch**：Decision must stay guarded and never claim strong improvement/regression when comparability is degraded.
+- **trace/judge safety**：Trace 和 LLM judge 默认关闭；外部 SDK 只能通过 optional extra/importlib 接入，凭证只用 `MICRO_EVAL_SECRET_*` 环境变量，不写入 config/artifact/release docs。
+
+Workspace 相关改动建议额外检查：
+
+- `tests/e2e/test_p0b_reproducibility_flow.py::test_files_workspace_stays_under_project_workspaces_dir`
+- `tests/e2e/test_p0b_reproducibility_flow.py::test_git_repo_workspace_runs_in_isolated_worktree_with_snapshot`
+- example smoke 的最新 `cell_snapshot.workspace_path` 是否位于当前 example project 的 `.micro-eval/workspaces/` 下。
+
+## Release readiness checklist
+
+Before claiming a release-ready MVP:
+
+1. Run the verification commands above.
+2. Run a deterministic CLI smoke in a temporary project.
+3. Build the package with `uv build`.
+4. Install the wheel in a Python `>=3.11` virtual environment and run a CLI smoke.
+5. Run or review UltraQA adversarial scenarios for normal path, malformed argv, misleading exit code, timeout, secret leakage, artifact traversal, and binary artifact handling.
+6. Get independent code-review and architecture review evidence when the release risk warrants it.
+7. Record final evidence in `docs/releases/`, generate dependency inventory with `scripts/release/generate-dependency-inventory.py --version <version>`, and follow `docs/engineering/release-process.md` for version, commit, tag, and dev→main projection gates.
