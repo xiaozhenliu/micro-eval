@@ -54,6 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+        if: ${{ hashFiles('.agents/workflows/private_dev/tests/test_workflow.py') != '' }}
         with:
           python-version: "3.11"
           enable-cache: true

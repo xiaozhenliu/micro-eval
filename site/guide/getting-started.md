@@ -49,7 +49,7 @@ Verify the CLI is available:
 
 ```bash
 uv run micro-eval --version
-# micro-eval 0.5.0
+# micro-eval 0.5.1
 ```
 
 ::: tip Shell alias

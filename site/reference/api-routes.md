@@ -632,7 +632,7 @@ Request body:
 |-------|------|----------|-------------|
 | `expected_plan_digest` | string | No | Digest from the plan preview; a changed plan is refused with `409`. The body may be empty. |
 
-Response: `202 Accepted` with the queued job (`job_id`, `status`, `position`, and `plan_digest`). This accepts an asynchronous run; it does not mean execution has finished. As of v0.5.0, `config_overrides` is unsupported and requests containing it return `400 Bad Request`.
+Response: `202 Accepted` with the queued job (`job_id`, `status`, `position`, and `plan_digest`). This accepts an asynchronous run; it does not mean execution has finished. `config_overrides` is unsupported and requests containing it return `400 Bad Request`.
 
 | Status | Refusal |
 |--------|---------|
@@ -708,6 +708,6 @@ Templates are managed via the CLI (`micro-eval template create/update/delete`) a
     "queued": 2,
     "running": 1
   },
-  "ui_version": "0.5.0"
+  "ui_version": "0.5.1"
 }
 ```

@@ -95,6 +95,8 @@ workspace:
 
 Runs setup, the single-turn agent, and command validators through the same Seatbelt or Bubblewrap execution context. Host writes are limited to the current cell workspace and a separate per-cell output staging directory; run metadata and sibling cell workspaces are not writable. Seatbelt permits broad host reads; Bubblewrap exposes read-only runtime and project roots. Neither provider promises confidentiality for readable host files.
 
+On Linux, Bubblewrap preserves the interpreter entry point of a virtual environment backed by uv-managed Python, including stable aliases that resolve to an already allowed runtime root. These compatibility mounts are read-only, so the virtual environment can load its installed packages without changing the filesystem write or network policy.
+
 ```yaml
 workspace:
   type: git_repo

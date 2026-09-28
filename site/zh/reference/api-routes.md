@@ -632,7 +632,7 @@ uv run micro-eval index import-json
 |------|------|------|------|
 | `expected_plan_digest` | string | 否 | 计划预览的 digest；计划变化时返回 `409`。请求体可以为空。 |
 
-响应：`202 Accepted`，返回已入队的 job（`job_id`、`status`、`position`、`plan_digest`）。这表示异步接受，不代表运行已经完成。自 v0.5.0 起不支持 `config_overrides`；请求体包含该字段时返回 `400 Bad Request`。
+响应：`202 Accepted`，返回已入队的 job（`job_id`、`status`、`position`、`plan_digest`）。这表示异步接受，不代表运行已经完成。不支持 `config_overrides`；请求体包含该字段时返回 `400 Bad Request`。
 
 | 状态码 | 拒绝原因 |
 |--------|---------|
@@ -706,6 +706,6 @@ workspace 不存在、job 不存在或属于其他 workspace 时返回 `404`。w
     "queued": 2,
     "running": 1
   },
-  "ui_version": "0.5.0"
+  "ui_version": "0.5.1"
 }
 ```

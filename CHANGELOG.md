@@ -4,6 +4,14 @@ All notable changes to `micro-eval` are documented here.
 
 ## Unreleased
 
+## 0.5.1 - 2026-09-28
+
+### Fixed
+
+- Preserve managed-Python runtime aliases in the Linux Bubblewrap sandbox so virtual-environment interpreters can start with their installed packages.
+- Make the annotated-tag admission regression independent of global Git identity configuration.
+- Skip optional workflow dependency and cache setup when its test suite is absent from the public source tree.
+
 ## 0.5.0 - 2026-09-28
 
 ### Added

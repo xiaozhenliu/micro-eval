@@ -508,7 +508,11 @@ def test_moving_annotated_tag_after_preview_returns_plan_changed(tmp_path: Path)
     _write_task("ann")
     stale = preview_workspace_run(manager, ws_id)["plan_digest"]
 
-    subprocess.run(["git", "-C", str(source), "tag", "-a", "-f", "ann", "-m", "m", "HEAD"], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+         "tag", "-a", "-f", "ann", "-m", "m", "HEAD"],
+        check=True,
+    )
     with pytest.raises(EnqueueRefused) as info:
         enqueue_workspace_run(manager, ws_id, "alice", expected_plan_digest=stale)
     assert info.value.kind == "plan_changed"

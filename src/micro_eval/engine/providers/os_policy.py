@@ -234,6 +234,13 @@ def _runtime_roots(project_root: Path | None) -> list[Path]:
         Path(sys.prefix), Path(sys.base_prefix), Path(sys.executable).resolve().parent.parent,
         Path(__file__).resolve().parents[3],
     ])
+    # A managed venv can target a stable alias rather than the versioned
+    # installation. Expose the alias only when it names an already allowed
+    # runtime root, and preserve argv[0] so Python keeps its venv packages.
+    base_executable = getattr(sys, "_base_executable", None) or sys.executable
+    base_alias = Path(base_executable).absolute().parent.parent
+    if base_alias.resolve() in {path.resolve() for path in candidates if path.exists()}:
+        candidates.append(base_alias)
     if project_root is not None:
         candidates.append(project_root)
     return sorted({path.absolute() for path in candidates if path.exists()}, key=lambda p: (len(p.parts), str(p)))

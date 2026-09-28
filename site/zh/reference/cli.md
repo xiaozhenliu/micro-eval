@@ -1,6 +1,6 @@
 # CLI 命令
 
-`micro-eval` 全部命令参考。当前版本：**0.5.0**。
+`micro-eval` 全部命令参考。当前版本：**0.5.1**。
 
 ## 配置文件查找顺序
 
@@ -892,7 +892,7 @@ micro-eval queue cancel JOB_ID [OPTIONS]
 
 ```bash
 micro-eval --version
-# micro-eval 0.5.0
+# micro-eval 0.5.1
 ```
 
 ---

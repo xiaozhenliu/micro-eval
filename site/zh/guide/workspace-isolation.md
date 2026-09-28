@@ -95,6 +95,8 @@ workspace:
 
 setup、单轮 agent 和 command validator 通过同一个 Seatbelt 或 Bubblewrap 执行上下文运行。宿主写入仅限当前 cell 工作区及独立的 cell 输出 staging 目录；不能写入 run 元数据或其他 cell 工作区。Seatbelt 允许广泛的宿主读取；Bubblewrap 暴露只读的运行时与项目根目录。两者都不承诺可读宿主文件的保密性。
 
+在 Linux 上，Bubblewrap 保留 uv-managed Python 虚拟环境的解释器启动入口，包括解析到已允许运行时根目录的稳定别名。这些兼容挂载为只读，使虚拟环境能够加载已安装的包，不改变文件系统写入或网络策略。
+
 ```yaml
 workspace:
   type: git_repo

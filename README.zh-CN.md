@@ -4,14 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.5.0](https://img.shields.io/badge/version-0.5.0-6f42c1)](VERSION)
+[![Version: 0.5.1](https://img.shields.io/badge/version-0.5.1-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-当前版本：`0.5.0`
+当前版本：`0.5.1`
 
 **一个本地优先的 Agent / Skill 评测助手，帮助小型 AI 团队用证据而不是体感做对比。**
 
 `micro-eval` 把“candidate 感觉更强”转化为可复现对比：同一批任务、同一起点、同一证据链，并基于受保护的决策逻辑判断 baseline / candidate 在哪些 cell 上更强、更弱、样本不足、不可比或需要人工判断。
+
+**0.5.1** 修复 Linux Bubblewrap 启动 uv-managed Python 虚拟环境时的路径兼容问题，保留现有写入限制与网络策略。
 
 **0.5.0** 为 **Team Server**（`micro-eval serve`）加入浏览器配置与任务编辑、五个内置入门任务、实时 job 进度，以及保留部分结果的取消操作。Baseline/candidate 对比会计算任务级差异，并在报告和 Web UI 中把受保护的判断关联到证据。
 
@@ -322,7 +324,7 @@ title: micro-eval 中文 README
 doc_type: tutorial
 status: active
 created_at: 2026-06-03T15:56+08:00
-updated_at: 2026-09-28T16:02+08:00
+updated_at: 2026-09-28T18:53+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:

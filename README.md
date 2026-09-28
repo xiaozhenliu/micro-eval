@@ -4,14 +4,16 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.5.0](https://img.shields.io/badge/version-0.5.0-6f42c1)](VERSION)
+[![Version: 0.5.1](https://img.shields.io/badge/version-0.5.1-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.5.0`
+Current version: `0.5.1`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
+
+Version **0.5.1** fixes Linux Bubblewrap startup for uv-managed Python virtual environments while preserving the existing write and network restrictions.
 
 Version **0.5.0** adds browser-based configuration and task setup to **Team Server** (`micro-eval serve`), five bundled starter tasks, live job progress, and cancellation with partial results. Baseline/candidate comparisons now show task-level deltas and link guarded verdicts to their evidence across reports and the Web UI.
 
@@ -322,7 +324,7 @@ title: micro-eval README
 doc_type: tutorial
 status: active
 created_at: 2026-05-31T01:43+08:00
-updated_at: 2026-09-28T16:02+08:00
+updated_at: 2026-09-28T18:53+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:

@@ -36,7 +36,11 @@ def os_provider(tmp_path):
     provider = provider_cls(tmp_path)
     handle = provider.create(WorkspaceSpec(network_policy="none"), cell_id="availability", run_id="probe")
     try:
-        result = provider.exec_command(handle, [sys.executable, "-c", "print('policy-ready')"])
+        result = provider.exec_command(handle, [
+            sys.executable, "-c",
+            "import sys; assert sys.prefix == sys.argv[1]; import pydantic; print('policy-ready')",
+            sys.prefix,
+        ])
     finally:
         provider.cleanup(handle)
     if result.exit_code or result.stdout.strip() != "policy-ready":

@@ -281,6 +281,54 @@ class TestBuildBwrapArgv:
         assert "/" not in mounts
         assert all(i < argv.index("--bind") for i, item in enumerate(argv) if item == "--ro-bind")
 
+    def test_managed_python_alias_is_readonly_and_venv_argv_is_preserved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import sys
+
+        installation = tmp_path / "python-manager" / "cpython-3.11.16"
+        (installation / "bin").mkdir(parents=True)
+        (installation / "bin" / "python3.11").write_text("interpreter fixture")
+        alias = installation.parent / "cpython-3.11"
+        alias.symlink_to(installation, target_is_directory=True)
+        venv = tmp_path / "project" / ".venv"
+        (venv / "bin").mkdir(parents=True)
+        executable = venv / "bin" / "python"
+        executable.symlink_to(alias / "bin" / "python3.11")
+        monkeypatch.setattr(sys, "prefix", str(venv))
+        monkeypatch.setattr(sys, "base_prefix", str(installation))
+        monkeypatch.setattr(sys, "executable", str(executable))
+        monkeypatch.setattr(sys, "_base_executable", str(alias / "bin" / "python3.11"), raising=False)
+        workspace = tmp_path / "workspace"
+        output = tmp_path / "output"
+        inner = [str(executable), "-c", "import sys; print(sys.prefix)"]
+        argv = _build_bwrap_argv(workspace, "none", inner, output)
+        readonly = [argv[i + 1:i + 3] for i, value in enumerate(argv) if value == "--ro-bind"]
+        writable = [argv[i + 1:i + 3] for i, value in enumerate(argv) if value == "--bind"]
+
+        assert [str(alias), str(alias)] in readonly
+        assert [str(installation), str(installation)] in readonly
+        assert [str(venv), str(venv)] in readonly
+        assert not any(Path(source) == installation.parent for source, _ in readonly)
+        assert not any(source == "/" for source, _ in readonly)
+        assert writable == [[str(workspace), str(workspace)], [str(output), str(output)]]
+        assert all(i < argv.index("--bind") for i, value in enumerate(argv) if value == "--ro-bind")
+        assert "--unshare-net" in argv and "--unshare-pid" in argv
+        assert argv[argv.index("--") + 1:] == inner
+
+    def test_unrelated_base_executable_does_not_expand_runtime_roots(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import sys
+
+        unrelated = tmp_path / "unrelated-runtime"
+        (unrelated / "bin").mkdir(parents=True)
+        (unrelated / "bin" / "python").write_text("unrelated fixture")
+        monkeypatch.setattr(sys, "_base_executable", str(unrelated / "bin" / "python"), raising=False)
+        argv = _build_bwrap_argv(tmp_path / "workspace", "none", [sys.executable])
+        readonly = [argv[i + 1] for i, value in enumerate(argv) if value == "--ro-bind"]
+        assert str(unrelated) not in readonly
+
     def test_inner_argv_appended_at_end(self, tmp_path: Path) -> None:
         inner = ["python3", "-c", "print('hi')"]
         argv = _build_bwrap_argv(tmp_path, "full", inner)
