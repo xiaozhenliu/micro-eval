@@ -36,11 +36,14 @@ async def simulate_conversation(
     cwd: Path,
     env: dict[str, str],
     redactor: Redactor,
+    bridge: SubprocessBridge | None = None,
 ) -> tuple[object, AdapterResult, list[dict[str, str]]] | None:
     """Phase 1: Drive multi-turn conversation, return test_case + results.
 
     Does NOT score — returns the raw ConversationalTestCase for scoring later.
     This split enables Invariant #6: deterministic validation between simulation and scoring.
+    A supplied bridge is owned by the selected workspace provider; constructing
+    a local bridge remains available for legacy direct callers.
     """
     task = cell.task
     if not task.scenario:
@@ -54,28 +57,35 @@ async def simulate_conversation(
     ConversationalGolden = getattr(deepeval_dataset, "ConversationalGolden")
     ConversationSimulator = getattr(deepeval_simulator, "ConversationSimulator")
 
-    bridge = SubprocessBridge(
-        agent=agent, cwd=cwd, env=env, turn_timeout_s=config.turn_timeout_s,
-    )
+    if bridge is None:
+        bridge = SubprocessBridge(
+            agent=agent, cwd=cwd, env=env, turn_timeout_s=config.turn_timeout_s,
+        )
     await bridge.start()
 
     try:
         conversation_log: list[dict[str, str]] = []
         bridge_failed = False
+        bridge_timed_out = False
         main_loop = asyncio.get_running_loop()
 
         def model_callback(input: str) -> object:
-            nonlocal bridge_failed
+            nonlocal bridge_failed, bridge_timed_out
             conversation_log.append({"role": "user", "content": input})
+            future = None
             try:
                 future = asyncio.run_coroutine_threadsafe(bridge.send_turn(input), main_loop)
                 response = future.result(timeout=config.turn_timeout_s)
             except BridgeError as exc:
                 bridge_failed = True
+                bridge_timed_out |= exc.timed_out
                 response = f"[bridge error: {exc}]"
             except Exception as exc:
+                if future is not None:
+                    future.cancel()
                 bridge_failed = True
-                response = f"[bridge error: {exc}]"
+                bridge_timed_out |= isinstance(exc, TimeoutError)
+                response = "[bridge error: agent communication failed]"
             response = redactor.redact(response)
             conversation_log.append({"role": "assistant", "content": response})
             return Turn(role="assistant", content=response)
@@ -99,7 +109,7 @@ async def simulate_conversation(
 
         test_cases = await asyncio.get_running_loop().run_in_executor(None, _run_simulate)
     except Exception as exc:
-        logger.warning("ConversationSimulator failed: %s", exc)
+        logger.warning("ConversationSimulator failed: %s", redactor.redact(str(exc)))
         return None
     finally:
         exit_code, stderr = await bridge.stop()
@@ -117,7 +127,9 @@ async def simulate_conversation(
             last_output = entry["content"]
             break
 
-    if bridge_failed:
+    if bridge_timed_out:
+        status = CellStatus.timeout
+    elif bridge_failed:
         status = CellStatus.error
     elif exit_code is None or exit_code == 0:
         status = CellStatus.passed
@@ -128,10 +140,11 @@ async def simulate_conversation(
         status=status,
         exit_code=exit_code,
         stdout="",
-        stderr=stderr or "",
+        stderr=redactor.redact(stderr or ""),
         output=last_output,
         latency_s=0.0,
         trace_id=cell.cell_id,
+        timed_out=bridge_timed_out,
     )
 
     return test_case, adapter_result, conversation_log
@@ -185,7 +198,7 @@ async def score_conversation(
 
         eval_result = await asyncio.get_running_loop().run_in_executor(None, _run_evaluate)
     except Exception as exc:
-        logger.warning("DeepEval evaluate failed: %s", exc)
+        logger.warning("DeepEval evaluate failed: %s", redactor.redact(str(exc)))
         return None
 
     scores: dict[str, float] = {}

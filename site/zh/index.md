@@ -23,7 +23,7 @@ features:
     details: 每个 cell 从可复现的起点运行。Snapshot 不匹配会降级 decision——不做虚假的赢家声明。
   - icon: 🛡️
     title: 多级沙箱
-    details: 默认 git worktree 隔离。OS 策略沙箱（Seatbelt/Bubblewrap）或远程 VM（E2B/Modal）用于不受信 agent。
+    details: 默认 git worktree 隔离。OS 策略沙箱（Seatbelt/Bubblewrap）或远程 VM（E2B）或容器（Modal）用于不受信 agent。
   - icon: 📊
     title: 受保护的决策
     details: 决策附带证据链和 caveat。不确定就是不确定——而不是沉默。

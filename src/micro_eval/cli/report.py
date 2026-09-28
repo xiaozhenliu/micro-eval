@@ -37,6 +37,14 @@ th { background: #f5f5f5; }
 <h1>micro-eval Report</h1>
 <p class="meta">Run ID: {{ run_id }}</p>
 <p><strong>Decision:</strong> {{ decision }}</p>
+{% if comparison %}
+<h2>Comparison</h2>
+<p class="meta">{{ comparison.candidate }} relative to {{ comparison.baseline }} · threshold {{ comparison.threshold }}</p>
+<table>
+<tr><th>Task</th><th>Direction</th><th>Baseline pass rate</th><th>Candidate pass rate</th><th>Delta</th><th>Samples</th></tr>
+{% for row in comparison.tasks %}<tr><td>{{ row.task_id }}</td><td>{{ row.direction }}</td><td>{{ row.baseline_rate }}</td><td>{{ row.candidate_rate }}</td><td>{{ row.delta }}</td><td>{{ row.samples }}</td></tr>{% endfor %}
+</table>
+{% endif %}
 {% if caveats %}
 <h2>Caveats</h2>
 <ul>{% for caveat in caveats %}<li>{{ caveat }}</li>{% endfor %}</ul>
@@ -140,6 +148,24 @@ def _print_text_report(data: dict[str, Any]) -> None:
     decision = data.get("decision") or {}
     if decision:
         console.print(f"[bold]Decision:[/bold] {decision.get('verdict')} ({decision.get('confidence')})")
+        comparison = decision.get("comparison")
+        if comparison:
+            console.print(
+                f"[bold]Comparison:[/bold] {comparison.get('candidate_configuration_id')} relative to "
+                f"{comparison.get('baseline_configuration_id')} (threshold {float(comparison.get('decision_threshold', 0)) * 100:.0f}pp)"
+            )
+            task_table = Table(title="Task Comparisons")
+            for column in ("Task", "Direction", "Baseline", "Candidate", "Delta", "Samples"):
+                task_table.add_column(column)
+            for row in comparison.get("tasks", []):
+                task_table.add_row(
+                    str(row.get("task_id", "")), str(row.get("direction", "")),
+                    _format_optional_rate(row.get("baseline_pass_rate")),
+                    _format_optional_rate(row.get("candidate_pass_rate")),
+                    _format_optional_rate(row.get("delta")),
+                    f"{row.get('baseline_sample_count', 0)}/{row.get('candidate_sample_count', 0)}",
+                )
+            console.print(task_table)
     table = Table(title="Result Matrix")
     table.add_column("Task")
     table.add_column("Configuration")
@@ -178,10 +204,33 @@ def _template_context(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "run_id": data["id"],
         "decision": decision.get("verdict", "inconclusive"),
+        "comparison": _comparison_context(decision.get("comparison")),
         "caveats": decision.get("caveats", []),
         "stats": _stats_rows(decision.get("aggregation", {})),
         "results": _result_rows(data),
         "artifacts": data.get("artifacts", []),
+    }
+
+
+def _comparison_context(comparison: Any) -> dict[str, Any] | None:
+    if not isinstance(comparison, dict):
+        return None
+    return {
+        "baseline": comparison.get("baseline_configuration_id", ""),
+        "candidate": comparison.get("candidate_configuration_id", ""),
+        "threshold": _format_optional_rate(comparison.get("decision_threshold")),
+        "tasks": [
+            {
+                "task_id": row.get("task_id", ""),
+                "direction": row.get("direction", ""),
+                "baseline_rate": _format_optional_rate(row.get("baseline_pass_rate")),
+                "candidate_rate": _format_optional_rate(row.get("candidate_pass_rate")),
+                "delta": _format_optional_rate(row.get("delta")),
+                "samples": f"{row.get('baseline_sample_count', 0)}/{row.get('candidate_sample_count', 0)}",
+            }
+            for row in comparison.get("tasks", [])
+            if isinstance(row, dict)
+        ],
     }
 
 

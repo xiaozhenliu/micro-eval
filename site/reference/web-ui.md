@@ -103,14 +103,16 @@ A verdict badge at the top of the page shows the computed decision status:
 
 | Badge | Meaning |
 |---|---|
-| `improved` | New configuration scores better on most tasks |
+| `improved` | At least one task reaches the improvement threshold and none regress |
 | `regressed` | New configuration scores worse |
 | `mixed` | Split results across tasks |
 | `inconclusive` | Not enough signal to distinguish |
 | `not_comparable` | Run snapshots differ — baseline comparison is invalid |
 | `needs_human_review` | Automatic scorer deferred; human annotation required |
 
-A **confidence level** (low / medium / high) is shown alongside the badge, derived from score variance and repetition count.
+Comparative runs show the candidate relative to the baseline, the configured task-level threshold, and one row per task with rates, delta, direction, samples, and caveats.
+
+The badge displays the persisted **confidence level**. Current automatic decisions always use `low`; the UI does not infer confidence from score variance or repetitions.
 
 #### Caveats Panel
 
@@ -254,7 +256,7 @@ MICRO_EVAL_PROJECT_ROOT=/absolute/path/to/project
 All `.micro-eval/` reads and writes are relative to this root. There is no other required configuration.
 
 ::: tip Secrets are never served
-Environment variables matching `MICRO_EVAL_SECRET_*` are auto-redacted server-side and never included in API responses or rendered artifact content.
+Captured text is redacted by secret value before persistence. Binary artifact downloads may contain unsanitized bytes; their manifest records `redacted: false` and a warning.
 :::
 
 ---

@@ -29,6 +29,7 @@ function makeRun(
     status: "completed",
     created_at: "2026-06-12T00:00:00Z",
     completed_at: null,
+    failure_reason: null,
     output_dir: ".micro-eval/runs",
     config_hash: "",
     tasks: [],
@@ -76,10 +77,13 @@ function makeRun(
           ])
         ),
       },
+      comparison: null,
       recommended_action: "review evidence",
       timestamp: "20260612T000000Z",
       created_at: "20260612T000000Z",
     },
+    configuration_roles: {},
+    evaluation_contract: null,
   };
 }
 

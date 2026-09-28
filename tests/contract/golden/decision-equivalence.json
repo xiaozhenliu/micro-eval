@@ -289,6 +289,8 @@
     ],
     "evaluations": [],
     "decision": null,
+    "configuration_roles": {},
+    "evaluation_contract": null,
     "denominator_policy": "include_failed",
     "owner": null,
     "server_context": null
@@ -313,8 +315,7 @@
     ],
     "caveats": [
       "example same-start caveat",
-      "low_sample",
-      "low sample size for candidate: repetitions < 3"
+      "comparison_contract_unavailable"
     ],
     "aggregation": {
       "schema_version": "1.0",
@@ -373,6 +374,7 @@
         }
       }
     },
-    "recommended_action": "review the evidence for each cell and confirm the runs are comparable before acting"
+    "comparison": null,
+    "recommended_action": "record one baseline and one candidate role before comparing configurations"
   }
 }

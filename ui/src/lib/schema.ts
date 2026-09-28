@@ -173,6 +173,31 @@ export const TraceRefSchema = z.object({
   summary: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).nullable().default(null),
 });
 
+export const TaskComparisonSchema = z.object({
+  schema_version: z.string().default("1.0"),
+  task_id: z.string(),
+  baseline_sample_count: z.number().int(),
+  candidate_sample_count: z.number().int(),
+  baseline_pass_rate: z.number(),
+  candidate_pass_rate: z.number(),
+  delta: z.number(),
+  direction: z.enum(["improved", "regressed", "unchanged"]),
+  cell_refs: z.array(z.string()).default([]),
+  evaluation_refs: z.array(z.string()).default([]),
+  evidence_refs: z.array(z.string()).default([]),
+  artifact_refs: z.array(z.string()).default([]),
+  trace_refs: z.array(z.string()).default([]),
+  caveats: z.array(z.string()).default([]),
+});
+
+export const ComparisonResultSchema = z.object({
+  schema_version: z.string().default("1.0"),
+  baseline_configuration_id: z.string(),
+  candidate_configuration_id: z.string(),
+  decision_threshold: z.number(),
+  tasks: z.array(TaskComparisonSchema).default([]),
+});
+
 export const DecisionReportSchema = z.preprocess((value) => {
   if (value && typeof value === "object") {
     const raw = value as Record<string, unknown>;
@@ -193,6 +218,7 @@ export const DecisionReportSchema = z.preprocess((value) => {
   evidence_refs: z.array(z.string()).default([]),
   caveats: z.array(z.string()).default([]),
   aggregation: AggregationResultSchema.default({ schema_version: "1.0", per_configuration: {} }),
+  comparison: ComparisonResultSchema.nullable().default(null),
   recommended_action: z.string().default("review evidence"),
   timestamp: z.string().default(""),
   created_at: z.string().default(""),
@@ -243,7 +269,7 @@ export const RunSchema = z.object({
   schema_version: z.string().default("1.0"),
   id: z.string(),
   project_name: z.string(),
-  status: z.enum(["planned", "running", "completed", "failed", "partial"]),
+  status: z.enum(["planned", "running", "completed", "failed", "partial", "cancelled"]),
   created_at: z.string(),
   completed_at: z.string().nullable().default(null),
   failure_reason: z.string().nullable().default(null),
@@ -263,6 +289,8 @@ export const RunSchema = z.object({
   traces: z.array(TraceRefSchema).default([]),
   evaluations: z.array(EvaluationResultSchema).default([]),
   decision: DecisionReportSchema.nullable().default(null),
+  configuration_roles: z.record(z.string(), z.string().nullable()).default({}),
+  evaluation_contract: z.record(z.string(), z.unknown()).nullable().default(null),
   denominator_policy: z.enum(["include_failed", "exclude_failed"]).default("include_failed"),
   owner: z.string().nullable().default(null),
   server_context: ServerContextSchema.nullable().default(null),
@@ -282,22 +310,31 @@ export const WorkspaceMetaSchema = z.object({
   status: z.string().default("active"),
 });
 
+export const JobProgressSchema = z.object({
+  completed_cells: z.number().int().nonnegative(),
+  total_cells: z.number().int().nonnegative(),
+  current_task: z.string().nullable().default(null),
+  current_config: z.string().nullable().default(null),
+});
+
 export const JobSchema = z.object({
   job_id: z.string(),
   workspace_id: z.string(),
   owner: z.string(),
-  status: z.string(),
+  status: z.enum(["queued", "running", "done", "failed", "cancelled"]),
   enqueued_at: z.string(),
   started_at: z.string().nullable().default(null),
   finished_at: z.string().nullable().default(null),
   run_id: z.string().nullable().default(null),
   error: z.string().nullable().default(null),
-  progress: z.any().nullable().default(null),
+  progress: JobProgressSchema.nullable().default(null),
   cancel_requested_at: z.string().nullable().default(null),
   cancelled_by: z.string().nullable().default(null),
+  position: z.number().int().positive().nullable().optional(),
 });
 
 export type WorkspaceMeta = z.infer<typeof WorkspaceMetaSchema>;
+export type JobProgress = z.infer<typeof JobProgressSchema>;
 export type Job = z.infer<typeof JobSchema>;
 
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;

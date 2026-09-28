@@ -1,6 +1,6 @@
 # 多任务矩阵
 
-演示完整的二维评测矩阵：**2 个配置 × 3 个任务 × 2 次重复 = 12 个单元格**。全部四种期望类型均被覆盖，workspace 的 setup 命令在每次 agent 调用前执行，run 结果特意产生 `inconclusive` 决策——展示 micro-eval 如何将部分失败暴露出来而非隐藏。
+演示完整的二维评测矩阵：**2 个配置 × 3 个任务 × 2 次重复 = 12 个单元格**。全部四种期望类型均被覆盖，workspace 的 setup 命令在每次 agent 调用前执行，并产出可审计的 task 级比较结论。
 
 ::: tip 无需 API 密钥
 本示例完全离线运行，使用确定性的 mock agent，无需 LLM 凭证或外部服务。
@@ -12,7 +12,7 @@
 - 全部四种期望类型（`exit_code`、`contains`、`file_exists`、`command`）及其适用场景
 - `setup` 命令如何在 agent 启动前准备 workspace
 - caveat 系统如何暴露部分失败并设置决策状态
-- `inconclusive` 的含义以及如何读取通过率表格
+- 如何根据通过率表格得出 task 级比较结论
 
 ## 运行示例
 
@@ -26,7 +26,7 @@ python examples/run-example.py --example multi-task-matrix
 - 在浏览器中打开 `examples/multi-task-matrix/report.html` 查看矩阵。
 - `checker-alpha`（基线）在全部三个任务上显示 **PASS**。
 - `checker-beta`（候选）在 `generate-report` 上显示 **FAIL**，其余两个任务为 PASS。
-- 整体决策为 `inconclusive`。
+- 整体决策为 `regressed (low)`：`checker-beta` 相对 `checker-alpha`。
 
 若要在 Web UI 中查看结果：
 
@@ -184,7 +184,7 @@ setup 命令在单元格的 workspace 根目录中按顺序执行，在 agent �
 | Workspace setup 命令 | `{python}` |
 | Command 期望 | `{python}`, `{output_dir}` |
 
-`{python}` 始终解析为运行 micro-eval 的当前 Python 解释器。由于 setup 在单元格 artifact 路径可用之前运行，输入/输出占位符被故意限制在 agent 和验证上下文中。
+本机 provider 的 `{python}` 解析为运行 micro-eval 的 Python 解释器；远程 provider 使用沙箱中的 `python3`。setup 支持 `{python}`，输入/输出占位符仍限于 agent 和验证上下文。command expectation 在 agent 所属 provider 上下文执行，因此 `{output_dir}` 指向该上下文的输出目录，可能是 staging 或远程存储。
 
 setup 命令的适用场景：
 - 验证所需文件或目录是否存在
@@ -203,12 +203,12 @@ setup 命令的适用场景：
 
 `checker-beta` 故意跳过创建 `report/summary.json`。`command` 期望在 artifact 输出目录中运行 `python3 -c "import json; json.load(open('report/summary.json'))"` 并收到 `FileNotFoundError`，使得 `generate-report` 任务的两次重复均为 FAIL。
 
-最终决策状态为 **`inconclusive`**，置信度低。当没有配置 `decision_threshold` 时，micro-eval 不会因单个任务失败而自动判定为回归，但会在矩阵和通过率摘要中清晰地展示差异：
+最终决策状态为 **`regressed`**，置信度低。配置声明了 `decision_threshold: 0.5`；两个任务持平，`generate-report` 退化 100 个百分点。每个任务每侧只有两次 repetition，因此报告保留 `low_sample` caveat：
 
 ```
 checker-alpha  @1=100%  (baseline)
 checker-beta   @1= 67%  (candidate)
-decision: inconclusive (low)
+decision: regressed (low)
 ```
 
 ::: tip 何时 `inconclusive` 是正确结果

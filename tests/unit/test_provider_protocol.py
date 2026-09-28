@@ -105,6 +105,25 @@ class TestGitWorktreeProviderProtocol:
         assert len(snap) == 40
         provider.cleanup(handle)
 
+    def test_invalid_ref_fails_before_any_worktree_exists(self, tmp_path: Path) -> None:
+        """GRO-972: a bad ref is refused before a worktree or agent path starts."""
+        repo = _make_git_repo(tmp_path / "project")
+        provider = GitWorktreeProvider(repo)
+        spec = WorkspaceSpec(type=WorkspaceType.git_repo, path=str(repo), ref="--show-toplevel")
+        with pytest.raises(WorkspaceProviderError, match="git ref cannot be resolved to a commit"):
+            provider.create(spec, cell_id="ref-cell", run_id="test-run")
+        assert not (repo / ".micro-eval" / "workspaces" / "test-run").exists()
+
+    def test_option_ref_message_does_not_echo_input(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path / "project")
+        provider = GitWorktreeProvider(repo)
+        marker = "leaky-token-9f13a"
+        spec = WorkspaceSpec(type=WorkspaceType.git_repo, path=str(repo), ref=f"--exec={marker}")
+        with pytest.raises(WorkspaceProviderError) as info:
+            provider.create(spec, cell_id="leak-cell", run_id="test-run")
+        assert marker not in str(info.value)
+        assert str(repo) not in str(info.value)
+
 
 class TestProviderRegistry:
     """ProviderRegistry must select providers by isolation level."""

@@ -1,38 +1,49 @@
-# 开发指南
+---
+title: Development Guide
+language: en
+authoritative: true
+doc_type: guide
+status: active
+created_at: 2026-09-27T15:56+08:00
+updated_at: 2026-09-27T15:56+08:00
+owner: micro-eval maintainers
+---
 
-本文是工程入口。正式工程规范以 `docs/engineering/` 为准。
+# Development Guide
 
-**内部设计文档**（开发者参考）：
-- `docs/superpowers/specs/2026-06-02-unicorn-design.md` — 长期架构
-- `docs/superpowers/specs/2026-06-02-mvp-profile.md` — MVP 范围
-- `docs/superpowers/specs/2026-06-02-test-architecture.md` — 测试架构
+This is the engineering entry point. Authoritative engineering guidelines live in `docs/engineering/`. A Chinese companion translation (`DEVELOPMENT.zh-CN.md`) exists for human reading; this English file is authoritative, and agents must follow it rather than any translation.
 
-**用户文档站点**（`site/`）：
-- 组织方式：Get Started → Using micro-eval → Advanced → Reference
-- 设计体系页：`site/guide/design-system.md`（决策闭环、3 张力、7 核心对象）
-- 用户文档不包含实现细节；内部文档不重述用户概念。两套文档服务不同受众。
+**Internal design docs** (developer reference):
+- `docs/superpowers/specs/2026-06-02-unicorn-design.md` — long-term architecture
+- `docs/superpowers/specs/2026-06-02-unicorn-design.md` §9–§10 — current implementation scope (the historical MVP profile is archived at `docs/_archive/2026-06-02-mvp-profile.md`)
+- `docs/superpowers/specs/2026-06-02-test-architecture.md` — test architecture
 
-Work Register 与 local ticket 规则见 `docs/agents/issue-tracker.md`；在 `dev` 上可运行 `uv run python scripts/check-work-governance.py` 做离线治理检查。Release evidence 见 `docs/releases/`。完整 release 流程见 `docs/engineering/release-process.md`，配套脚本在 `scripts/release/`。
+**User documentation site** (`site/`):
+- Organization: Get Started → Using micro-eval → Advanced → Reference
+- Design system page: `site/guide/design-system.md` (decision loop, 3 tensions, 7 core objects)
+- User docs contain no implementation details; internal docs do not restate user concepts. The two doc sets serve different audiences.
 
-## 开发原则
+The Work Register is the Linear project `micro-eval` (team `GRO`); the contract lives in `docs/agents/issue-tracker.md`, and `uv run python scripts/check-work-governance.py` runs the offline governance check over archives and projection policy. Release evidence lives in `docs/releases/`. The full release process is `docs/engineering/release-process.md`, with companion scripts under `scripts/release/`.
 
-- 日常开发在 `dev` 分支；不要直接在 `main` 开发。
-- 禁止 TDD：先理解规格与用户路径，再设计模块边界，实现可运行垂直切片，最后补验收/回归/契约测试。
-- Python 代码注释使用英文；用户沟通使用简体中文。
-- subprocess 必须 argv-only，禁止 shell interpolation。
-- 涉及 env/stdout/stderr/artifact/workspace 的改动必须按 `docs/engineering/security-guidelines.md` 检查。
-- 不要绕过 canonical schema；Python Pydantic 与 TypeScript zod contract 必须保持一致。
+## Development principles
 
-## 环境准备
+- Daily development happens on the `dev` branch; do not develop directly on `main`.
+- No TDD: understand the spec and the user path first, design module boundaries, implement a runnable vertical slice, then add acceptance/regression/contract tests.
+- Python code comments are in English; user communication is in Simplified Chinese.
+- subprocess calls are argv-only; shell interpolation is forbidden.
+- Changes touching env/stdout/stderr/artifact/workspace must be checked against `docs/engineering/security-guidelines.md`.
+- Do not bypass the canonical schemas; the Python Pydantic and TypeScript zod contracts must stay aligned.
 
-Python 要求 `>=3.11`。
+## Environment setup
+
+Python `>=3.11` is required.
 
 ```bash
 uv sync --all-extras
 cd ui && npm install
 ```
 
-本项目使用 `uv` 管理本地 Python 环境。`uv sync --all-extras` 会在项目根目录创建或更新 `.venv/`，后续运行项目命令时优先使用 `uv run ...`，不要依赖当前 shell 中的 `python` 或全局安装的 `micro-eval`：
+This project manages the local Python environment with `uv`. `uv sync --all-extras` creates or updates `.venv/` at the project root; prefer `uv run ...` for project commands and do not rely on the current shell's `python` or a globally installed `micro-eval`:
 
 ```bash
 uv run python --version
@@ -40,9 +51,9 @@ uv run micro-eval --help
 uv run pytest -q
 ```
 
-Zed 项目设置已关闭终端自动激活 `.venv`，这样集成终端会保持用户默认 zsh prompt；项目运行环境仍由 `uv run` 选择 `.venv`。
+The Zed project settings disable automatic `.venv` activation in the integrated terminal, so the terminal keeps the user's default zsh prompt; the runtime environment is still selected by `uv run` from `.venv`.
 
-常用本地命令：
+Common local commands:
 
 ```bash
 uv run micro-eval --help
@@ -53,29 +64,29 @@ uv run micro-eval run --dry-run --format json
 
 ## Example smoke
 
-源码 checkout 中的 example 提供一条跨平台入口，适合验证 CLI、workspace、run store 与 report 基本链路：
+The examples in a source checkout provide one cross-platform entry point for exercising the basic CLI, workspace, run store, and report chain:
 
 ```bash
 uv run python examples/run-example.py
 ```
 
-该脚本从 `examples/agent-codefix-showdown/` 作为 eval project 运行 deterministic mock matrix，并生成：
+The script runs a deterministic mock matrix with `examples/agent-codefix-showdown/` as the eval project and produces:
 
-- run store：`examples/agent-codefix-showdown/.micro-eval/runs/`
-- cell workspace：`examples/agent-codefix-showdown/.micro-eval/workspaces/{run_id}/{cell_id}/`
-- static report：`examples/agent-codefix-showdown/report.html`
+- run store: `examples/agent-codefix-showdown/.micro-eval/runs/`
+- cell workspaces: `examples/agent-codefix-showdown/.micro-eval/workspaces/{run_id}/{cell_id}/`
+- static report: `examples/agent-codefix-showdown/report.html`
 
-`report.html` 与 `.micro-eval/` 属于运行时产物，已被 git ignore。默认情况下 cell workspace 会在 cell 结束后 cleanup；run 记录中的 `cell_snapshot.workspace_path` 保留路径证据。
+`report.html` and `.micro-eval/` are runtime artifacts and are git-ignored. By default cell workspaces are cleaned up after the cell finishes; the run record keeps the path evidence in `cell_snapshot.workspace_path`.
 
-真实 agent matrix 仍需显式 opt-in：
+A real agent matrix still requires explicit opt-in:
 
 ```bash
 uv run python examples/run-example.py --real
 ```
 
-## 本地验证
+## Local verification
 
-功能或 release 相关改动至少运行：
+Run at least the following for functional or release-related changes:
 
 ```bash
 uv run python -m compileall src/micro_eval tests
@@ -89,16 +100,16 @@ grep -R "localStorage" ui/src || true
 grep -R "sessionStorage" ui/src || true
 ```
 
-涉及 examples、workspace、subprocess、artifact 或安全边界的改动，还应至少抽样运行：
+For changes touching examples, workspaces, subprocess, artifacts, or security boundaries, also sample at least:
 
 ```bash
 uv run python examples/run-example.py
 grep -RInE 'create_subprocess_shell|shell=True' src tests ui examples || true
 ```
 
-纯文档改动可只运行 `git diff --check`，但如果文档更新了命令、schema、workspace 路径或 release claims，应抽样运行相关命令确认。
+Documentation-only changes may run only `git diff --check`, but when the docs update commands, schemas, workspace paths, or release claims, sample-run the relevant commands to confirm.
 
-## 主要模块
+## Main modules
 
 ```text
 src/micro_eval/
@@ -119,37 +130,37 @@ ui/src/
 └── lib/                 # zod schema, fs data access, server-mode utilities, workspace API
 ```
 
-## Canonical 数据流
+## Canonical data flow
 
-1. `load_config()` 读取 canonical `configurations[]`；legacy `baseline` / `candidate` 只通过 migration bridge 转换。
-2. `build_run_plan()` 展开 `tasks × configurations × repetitions`，生成 `SameStartSnapshot` 与 `ReplayCanonical`。
-3. `ExecutionKernel` 为每个 cell 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下分配 workspace，调用 `AgentAdapter`，写入 stdout/stderr/output artifacts。
-4. `validate_cell()` 生成 validator `EvaluationResult` 与 validation evidence；如 `judge.enabled=true`，可追加 supplemental judge evaluation，但不得覆盖 deterministic cell pass/fail。
-   - 当 `judge.provider == "deepeval_conversational"` 时，kernel 走 conversational 分支（`_execute_cell_conversational`）：`SubprocessBridge` 以 JSONL 逐轮驱动 agent 进程保活，`conversational_judge` 模块两阶段 `simulate_conversation()` → `score_conversation()` 产出评分；结果写入 `conversation.json` artifact 与 `conversational_judge` 类型 evidence，CellResult 通过 `conversation_ref` 指向该产物。deterministic pass/fail 语义不被此分支覆盖。
-5. `TraceProvider` 在 `trace.enabled=true` 时收集 `TraceRef`；`process` fallback 不需要 SDK，`langfuse` 通过 optional extra/importlib 接入。
-6. `RunStore` 写入 `.micro-eval/runs/{run_id}/run.json` 和 sibling `decision.json`，`ArtifactStore` 写入 `manifest.json`（含 artifacts/evidence/traces）。
-7. `build_decision()` 基于 pass@k/pass^k、latency、cost source 与 caveat 生成 guarded `DecisionReport`；snapshot mismatch 降级为 `not_comparable`。
-8. UI/API 通过 zod 读取 canonical JSON；human evaluation POST append 到 cell `evaluation.json` 并重算 `decision.json` / `run.json.decision`。
+1. `load_config()` reads the canonical `configurations[]`; legacy `baseline` / `candidate` is converted only through the migration bridge.
+2. `build_run_plan()` expands `tasks × configurations × repetitions` and produces the `SameStartSnapshot` and `ReplayCanonical`.
+3. The `ExecutionKernel` allocates a workspace for each cell under the current eval project's `.micro-eval/workspaces/{run_id}/{cell_id}/`, invokes the `AgentAdapter`, and writes stdout/stderr/output artifacts.
+4. `validate_cell()` produces the validator `EvaluationResult` and validation evidence; with `judge.enabled=true` a supplemental judge evaluation may be appended but must never override the deterministic cell pass/fail.
+   - When `judge.provider == "deepeval_conversational"`, the kernel takes the conversational branch (`_execute_cell_conversational`): `SubprocessBridge` keeps the agent process alive and drives it turn by turn over JSONL; the `conversational_judge` module scores in two phases (`simulate_conversation()` → `score_conversation()`); results go to the `conversation.json` artifact and `conversational_judge`-typed evidence, and the CellResult points to that artifact via `conversation_ref`. Deterministic pass/fail semantics are not overridden by this branch.
+5. `TraceProvider` collects `TraceRef` when `trace.enabled=true`; the `process` fallback needs no SDK, and `langfuse` is wired through an optional extra/importlib.
+6. `RunStore` writes `.micro-eval/runs/{run_id}/run.json` and the sibling `decision.json`; `ArtifactStore` writes `manifest.json` (covering artifacts/evidence/traces).
+7. `build_decision()` produces a guarded `DecisionReport` from pass@k/pass^k, latency, cost source, and caveats; a snapshot mismatch degrades the decision to `not_comparable`.
+8. The UI/API reads canonical JSON through zod; human evaluation POSTs append to the cell `evaluation.json` and recompute `decision.json` / `run.json.decision`.
 
 ## Workspace boundary
 
-`WorkspaceManager` 是 workspace 路径与生命周期的唯一入口。开发时不要在 adapter、validator、report 或 UI 中自行创建 agent cwd。
+`WorkspaceManager` is the single entry point for workspace paths and lifecycle. During development, never create an agent cwd on your own in adapters, validators, reports, or the UI.
 
-当前 MVP 支持三类 task workspace：
+The current MVP supports three task workspace types:
 
 | `workspace.type` | Runtime behavior |
 | --- | --- |
-| `blank` | 在当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/` 下创建空目录。 |
-| `files` | 将声明的文件/目录复制到 `.micro-eval/workspaces/{run_id}/{cell_id}/`。 |
-| `git_repo` | 解析 `ref` 到 commit，并将 detached git worktree 创建到 `.micro-eval/workspaces/{run_id}/{cell_id}/`。 |
+| `blank` | Creates an empty directory under the current eval project's `.micro-eval/workspaces/{run_id}/{cell_id}/`. |
+| `files` | Copies the declared files/directories into `.micro-eval/workspaces/{run_id}/{cell_id}/`. |
+| `git_repo` | Resolves `ref` to a commit and creates a detached git worktree at `.micro-eval/workspaces/{run_id}/{cell_id}/`. |
 
-安全边界：
+Security boundaries:
 
-- agent cwd 必须位于当前 eval project 的 `.micro-eval/workspaces/{run_id}/{cell_id}/`。
-- 不得未经用户明确配置把 agent cwd 放到系统临时目录或项目外目录。
-- setup 命令和 agent 命令都必须 argv-only。
-- cell workspace cleanup 失败必须进入 snapshot/evidence，而不是静默吞掉。
-- raw workspace path 只能作为 snapshot/evidence 路径证据；UI/API 展示 artifact 内容仍必须走 manifest/ref 边界。
+- The agent cwd must live inside the current eval project's `.micro-eval/workspaces/{run_id}/{cell_id}/`.
+- Never place the agent cwd in a system temp directory or outside the project without explicit user configuration.
+- Both setup commands and agent commands must be argv-only.
+- A failed cell workspace cleanup must surface in snapshot/evidence instead of being swallowed silently.
+- Raw workspace paths are path evidence only in snapshot/evidence; UI/API display of artifact content must still go through the manifest/ref boundary.
 
 ## CLI smoke
 
@@ -174,20 +185,20 @@ uv run --project /path/to/micro-eval micro-eval report --format html --output re
 
 ## Security review checklist
 
-- **shell interpolation**：canonical agent commands and validation commands are argv lists; no `shell=True` or `create_subprocess_shell` in trusted execution paths.
-- **secrets redaction**：only declared `MICRO_EVAL_SECRET_*` values are injected, and all non-empty host `MICRO_EVAL_SECRET_*` values participate in redaction before text artifact/evidence/UI persistence.
-- **workspace boundary**：agent cwd is the assigned blank/files/git worktree workspace under the current eval project's `.micro-eval/workspaces/`; setup env is allowlisted and does not inherit secrets.
-- **output_dir boundary**：`output_dir` must be project-relative and must not contain `..`.
-- **artifact safety**：reserved stdout/stderr/output paths are written atomically; symlink, hardlink, non-regular, oversized, and binary artifacts are skipped or represented with warnings/placeholders.
-- **raw artifact access**：Decision/UI consume refs and summaries; raw text content is available only through explicit manifest `artifact_id` lookup plus run-dir `realpath` boundary validation.
-- **snapshot mismatch**：Decision must stay guarded and never claim strong improvement/regression when comparability is degraded.
-- **trace/judge safety**：Trace 和 LLM judge 默认关闭；外部 SDK 只能通过 optional extra/importlib 接入，凭证只用 `MICRO_EVAL_SECRET_*` 环境变量，不写入 config/artifact/release docs。
+- **shell interpolation**: canonical agent commands and validation commands are argv lists; no `shell=True` or `create_subprocess_shell` in trusted execution paths.
+- **secrets redaction**: only declared `MICRO_EVAL_SECRET_*` values are injected, and all non-empty host `MICRO_EVAL_SECRET_*` values participate in redaction before text artifact/evidence/UI persistence.
+- **workspace boundary**: the agent cwd is the assigned blank/files/git worktree workspace under the current eval project's `.micro-eval/workspaces/`; setup env is allowlisted and does not inherit secrets.
+- **output_dir boundary**: `output_dir` must be project-relative and must not contain `..`.
+- **artifact safety**: reserved stdout/stderr/output paths are written atomically; symlink, hardlink, non-regular, oversized, and binary artifacts are skipped or represented with warnings/placeholders.
+- **raw artifact access**: Decision/UI consume refs and summaries; raw text content is available only through explicit manifest `artifact_id` lookup plus run-dir `realpath` boundary validation.
+- **snapshot mismatch**: Decision must stay guarded and never claim strong improvement/regression when comparability is degraded.
+- **trace/judge safety**: Trace and the LLM judge are off by default; external SDKs are wired only through optional extras/importlib, credentials come only from `MICRO_EVAL_SECRET_*` environment variables, and are never written into config/artifact/release docs.
 
-Workspace 相关改动建议额外检查：
+For workspace-related changes, additionally check:
 
 - `tests/e2e/test_p0b_reproducibility_flow.py::test_files_workspace_stays_under_project_workspaces_dir`
 - `tests/e2e/test_p0b_reproducibility_flow.py::test_git_repo_workspace_runs_in_isolated_worktree_with_snapshot`
-- example smoke 的最新 `cell_snapshot.workspace_path` 是否位于当前 example project 的 `.micro-eval/workspaces/` 下。
+- whether the example smoke's latest `cell_snapshot.workspace_path` sits under the current example project's `.micro-eval/workspaces/`.
 
 ## Release readiness checklist
 
@@ -199,4 +210,4 @@ Before claiming a release-ready MVP:
 4. Install the wheel in a Python `>=3.11` virtual environment and run a CLI smoke.
 5. Run or review UltraQA adversarial scenarios for normal path, malformed argv, misleading exit code, timeout, secret leakage, artifact traversal, and binary artifact handling.
 6. Get independent code-review and architecture review evidence when the release risk warrants it.
-7. Record final evidence in `docs/releases/`, generate dependency inventory with `scripts/release/generate-dependency-inventory.py --version <version>`, and follow `docs/engineering/release-process.md` for version, commit, tag, and dev→main projection gates.
+7. Record final evidence in `docs/releases/`, generate the dependency inventory with `scripts/release/generate-dependency-inventory.py --version <version>`, and follow `docs/engineering/release-process.md` for version, commit, tag, and dev→main projection gates.

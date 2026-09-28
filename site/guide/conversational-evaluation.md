@@ -38,7 +38,7 @@ At a high level:
 3. Once the conversation ends, the transcript is scored against the configured metrics.
 4. Results are written the same way as single-turn evaluation: an `EvaluationResult` (with `evaluator_type: conversational_judge`), evidence, and a pass/fail verdict that feeds into the cell's decision.
 
-The same execution guarantees apply as for single-turn tasks — workspace isolation, timeouts, environment variable whitelisting, and secret redaction all carry over unchanged.
+Conversations currently require `workspace.isolation_level: logical`. The cell execution context opens a persistent interactive bridge through its provider; this is separate from single-turn command execution. Other isolation levels are rejected before workspace preparation because they do not support that bridge. Environment variable whitelisting and secret redaction still apply; conversation turn timeouts and bridge shutdown govern this long-lived process.
 
 ## Configuration
 

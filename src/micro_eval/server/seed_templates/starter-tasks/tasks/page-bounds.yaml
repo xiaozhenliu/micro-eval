@@ -1,0 +1,38 @@
+id: page-bounds
+name: Fix pagination bounds clamping
+description: Fix a pagination helper that returns out-of-range indexes on the last page.
+input_payload: |
+  You are in a copied workspace. The code to fix is at
+  `page-bounds/page_bounds.py`.
+
+  Goal:
+  - `page-bounds/tests/test_page_bounds.py` describes the expected
+    behaviour of `page_bounds(total, page_size, page) -> tuple[int, int]`:
+    it returns the half-open `[start, end)` slice indexes for a 1-based
+    `page`, clamping both bounds to `total` on the last (partial) page and
+    on any page beyond the available range.
+  - Fix the bug in `page_bounds.py` so all the tests pass.
+
+  Constraints:
+  - Do not edit anything under `page-bounds/tests/`; the judge checks that
+    directory from outside the workspace.
+  - Only change `page-bounds/page_bounds.py`.
+
+  Done means:
+  - `python -m unittest discover -s tests` passes when run from `page-bounds/`.
+  - Your final response briefly explains the change.
+expectations:
+  - type: command
+    command: ["{python}", "-m", "micro_eval.tools.verify_protected", "--protected-dir", "tests", "--expected-sha256", "32147d22810608165aeff6b46739c7ab6d7f753da3e0a13d2fa70d6290667925"]
+    cwd: "page-bounds"
+    timeout_s: 60
+workspace:
+  type: files
+  files:
+    - fixtures/page-bounds
+rubric: |
+  A useful result clamps both start and end to total without touching
+  tests/, and the protected-tests judge passing is the
+  primary signal for this small, self-contained bug-fix task.
+business_impact_tier: 3
+tags: [starter, codefix]

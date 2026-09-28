@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Mapping
 
 from micro_eval.engine.kernel import ExecutionKernel
-from micro_eval.models.run import RunPlan, ServerContext
+from micro_eval.models.run import RunPlan, RunStatus, ServerContext
 from micro_eval.server.models import ServerConfig, WorkspaceMeta
 from micro_eval.server.queue import QueueDB
 from micro_eval.store.run_store import RunStore, RunStoreError
@@ -183,6 +183,12 @@ async def worker_loop(
             )
             run_id = plan.run_id
             db.update_status(job_id, "running", run_id=run_id)
+            db.update_progress(job_id, {
+                "completed_cells": 0,
+                "total_cells": len(plan.cells),
+                "current_task": None,
+                "current_config": None,
+            })
 
             def on_cell_complete(completed: int, total: int, result):
                 db.update_progress(job_id, {
@@ -192,17 +198,24 @@ async def worker_loop(
                     "current_config": result.configuration_id,
                 })
 
-            kernel = ExecutionKernel(project_root=ws_path, on_cell_complete=on_cell_complete)
+            kernel = ExecutionKernel(
+                project_root=ws_path,
+                on_cell_complete=on_cell_complete,
+                cancel_requested=lambda: db.is_cancel_requested(job_id),
+            )
             record = await asyncio.wait_for(
                 kernel.run(plan),
                 timeout=run_timeout,
             )
 
-            if db.is_cancel_requested(job_id):
-                db.update_status(job_id, "cancelled", finished_at=_utcnow())
-                logger.info("Job %s cancelled (stop-after-run)", job_id)
+            terminal_status = db.finish_running(job_id)
+            if terminal_status == "cancelled":
+                # A request can arrive after the kernel's last cancellation
+                # check but before the atomic queue transition.
+                if record.status != RunStatus.cancelled:
+                    RunStore(ws_path).finalize_run(record, cancelled=True)
+                logger.info("Job %s cancelled after in-flight cells finished", job_id)
             else:
-                db.update_status(job_id, "done", finished_at=_utcnow())
                 logger.info("Job %s completed successfully", job_id)
 
         except asyncio.TimeoutError:

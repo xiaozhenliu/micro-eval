@@ -567,9 +567,18 @@ Server mode routes have **no authentication**. Identity is self-reported via the
 | `POST` | `/api/workspaces/[id]/runs/enqueue` | Enqueue a new run job |
 | `GET` | `/api/workspaces/[id]/runs/[runId]` | Get a run within a workspace |
 | `GET` | `/api/workspaces/[id]/config` | Get the workspace eval.yaml |
+| `PUT` | `/api/workspaces/[id]/config` | Replace the workspace eval.yaml |
+| `GET` | `/api/workspaces/[id]/project` | Read editable configurations, tasks, and validation issues |
+| `PUT` | `/api/workspaces/[id]/project/configurations` | Create or update a configuration |
+| `DELETE` | `/api/workspaces/[id]/project/configurations/[configId]` | Delete a configuration |
+| `PUT` | `/api/workspaces/[id]/project/tasks` | Create or update a task |
+| `DELETE` | `/api/workspaces/[id]/project/tasks/[taskId]` | Delete a task |
+| `DELETE` | `/api/workspaces/[id]/project/tasks?path=...` | Delete a task file by path when it cannot be parsed |
+| `GET` | `/api/workspaces/[id]/plan-summary` | Preview the run plan and admission digest |
 | `GET` | `/api/workspaces/[id]/trends` | Query workspace-scoped trend data |
+| `GET` | `/api/workspaces/[id]/jobs/[jobId]` | Get a job belonging to this workspace |
 | `GET` | `/api/queue` | Get queue dashboard summary |
-| `GET` | `/api/jobs/[jobId]` | Get a single job record |
+| `GET` | `/api/jobs/[jobId]` | Get a job across workspaces for queue administration |
 | `POST` | `/api/jobs/[jobId]/cancel` | Cancel a queued or running job |
 | `GET` | `/api/templates` | List all templates |
 | `GET` | `/api/templates/[id]` | Get a single template |
@@ -589,7 +598,17 @@ Server mode routes have **no authentication**. Identity is self-reported via the
 
 **DELETE /api/workspaces/[id]** — Delete the workspace and all associated run data. Returns `204 No Content`. This is irreversible.
 
-**GET /api/workspaces/[id]/config** — Returns the raw `eval.yaml` content for the workspace as `text/plain`.
+**GET /api/workspaces/[id]/config** — Returns JSON `{ "content": "...", "redacted": boolean }`. Declared secret values in the YAML are replaced before it reaches the browser. **PUT** replaces the raw YAML; send `{ "content": "..." }`. The YAML is limited to 1 MiB and validated before it is written. Saving requires the standard write headers.
+
+### Project Configuration and Task Routes
+
+These routes back the workspace Config forms. `GET /api/workspaces/[id]/project` returns a project draft containing `schema_version`, `project_name`, `description`, `configurations`, `configuration_errors`, `tasks`, and `warnings`. Each task entry contains its workspace-relative `path`, a parsed `task` or `null`, and an `error` or `null`.
+
+`PUT /api/workspaces/[id]/project/configurations` creates or updates one configuration, keyed by its `id`; its JSON body is a configuration object with `id`, `name`, `agent`, and optional `repetitions`, `role`, `skills_profile`, and `parameters`. `DELETE /api/workspaces/[id]/project/configurations/[configId]` removes one configuration. Both return the updated project draft.
+
+`PUT /api/workspaces/[id]/project/tasks` creates or updates one task, keyed by its `id`; its JSON body is a task object (including `name`, `input_payload`, and optional task, expectation, and workspace fields). `DELETE /api/workspaces/[id]/project/tasks/[taskId]` removes a task by ID. Both return the updated project draft. To remove an unreadable task file that has no usable ID, use `DELETE /api/workspaces/[id]/project/tasks?path=tasks/<file>.yaml`; the path must be a safe workspace-relative task path.
+
+All project write routes require `X-Micro-Eval-Member` and `Content-Type: application/json`. They are available only in server mode and only for writable (active) workspaces. Invalid request data returns `400`; missing workspace or entry returns `404`.
 
 **GET /api/workspaces/[id]/trends** — Same shape as the local `/api/trends` route but scoped to this workspace's runs. Accepts `config_id`, `since`, and `limit` query parameters.
 
@@ -605,15 +624,28 @@ Request body:
 
 ```json
 {
-  "overrides": {}
+  "expected_plan_digest": "<64-character SHA-256 hex>"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `overrides` | object | No | JSON overrides applied on top of the workspace `eval.yaml` before the plan is built. |
+| `expected_plan_digest` | string | No | Digest from the plan preview; a changed plan is refused with `409`. The body may be empty. |
 
-Response: the created `Job` record (status: `queued`).
+Response: `202 Accepted` with the queued job (`job_id`, `status`, `position`, and `plan_digest`). This accepts an asynchronous run; it does not mean execution has finished. As of v0.5.0, `config_overrides` is unsupported and requests containing it return `400 Bad Request`.
+
+| Status | Refusal |
+|--------|---------|
+| `400` | `config_overrides` is present, or `expected_plan_digest` is not a 64-character lowercase SHA-256 hex string. |
+| `404` | Workspace does not exist. |
+| `409` | Workspace is not active, or the current plan digest differs from `expected_plan_digest`; review a fresh preview before retrying. |
+| `429` | Queue capacity from `server.json` has been reached. |
+| `502` | The run plan cannot be built, including invalid task/workspace sources or an unresolved Git ref. |
+| `503` | The workspace is unavailable. |
+
+A `502` refusal with `error: "failed to build run plan"` and a `detail` field means the plan could not be built (for example an invalid workspace source or a Git `ref` that does not resolve to a commit). When the cause is a `ref` that does not resolve to a commit, the response additionally carries `reason: "invalid_git_ref"` and a fixed `hint`; the route only ever echoes this one known reason and its own constant hint, never an arbitrary backend message. `GET /api/workspaces/[id]/plan-summary` uses the same refusal shape.
+
+**GET /api/workspaces/[id]/plan-summary** — Builds a preview using the same admission checks as enqueue and returns `{ tasks, configurations, repetitions, repetitions_uniform, total_cells, agent_commands, plan_digest }`. Plan-build refusals return `502` with an error and detail; an invalid Git ref also carries the fixed `reason` and `hint` described above. A missing workspace returns `404`, and a non-active workspace returns `409`.
 
 Required headers: `X-Micro-Eval-Member`, `Content-Type: application/json`.
 
@@ -627,14 +659,26 @@ Required headers: `X-Micro-Eval-Member`, `Content-Type: application/json`.
 
 ```json
 {
-  "queued": 2,
-  "running": 1,
-  "done_today": 14,
-  "jobs": [ /* Job records, most recent first */ ]
+  "running": null,
+  "queued": [],
+  "recent_completed": []
 }
 ```
 
-**GET /api/jobs/[jobId]** — Get a single `Job` record by ID. Includes `status`, `progress`, timestamps, and any error message.
+`running` is one job or `null`; `queued` contains jobs with 1-based `position` values;
+`recent_completed` contains up to 10 `done`, `failed`, or `cancelled` jobs. A job's
+`progress` is `null` or an object with `completed_cells`, `total_cells`,
+`current_task`, and `current_config`. The first two are non-negative integers;
+the latter two are nullable strings. Status is one of `queued`, `running`,
+`done`, `failed`, or `cancelled`.
+
+**GET /api/workspaces/[id]/jobs/[jobId]** — Get a job only when it belongs to
+the requested workspace. A missing workspace, missing job, or job from another
+workspace returns `404`. The workspace job page polls this route.
+
+**GET /api/jobs/[jobId]** — Get a single job across workspaces for queue
+administration. Both job routes omit the stored `plan_json`, which may contain
+agent environment values.
 
 **POST /api/jobs/[jobId]/cancel** — Request cancellation of a queued or running job. Queued jobs are cancelled immediately. Running jobs finish the current cell, then stop. Body: `{}`. Required headers: `X-Micro-Eval-Member`, `Content-Type: application/json`.
 
@@ -664,6 +708,6 @@ Templates are managed via the CLI (`micro-eval template create/update/delete`) a
     "queued": 2,
     "running": 1
   },
-  "ui_version": "0.4.6"
+  "ui_version": "0.5.0"
 }
 ```

@@ -146,7 +146,7 @@ expectations:
 
 ### `file_exists` — 输出文件存在性
 
-Agent 完成后，给定路径的文件必须存在。使用 `{output_dir}` 作为 task 工作区目录的占位符——micro-eval 会在运行时将其替换为实际路径。
+agent 完成后，给定路径的文件必须存在。相对路径在 cell 工作区内解析；如需检查 provider 的输出目录，应显式使用 `{output_dir}`。
 
 ```yaml
 expectations:
@@ -154,48 +154,57 @@ expectations:
     path: "{output_dir}/report.md"
 
   - type: file_exists
-    path: "{output_dir}/src/utils.py"
+    path: "src/utils.py"
 
   - type: file_exists
-    path: "{output_dir}/dist/bundle.js"
+    path: "dist/bundle.js"
 ```
 
 ::: warning
-Agent 的工作目录是工作区根目录，与 `{output_dir}` 解析的路径相同。不要写相对于项目根目录的路径——agent 不在你的项目目录中运行。
+工作区根目录与 `{output_dir}` 是两个不同范围。输出目录可能是私有 staging 目录或远程路径；不要使用宿主项目路径指代 cell 内的文件。
 :::
 
 ### `command` — 外部验证脚本
 
 运行任意命令作为验证器。该命令必须以代码 `0` 退出，expectation 才算通过。这是最强大的 expectation 类型：它允许你运行现有的测试套件、linter、diff 检查或任何其他验证逻辑。
 
+未知 expectation 类型及其额外字段会在配置编辑时保留，以支持向前兼容。内置 validator 会将不支持的类型判为 expectation 失败；保留字段不等于新增了 evaluator 实现。
+
 ```yaml
 expectations:
   - type: command
     command: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
-    cwd: "{output_dir}"
+    cwd: "."
 
   - type: command
     command: ["npx", "tsc", "--noEmit"]
-    cwd: "{output_dir}"
+    cwd: "."
 
   - type: command
     command: ["git", "diff", "--exit-code"]
-    cwd: "{output_dir}"
+    cwd: "."
 
   - type: command
     command: ["bash", "scripts/validate_output.sh"]
-    cwd: "{output_dir}"
+    cwd: "."
 ```
 
 **`command` expectations 的重要约束：**
 
 - `command` 必须是列表——绝不能是 shell 字符串。micro-eval 直接将参数传递给子进程，不经过 shell，从而防止注入攻击和引号问题。
-- 省略 `cwd` 时默认为 `{output_dir}`。
+- 省略 `cwd` 时默认为 cell 工作区；如需检查 provider 输出，应显式使用 `{output_dir}`。
 - 命令的 stdout 和 stderr 会被捕获并附加到 run 结果中以便调试，但不影响通过/失败的判定——只有退出码才有效。
 
 ::: warning
 不要使用 `command: ["sh", "-c", "some command string"]`。如果需要 shell 特性，请写一个脚本文件，将其提交到 fixture，然后用 `command: ["bash", "scripts/my-check.sh"]` 调用。
 :::
+
+### starter task 的受保护测试
+
+内置 `starter-tasks` 模板包含五个小型 bug 修复任务。其 command expectation 从 fixture 目录调用已安装的 `micro_eval.tools.verify_protected` 模块。该工具检查 `tests/` 的预期 digest，从只读临时副本运行测试，再次检查工作区中的测试。修改或新增测试文件会被拒绝；agent 应修复被测模块。
+
+该 digest 检查不构成进程隔离。被测模块与测试共享一个 Python 进程，恶意导入时代码仍可能干扰测试运行器或其可访问的文件。通过仅表示受保护测试在 digest 检查时未变化且测试通过；评测对抗性 agent 时，应检查工作区证据并使用合适的沙箱。
+
 
 ## Workspace 类型
 
@@ -259,10 +268,10 @@ workspace:
 
 | 级别 | 机制 | 适用场景 |
 |---|---|---|
-| `logical` | git worktree——仅文件系统隔离 | 日常开发、可信 agent |
-| `os_policy` | Seatbelt（macOS）/ Bubblewrap（Linux）——系统调用限制 | 需要 OS 级别的隔离但不想用容器运行时 |
-| `container` | OCI 容器 | 已有 Docker/Podman 且需要完全隔离 |
-| `vm` | E2B 或 Modal 远程 VM | 最强隔离；完全在你的机器之外运行 |
+| `logical` | 每个 cell 独立目录/worktree；不限制 OS 访问 | 日常开发、可信 agent |
+| `os_policy` | Seatbelt（macOS）/ Bubblewrap（Linux）——宿主写入和网络限制 | 需要本机工具且已审查的 agent；可读宿主文件仍可访问 |
+| `container` | Modal 远程容器 | 需要每 cell 独立远程环境，并已配置 SDK 与凭据 |
+| `vm` | E2B 远程 VM | 需要每 cell 独立远程环境，并已配置 SDK 与凭据 |
 
 ::: tip
 `logical` 是默认值，无需额外工具。当你开始评测会进行文件系统或网络调用、需要加以限制的 agent 时，可升级为 `os_policy`。
@@ -313,13 +322,13 @@ workspace:
 
 ## `{output_dir}` 占位符
 
-字符串 `{output_dir}` 在运行时会被替换为当前 `(task, configuration, repetition)` 单元格的 workspace 目录的绝对路径。它可用于：
+字符串 `{output_dir}` 在运行时替换为当前 cell 执行上下文的输出目录。它与 workspace 不同，可能是私有 staging 或远程存储。它可用于：
 
 - `file_exists` → `path`
-- `command` → `cwd`
+- `command` → argv 和 `cwd`
 
 ::: tip
-始终使用 `{output_dir}` 而非硬编码路径。micro-eval 为每个单元格创建独立的新目录，实际路径包含 run ID 和重复次数索引等 run 特定的组成部分。
+工作区文件使用相对路径，provider 输出使用 `{output_dir}`。不要硬编码宿主路径；每个 cell 独立管理自己的路径。
 :::
 
 ## Rubric 结构

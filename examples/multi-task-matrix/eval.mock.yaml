@@ -1,7 +1,7 @@
 # Multi-task matrix smoke: 2 configs × 3 tasks × 2 reps = 12 cells.
 # checker-alpha (baseline) passes all tasks.
 # checker-beta (candidate) passes task 1 and 2 but fails task 3 (report generation),
-# producing a mixed decision and triggering caveats.
+# producing a regressed decision and triggering low-sample/execution caveats.
 project_name: multi-task-matrix-mock
 description: Offline smoke showing multi-task matrices, all 4 expectation types, setup commands, and caveats.
 
@@ -51,10 +51,10 @@ evaluation:
   task_set_version: "multi-task-matrix.v1"
   success_criteria:
     - The baseline checker (alpha) completes all three tasks successfully.
-    - The candidate checker (beta) fails on generate-report, producing a mixed decision.
+    - The candidate checker (beta) fails on generate-report, producing a regressed decision.
     - All four expectation types (exit_code, contains, file_exists, command) are exercised.
   budget: null
-  decision_threshold: null
+  decision_threshold: 0.5
   inconclusive_policy: warn
   min_repetitions: 1
   required_evaluators: [validator]

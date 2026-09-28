@@ -8,7 +8,7 @@ Usage:
 
 Expected outcome:
   - 2 configs × 3 tasks × 2 reps = 12 cells executed
-  - decision.json verdict = inconclusive (alpha all-pass vs beta partial-fail)
+- decision.json verdict = regressed (low): beta relative to alpha
   - All four expectation types exercised: exit_code, contains, file_exists, command
 """
 
@@ -54,15 +54,15 @@ def main() -> int:
         print("  - randomize_execution_order (cell order randomized, seed in run.json)", flush=True)
         print("  - skills_profile + parameters (per-config metadata, included in config digest)", flush=True)
         print("  - denominator_policy: exclude_failed (errored cells excluded from pass rate)", flush=True)
-        print("  - stop_on_cell_error: true (run halts on first cell error)", flush=True)
-        print("  - inconclusive_policy: block (inconclusive treated as blocking)", flush=True)
+        print("  - stop_on_cell_error: true (recorded metadata; does not halt dispatch)", flush=True)
+        print("  - inconclusive_policy: block (recorded metadata; does not change CLI exit status)", flush=True)
     else:
         print("This example demonstrates:", flush=True)
         print("  - 2 configs × 3 tasks × 2 reps = 12 cells (multi-task matrix)", flush=True)
         print("  - All 4 expectation types: exit_code, contains, file_exists, command", flush=True)
         print("  - Workspace setup commands", flush=True)
         print("  - Checker-beta partial failure (generate-report task)", flush=True)
-        print("  - Inconclusive decision (baseline all-pass vs candidate partial-fail)", flush=True)
+        print("  - Regressed decision (candidate relative to baseline)", flush=True)
 
     run_step("validate", [*command_prefix, "validate", "--config", config_name], cwd=example_root)
     if not args.skip_run:

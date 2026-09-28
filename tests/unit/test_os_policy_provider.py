@@ -21,7 +21,7 @@ import platform
 import shutil
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -29,13 +29,14 @@ from micro_eval.engine.providers import (
     IsolationLevel,
     WorkspaceProvider,
 )
-from micro_eval.engine.providers.base import CommandResult, WorkspaceHandle
+from micro_eval.engine.providers.base import CommandResult, ExecutionRequest, WorkspaceHandle
 from micro_eval.engine.providers.os_policy import (
     BubblewrapProvider,
     SeatbeltProvider,
     _build_bwrap_argv,
     _build_seatbelt_profile,
 )
+from micro_eval.engine.providers.git_worktree import WorkspaceProviderError
 from micro_eval.engine.workspace import WorkspaceManager
 from micro_eval.models.task import WorkspaceSpec, WorkspaceType
 
@@ -192,11 +193,8 @@ class TestSeatbeltProfileAllNetworkPolicies:
     """_build_seatbelt_profile covers all three network policy branches."""
 
     def test_allowlist_network_policy(self, tmp_path: Path) -> None:
-        profile = _build_seatbelt_profile(tmp_path, "allowlist")
-        assert "localhost:*" in profile
-        # Both the allow and deny rules should be present for allowlist
-        assert "(allow network*" in profile
-        assert "(deny network*)" in profile
+        with pytest.raises(WorkspaceProviderError, match="allowlist requires explicit rules"):
+            _build_seatbelt_profile(tmp_path, "allowlist")
 
     def test_full_network_allows_all(self, tmp_path: Path) -> None:
         profile = _build_seatbelt_profile(tmp_path, "full")
@@ -255,6 +253,8 @@ class TestBuildBwrapArgv:
     def test_proc_dev_tmpfs_present(self, tmp_path: Path) -> None:
         argv = _build_bwrap_argv(tmp_path, "full", ["echo"])
         assert "--proc" in argv
+        assert "--unshare-pid" in argv
+        assert "--die-with-parent" in argv
         assert "--dev" in argv
         assert "--tmpfs" in argv
 
@@ -263,6 +263,23 @@ class TestBuildBwrapArgv:
         argv = _build_bwrap_argv(tmp_path, "full", ["echo"])
         chdir_idx = argv.index("--chdir")
         assert argv[chdir_idx + 1] == ws
+
+    def test_requested_cwd_does_not_change_workspace_mount(self, tmp_path: Path) -> None:
+        cwd = tmp_path / "nested"
+        argv = _build_bwrap_argv(tmp_path, "full", ["pwd"], cwd=cwd)
+        assert argv[argv.index("--chdir") + 1] == str(cwd)
+        assert argv[argv.index("--bind") + 1] == str(tmp_path)
+
+    def test_python_prefix_and_project_are_readonly_before_workspace(self, tmp_path: Path) -> None:
+        import sys
+
+        argv = _build_bwrap_argv(tmp_path / "workspace", "full", ["python"], project_root=tmp_path)
+        mounts = [argv[i + 1] for i, item in enumerate(argv) if item == "--ro-bind"]
+        assert str(Path(sys.prefix).absolute()) in mounts
+        assert str(Path(sys.executable).resolve().parent.parent) in mounts
+        assert str(tmp_path) in mounts
+        assert "/" not in mounts
+        assert all(i < argv.index("--bind") for i, item in enumerate(argv) if item == "--ro-bind")
 
     def test_inner_argv_appended_at_end(self, tmp_path: Path) -> None:
         inner = ["python3", "-c", "print('hi')"]
@@ -273,9 +290,9 @@ class TestBuildBwrapArgv:
         argv = _build_bwrap_argv(tmp_path, "none", ["echo"])
         assert "--unshare-net" in argv
 
-    def test_network_allowlist_adds_unshare_net(self, tmp_path: Path) -> None:
-        argv = _build_bwrap_argv(tmp_path, "allowlist", ["echo"])
-        assert "--unshare-net" in argv
+    def test_network_allowlist_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(WorkspaceProviderError, match="allowlist requires explicit rules"):
+            _build_bwrap_argv(tmp_path, "allowlist", ["echo"])
 
     def test_network_full_no_unshare_net(self, tmp_path: Path) -> None:
         argv = _build_bwrap_argv(tmp_path, "full", ["echo"])
@@ -346,164 +363,120 @@ class TestBubblewrapProviderToolAvailability:
             assert provider._available is False
 
 
-class TestSeatbeltExecCommandMocked:
-    """exec_command for SeatbeltProvider — mocked subprocess to avoid real sandbox-exec."""
+@pytest.mark.parametrize("provider_cls,executable", [
+    (SeatbeltProvider, "sandbox-exec"), (BubblewrapProvider, "bwrap"),
+])
+class TestOsExecution:
+    def _handle(self, path: Path, policy: str = "full") -> WorkspaceHandle:
+        return WorkspaceHandle(path, "test", IsolationLevel.os_policy,
+                               metadata={"network_policy": policy})
 
-    def _make_handle(self, workspace_path: Path) -> WorkspaceHandle:
-        return WorkspaceHandle(
-            workspace_path=workspace_path,
-            provider_name="seatbelt",
-            isolation_level=IsolationLevel.os_policy,
-            metadata={"sandbox_type": "seatbelt", "network_policy": "full"},
+    async def test_request_and_bounded_result_preserved(self, tmp_path, provider_cls, executable):
+        provider = provider_cls(tmp_path)
+        request = ExecutionRequest(
+            argv=["echo", "hello"], cwd=tmp_path, env={"FOO": "bar"}, stdin=b"input",
+            timeout_s=1.0, output_cap_bytes=123,
         )
+        expected = CommandResult(0, "bounded", "error", stdout_truncated=True)
+        with patch("micro_eval.engine.providers.os_policy.run_process", new_callable=AsyncMock,
+                   return_value=expected) as runner:
+            result = await provider.execute(self._handle(tmp_path), request)
+        assert result is expected
+        actual = runner.call_args.args[0]
+        assert actual.argv[0] == executable
+        assert actual.argv[-2:] == ["echo", "hello"]
+        assert actual.cwd == tmp_path
+        assert actual.env == request.env
+        assert actual.stdin == request.stdin
+        assert actual.timeout_s == 1.0
+        assert actual.output_cap_bytes == 123
 
-    def test_exec_command_success(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = SeatbeltProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="hello\n", stderr=""
-        )
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result):
-            result = provider.exec_command(handle, ["echo", "hello"])
-        assert result.exit_code == 0
-        assert result.stdout == "hello\n"
-        assert result.timed_out is False
+    def test_sync_compatibility_uses_same_runner(self, tmp_path, provider_cls, executable):
+        expected = CommandResult(-1, "partial", timed_out=True)
+        with patch("micro_eval.engine.providers.os_policy.run_process", new_callable=AsyncMock,
+                   return_value=expected) as runner:
+            result = provider_cls(tmp_path).exec_command(
+                self._handle(tmp_path), ["sleep", "10"], timeout_s=0.1,
+            )
+        assert result is expected
+        assert runner.call_args.args[0].argv[0] == executable
+        assert runner.call_args.args[0].timeout_s == 0.1
 
-    def test_exec_command_uses_sandbox_exec(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = SeatbeltProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result) as mock_run:
-            provider.exec_command(handle, ["ls"])
-        called_argv = mock_run.call_args[0][0]
-        assert called_argv[0] == "sandbox-exec"
-        assert "-p" in called_argv
-        assert "ls" in called_argv
+    def test_sync_default_env_excludes_unrelated_secrets(self, tmp_path, provider_cls, executable, monkeypatch):
+        monkeypatch.setenv("PRIVATE_ACCOUNT_TOKEN", "do-not-inherit")
+        with patch("micro_eval.engine.providers.os_policy.run_process", new_callable=AsyncMock,
+                   return_value=CommandResult(0)) as runner:
+            provider_cls(tmp_path).exec_command(self._handle(tmp_path), ["env"])
+        assert "PRIVATE_ACCOUNT_TOKEN" not in runner.call_args.args[0].env
 
-    def test_exec_command_timeout_returns_timed_out(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = SeatbeltProvider(tmp_path)
-        with patch(
-            "micro_eval.engine.providers.os_policy.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd=["sandbox-exec"], timeout=1.0),
-        ):
-            result = provider.exec_command(handle, ["sleep", "10"], timeout_s=1.0)
-        assert result.timed_out is True
-        assert result.exit_code == -1
-
-    def test_exec_command_empty_argv_raises(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = SeatbeltProvider(tmp_path)
+    @pytest.mark.parametrize("argv", [[], ["echo", ""]])
+    async def test_invalid_argv_rejected(self, tmp_path, provider_cls, executable, argv):
         with pytest.raises(ValueError, match="non-empty argv"):
-            provider.exec_command(handle, [])
+            await provider_cls(tmp_path).execute(self._handle(tmp_path), ExecutionRequest(argv))
 
-    def test_exec_command_empty_string_in_argv_raises(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = SeatbeltProvider(tmp_path)
-        with pytest.raises(ValueError, match="non-empty argv"):
-            provider.exec_command(handle, ["echo", ""])
+    async def test_network_none_wrapped(self, tmp_path, provider_cls, executable):
+        with patch("micro_eval.engine.providers.os_policy.run_process", new_callable=AsyncMock,
+                   return_value=CommandResult(0)) as runner:
+            await provider_cls(tmp_path).execute(
+                self._handle(tmp_path, "none"), ExecutionRequest(["echo"]),
+            )
+        argv = runner.call_args.args[0].argv
+        assert "(deny network*)" in argv[2] if executable == "sandbox-exec" else "--unshare-net" in argv
 
-    def test_exec_command_passes_env(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = SeatbeltProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result) as mock_run:
-            provider.exec_command(handle, ["env"], env={"FOO": "bar"})
-        assert mock_run.call_args[1]["env"] == {"FOO": "bar"}
+    async def test_only_exact_output_sibling_is_writable(self, tmp_path, provider_cls, executable):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        output = tmp_path / ".micro-eval-io-one"
+        output.mkdir()
+        handle = self._handle(workspace)
+        handle.metadata["output_path"] = str(output)
+        with patch("micro_eval.engine.providers.os_policy.run_process", new_callable=AsyncMock,
+                   return_value=CommandResult(0)) as runner:
+            await provider_cls(tmp_path).execute(handle, ExecutionRequest(["echo"]))
+        argv = runner.call_args.args[0].argv
+        if executable == "sandbox-exec":
+            assert f'(subpath "{output}")' in argv[2]
+            assert f'(subpath "{tmp_path}")' not in argv[2]
+        else:
+            writable = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--bind"]
+            assert writable == [str(workspace), str(output)]
 
-    def test_exec_command_network_policy_none(self, tmp_path: Path) -> None:
-        handle = WorkspaceHandle(
-            workspace_path=tmp_path,
-            provider_name="seatbelt",
-            isolation_level=IsolationLevel.os_policy,
-            metadata={"sandbox_type": "seatbelt", "network_policy": "none"},
-        )
-        provider = SeatbeltProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result) as mock_run:
-            provider.exec_command(handle, ["ls"])
-        called_argv = mock_run.call_args[0][0]
-        # Profile is the -p argument; extract and verify it denies network
-        p_idx = called_argv.index("-p")
-        profile_str = called_argv[p_idx + 1]
-        assert "(deny network*)" in profile_str
+    async def test_run_root_cannot_be_claimed_as_output(self, tmp_path, provider_cls, executable):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        handle = self._handle(workspace)
+        handle.metadata["output_path"] = str(tmp_path)
+        with pytest.raises(WorkspaceProviderError, match="dedicated workspace sibling"):
+            await provider_cls(tmp_path).execute(handle, ExecutionRequest(["echo"]))
 
+    def test_create_setup_uses_policy_and_rolls_back_on_exception(self, tmp_path, provider_cls, executable):
+        provider = provider_cls(tmp_path)
+        with patch.object(provider._inner, "_run_setup", side_effect=AssertionError("host setup")):
+            with patch.object(provider, "execute", new_callable=AsyncMock,
+                              side_effect=RuntimeError("start failed")):
+                with pytest.raises(RuntimeError, match="start failed"):
+                    provider.create(WorkspaceSpec(setup=[["echo", "setup"]]), cell_id="setup", run_id="rollback")
+        assert not (tmp_path / ".micro-eval/workspaces/rollback/setup").exists()
 
-class TestBubblewrapExecCommandMocked:
-    """exec_command for BubblewrapProvider — mocked subprocess to avoid real bwrap."""
+    def test_setup_failure_is_recorded_and_stops_later_steps(self, tmp_path, provider_cls, executable):
+        provider = provider_cls(tmp_path)
+        with patch.object(provider._inner, "_run_setup", side_effect=AssertionError("host setup")):
+            with patch.object(provider, "execute", new_callable=AsyncMock,
+                              return_value=CommandResult(7)) as execute:
+                handle = provider.create(WorkspaceSpec(setup=[["false"], ["echo", "unreachable"]]),
+                                         cell_id="setup", run_id="failure")
+        assert handle.setup_exit_code == 7
+        assert execute.await_count == 1
+        assert handle.metadata["network_policy_requested"] == "full"
+        assert handle.metadata["network_policy_effective"] == "full"
+        provider.cleanup(handle)
 
-    def _make_handle(self, workspace_path: Path, network_policy: str = "full") -> WorkspaceHandle:
-        return WorkspaceHandle(
-            workspace_path=workspace_path,
-            provider_name="bubblewrap",
-            isolation_level=IsolationLevel.os_policy,
-            metadata={"sandbox_type": "bubblewrap", "network_policy": network_policy},
-        )
-
-    def test_exec_command_success(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = BubblewrapProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="world\n", stderr=""
-        )
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result):
-            result = provider.exec_command(handle, ["echo", "world"])
-        assert result.exit_code == 0
-        assert result.stdout == "world\n"
-        assert result.timed_out is False
-
-    def test_exec_command_uses_bwrap(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = BubblewrapProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result) as mock_run:
-            provider.exec_command(handle, ["ls"])
-        called_argv = mock_run.call_args[0][0]
-        assert called_argv[0] == "bwrap"
-        assert "ls" in called_argv
-
-    def test_exec_command_timeout_returns_timed_out(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = BubblewrapProvider(tmp_path)
-        with patch(
-            "micro_eval.engine.providers.os_policy.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd=["bwrap"], timeout=1.0),
-        ):
-            result = provider.exec_command(handle, ["sleep", "10"], timeout_s=1.0)
-        assert result.timed_out is True
-        assert result.exit_code == -1
-
-    def test_exec_command_empty_argv_raises(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = BubblewrapProvider(tmp_path)
-        with pytest.raises(ValueError, match="non-empty argv"):
-            provider.exec_command(handle, [])
-
-    def test_exec_command_empty_string_in_argv_raises(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = BubblewrapProvider(tmp_path)
-        with pytest.raises(ValueError, match="non-empty argv"):
-            provider.exec_command(handle, ["echo", ""])
-
-    def test_exec_command_network_none_unshares_net(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path, network_policy="none")
-        provider = BubblewrapProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result) as mock_run:
-            provider.exec_command(handle, ["ls"])
-        called_argv = mock_run.call_args[0][0]
-        assert "--unshare-net" in called_argv
-
-    def test_exec_command_stderr_captured(self, tmp_path: Path) -> None:
-        handle = self._make_handle(tmp_path)
-        provider = BubblewrapProvider(tmp_path)
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="error msg\n"
-        )
-        with patch("micro_eval.engine.providers.os_policy.subprocess.run", return_value=mock_result):
-            result = provider.exec_command(handle, ["false"])
-        assert result.exit_code == 1
-        assert result.stderr == "error msg\n"
+    def test_allowlist_rejected_before_materialization(self, tmp_path, provider_cls, executable):
+        provider = provider_cls(tmp_path)
+        with patch.object(provider._inner, "create") as create:
+            with pytest.raises(WorkspaceProviderError, match="allowlist requires explicit rules"):
+                provider.create(WorkspaceSpec(network_policy="allowlist"), cell_id="x", run_id="x")
+        create.assert_not_called()
 
 
 class TestSeatbeltDelegationMethods:

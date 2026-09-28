@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -64,7 +65,11 @@ def workspace_update(
     if not fields:
         typer.echo("Error: no fields to update", err=True)
         raise typer.Exit(1)
-    meta = manager.update(workspace_id, **fields)
+    try:
+        meta = manager.update(workspace_id, **fields)
+    except WorkspaceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     if meta is None:
         typer.echo(f"Error: workspace not found: {workspace_id}", err=True)
         raise typer.Exit(1)
@@ -99,5 +104,43 @@ def workspace_delete(
         if not confirm:
             raise typer.Abort()
 
-    manager.delete(workspace_id)
+    try:
+        manager.delete(workspace_id)
+    except WorkspaceError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     typer.echo(f"Deleted workspace {workspace_id}")
+
+
+@workspace_app.command(name="enqueue")
+def workspace_enqueue(
+    workspace_id: str = typer.Argument(..., help="Workspace ID to run"),
+    owner: str = typer.Option("", "--owner", help="Member enqueueing the run (required unless --dry-run)"),
+    expected_plan_digest: str | None = typer.Option(
+        None,
+        "--expected-plan-digest",
+        help="Refuse unless the freshly built plan has this replay digest (from the preview).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Only build the plan and print it with its admission digest (preview)."
+    ),
+    data_root: Path = typer.Option(_default_data_root(), "--data-root"),
+) -> None:
+    """Build the workspace plan and enqueue it atomically (Team Server)."""
+    from micro_eval.server.enqueue import EnqueueRefused, enqueue_workspace_run, preview_workspace_run
+
+    if not dry_run and not owner:
+        typer.echo(json.dumps({"error": "owner_required"}), err=True)
+        raise typer.Exit(1)
+    manager = WorkspaceManager(data_root)
+    try:
+        if dry_run:
+            result = preview_workspace_run(manager, workspace_id)
+        else:
+            result = enqueue_workspace_run(
+                manager, workspace_id, owner, expected_plan_digest=expected_plan_digest
+            )
+    except EnqueueRefused as exc:
+        typer.echo(json.dumps(exc.payload), err=True)
+        raise typer.Exit(exc.exit_code)
+    typer.echo(json.dumps(result))

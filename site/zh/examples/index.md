@@ -80,7 +80,7 @@ python examples/run-example.py --real
 | LLM Judge | | | docs | | |
 | Langfuse trace | | | docs | | |
 | Secrets channel | | | docs | | |
-| E2B/Modal 远程 VM | | | docs | | |
+| E2B VM / Modal 容器 | | | docs | | |
 | 会话评测 | | | | ✓ | |
 | JSONL subprocess bridge | | | | ✓ | |
 | 结构化 RubricSpec | | | | ✓ | |
@@ -155,24 +155,35 @@ agent:
 
 所有 secrets 在环境变量中必须以 `MICRO_EVAL_SECRET_` 为前缀。完整示例参见 [Git Workspace Isolation](/zh/examples/git-workspace-isolation)。
 
-### E2B / Modal 远程 VM
+### 远程隔离：E2B VM / Modal 容器
 
-将任意任务的隔离级别升级为 `vm`，即可使用完整的远程沙箱执行：
+在 Git Workspace Isolation 示例中保留既有工作区来源，使用 `vm` 选择 E2B，或使用 `container` 选择 Modal：
 
-```yaml{3-4}
+```yaml
 workspace:
   type: git_repo
-  isolation_level: vm
+  path: fixture-repo
+  ref: HEAD
+  isolation_level: vm  # Modal 使用 container
   trust_level: untrusted
+  network_policy: none
 ```
+
+安装所选 provider 的 extra，并设置宿主侧控制凭据：
 
 ```bash
-export E2B_API_KEY=e2b_...
-# 或者
-export MODAL_TOKEN_ID=...
-export MODAL_TOKEN_SECRET=...
+# E2B（isolation_level: vm）
+uv pip install 'micro-eval[e2b]'
+export MICRO_EVAL_SECRET_E2B_API_KEY=e2b_...
+
+# Modal（isolation_level: container）
+uv pip install 'micro-eval[modal]'
+export MICRO_EVAL_SECRET_MODAL_TOKEN_ID=...
+export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET=...
 ```
 
-::: warning 不会静默降级
-远程 VM provider（`E2B`、`Modal`）在凭证缺失时会直接报错退出，不会自动回退到更低的隔离级别——这是有意为之，以防止环境漂移被悄然忽视。
-:::
+`micro-eval[remote]` 同时安装两个 SDK。控制凭据不属于 agent 的 `required_secrets`。缺少 SDK 或凭据会使 cell 失败；两个远程 provider 都不会回退本机。
+
+示例的 `command: ["{python}", "scripts/mock-refactor-agent.py"]` 使用沙箱中的 `python3` 和上传的 fixture 脚本。真实 agent 命令也必须已安装在远程运行环境中，或随工作区提供。不能直接复用宿主 Codex 或其他 CLI 的绝对路径。如果 setup 或 agent 需要访问包仓库或模型 API，请显式设置 `network_policy: full`；`none` 阻止出站访问，`allowlist` 会被拒绝。
+
+远程 `git_repo` 传输固定 ref 的文件，不包含 `.git` 历史。setup、agent 和 command validator 共享同一个沙箱。远程 git observation 当前不可用，因此 run 记录 caveat，不会声称已验证同起点。离线 SDK contract 测试与可选的带凭据 live 检查分别记录。

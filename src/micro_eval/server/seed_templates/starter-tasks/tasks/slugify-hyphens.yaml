@@ -1,0 +1,37 @@
+id: slugify-hyphens
+name: Fix slug hyphen collapsing
+description: Fix a slugify function that produces repeated and trailing hyphens.
+input_payload: |
+  You are in a copied workspace. The code to fix is at
+  `slugify-hyphens/slugify_hyphens.py`.
+
+  Goal:
+  - `slugify-hyphens/tests/test_slugify_hyphens.py` describes the expected
+    behaviour of `slugify(text)`: lowercase the text, collapse each run of
+    non-alphanumeric characters into a single hyphen, and strip any
+    leading or trailing hyphen.
+  - Fix the bug in `slugify_hyphens.py` so all the tests pass.
+
+  Constraints:
+  - Do not edit anything under `slugify-hyphens/tests/`; the judge checks that
+    directory from outside the workspace.
+  - Only change `slugify-hyphens/slugify_hyphens.py`.
+
+  Done means:
+  - `python -m unittest discover -s tests` passes when run from `slugify-hyphens/`.
+  - Your final response briefly explains the change.
+expectations:
+  - type: command
+    command: ["{python}", "-m", "micro_eval.tools.verify_protected", "--protected-dir", "tests", "--expected-sha256", "3cb65a68532ca7ec9cac46e2dac43a4dac9540fe83159cf199565bffc8254420"]
+    cwd: "slugify-hyphens"
+    timeout_s: 60
+workspace:
+  type: files
+  files:
+    - fixtures/slugify-hyphens
+rubric: |
+  A useful result collapses non-alphanumeric runs into one hyphen and
+  strips leading/trailing hyphens without touching tests/; the
+  protected-tests judge passing is the primary signal here.
+business_impact_tier: 3
+tags: [starter, codefix]

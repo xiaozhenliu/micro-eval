@@ -97,6 +97,35 @@ class AggregationResult(BaseModel):
         return value
 
 
+class TaskComparison(BaseModel):
+    """Auditable baseline/candidate comparison for one task."""
+
+    schema_version: str = SCHEMA_VERSION
+    task_id: str
+    baseline_sample_count: int
+    candidate_sample_count: int
+    baseline_pass_rate: float
+    candidate_pass_rate: float
+    delta: float
+    direction: Literal["improved", "regressed", "unchanged"]
+    cell_refs: list[str] = Field(default_factory=list)
+    evaluation_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
+    trace_refs: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+
+
+class ComparisonResult(BaseModel):
+    """One baseline/candidate comparison embedded in a DecisionReport."""
+
+    schema_version: str = SCHEMA_VERSION
+    baseline_configuration_id: str
+    candidate_configuration_id: str
+    decision_threshold: float
+    tasks: list[TaskComparison] = Field(default_factory=list)
+
+
 class DecisionReport(BaseModel):
     """Evidence-linked decision report."""
 
@@ -108,6 +137,7 @@ class DecisionReport(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
     aggregation: AggregationResult = Field(default_factory=AggregationResult)
+    comparison: ComparisonResult | None = None
     timestamp: str = ""
     recommended_action: str = "review evidence"
     created_at: str = ""

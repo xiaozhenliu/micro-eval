@@ -1,15 +1,7 @@
 import MemberBadge from "@/components/MemberBadge";
+import { JobSchema, type Job } from "@/lib/schema";
 
-export interface QueueJob {
-  job_id: string;
-  workspace_id: string;
-  owner: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  enqueued_at: string;
-  started_at: string | null;
-  progress: number | null;
-  cancel_requested_at: string | null;
-}
+export type QueueJob = Job;
 
 function formatTimestamp(ts: string): string {
   const d = new Date(ts);
@@ -27,8 +19,8 @@ function statusStyle(status: QueueJob["status"]): { text: string; className: str
       return { text: "running", className: "text-blue-400" };
     case "queued":
       return { text: "queued", className: "text-amber-400" };
-    case "completed":
-      return { text: "completed", className: "text-green-400" };
+    case "done":
+      return { text: "done", className: "text-green-400" };
     case "failed":
       return { text: "failed", className: "text-red-400" };
     case "cancelled":
@@ -38,9 +30,13 @@ function statusStyle(status: QueueJob["status"]): { text: string; className: str
   }
 }
 
-export function QueueJobCard({ job }: { job: QueueJob }) {
+export function QueueJobCard({ job: rawJob }: { job: QueueJob }) {
+  const job = JobSchema.parse(rawJob);
   const { text: statusText, className: statusClass } = statusStyle(job.status);
   const isCancelPending = job.cancel_requested_at != null && job.status === "running";
+  const progressPercent = job.progress && job.progress.total_cells > 0
+    ? Math.min(100, Math.round((job.progress.completed_cells / job.progress.total_cells) * 100))
+    : 0;
 
   return (
     <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
@@ -75,12 +71,12 @@ export function QueueJobCard({ job }: { job: QueueJob }) {
         <div className="mt-3">
           <div className="flex items-center justify-between text-xs text-neutral-400 mb-1">
             <span>Progress</span>
-            <span>{Math.round(job.progress * 100)}%</span>
+            <span>{progressPercent}%</span>
           </div>
           <div className="h-1.5 bg-neutral-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 rounded-full transition-all"
-              style={{ width: `${Math.round(job.progress * 100)}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
         </div>

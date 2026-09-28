@@ -16,6 +16,7 @@ import pytest
 
 from micro_eval.engine.providers.base import IsolationLevel, WorkspaceHandle
 from micro_eval.engine.workspace import (
+    GitRefWorkspaceError,
     WorkspaceError,
     WorkspaceManager,
     _git_commit,
@@ -44,7 +45,7 @@ def _make_git_repo(path: Path) -> Path:
     """Initialise a minimal git repo with one commit and return its path."""
     path.mkdir(parents=True, exist_ok=True)
     (path / "file.txt").write_text("content")
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "add", "file.txt"], cwd=path, check=True, capture_output=True)
     subprocess.run(
         ["git", "-c", "user.email=t@t.com", "-c", "user.name=T", "commit", "-m", "init"],
@@ -400,10 +401,91 @@ class TestResolveGitCommit:
         assert len(commit) == 40
 
     def test_raises_for_nonexistent_ref(self, tmp_path: Path) -> None:
-        """resolve_git_commit raises WorkspaceError for a bad ref (lines 376-377)."""
+        """resolve_git_commit raises a ref WorkspaceError for a bad ref (GRO-972)."""
         repo = _make_git_repo(tmp_path / "r")
-        with pytest.raises(WorkspaceError, match="Failed to resolve git ref"):
+        with pytest.raises(GitRefWorkspaceError, match="git ref cannot be resolved to a commit"):
             resolve_git_commit(repo, ref="nonexistent-branch-xyz")
+
+    def test_ref_error_carries_stable_reason_without_path_echo(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path / "r")
+        with pytest.raises(GitRefWorkspaceError) as info:
+            resolve_git_commit(repo, ref="--show-toplevel")
+        assert info.value.reason == "invalid_git_ref"
+        assert str(repo) not in str(info.value)
+        assert "--show-toplevel" not in str(info.value)
+
+    def test_annotated_tag_peels_to_commit(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path / "r")
+        head = _run_git(["rev-parse", "HEAD"], cwd=repo, check=True).stdout.strip()
+        _run_git(
+            ["-c", "user.email=t@t.com", "-c", "user.name=T", "tag", "-a", "ann", "-m", "m"],
+            cwd=repo,
+            check=True,
+        )
+        assert resolve_git_commit(repo, ref="ann") == head
+
+
+class TestSnapshotRefPropagation:
+    """GRO-972: an unresolvable ref fails the snapshot instead of a caveat."""
+
+    def _git_task(self, ref: str | None) -> TaskSpec:
+        return TaskSpec(
+            id="t1",
+            name="Task",
+            input_payload="",
+            workspace=WorkspaceSpec(type=WorkspaceType.git_repo, path=".", ref=ref),
+        )
+
+    def test_invalid_ref_raises_instead_of_caveat(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path / "project")
+        with pytest.raises(GitRefWorkspaceError) as info:
+            build_same_start_snapshot(
+                **_minimal_snapshot_kwargs(project_root=repo, tasks=[self._git_task("missing-ref")])
+            )
+        assert info.value.reason == "invalid_git_ref"
+        assert "[task=t1]" in str(info.value)
+
+    def test_option_like_ref_raises(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path / "project")
+        with pytest.raises(GitRefWorkspaceError):
+            build_same_start_snapshot(
+                **_minimal_snapshot_kwargs(project_root=repo, tasks=[self._git_task("--help")])
+            )
+
+    def test_non_ref_workspace_errors_remain_caveats(self, tmp_path: Path) -> None:
+        # A source outside the project root keeps the existing caveat policy.
+        outside = _make_git_repo(tmp_path / "outside")
+        project = tmp_path / "project"
+        project.mkdir()
+        task = TaskSpec(
+            id="t1",
+            name="Task",
+            input_payload="",
+            workspace=WorkspaceSpec(type=WorkspaceType.git_repo, path=str(outside)),
+        )
+        snap = build_same_start_snapshot(
+            **_minimal_snapshot_kwargs(project_root=project, tasks=[task])
+        )
+        assert snap.git_commit is None
+        assert any("escapes the project root" in caveat for caveat in snap.caveats)
+
+    def test_annotated_tag_digest_matches_head_and_lightweight_tag(self, tmp_path: Path) -> None:
+        """Same commit via HEAD, branch, lightweight and annotated tag is one digest input."""
+        repo = _make_git_repo(tmp_path / "project")
+        head = _run_git(["rev-parse", "HEAD"], cwd=repo, check=True).stdout.strip()
+        _run_git(["tag", "light"], cwd=repo, check=True)
+        _run_git(
+            ["-c", "user.email=t@t.com", "-c", "user.name=T", "tag", "-a", "ann", "-m", "m"],
+            cwd=repo,
+            check=True,
+        )
+        commits = []
+        for ref in (None, "main", "light", "ann", head):
+            snap = build_same_start_snapshot(
+                **_minimal_snapshot_kwargs(project_root=repo, tasks=[self._git_task(ref)])
+            )
+            commits.append(snap.git_commit)
+        assert commits == [head, head, head, head, head]
 
 
 # ---------------------------------------------------------------------------

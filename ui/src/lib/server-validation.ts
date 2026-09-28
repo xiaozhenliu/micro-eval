@@ -59,6 +59,7 @@ finally:
   const stdout = execFileSync(uvBin, ["run", "python", "-c", wrapper], {
     encoding: "utf-8",
     timeout: 10_000,
+    maxBuffer: 16 * 1024 * 1024,
     env: {
       ...process.env,
       _QUEUE_DB_PATH: dataRoot + "/queue.db",
@@ -116,4 +117,81 @@ export function sanitizeErrorDetail(detail: string): string {
   // Keep last 200 chars to avoid leaking long stack traces
   if (stripped.length > 200) return "..." + stripped.slice(-200);
   return stripped;
+}
+
+/**
+ * Remove the stored RunPlan from a queue job row before it leaves the server.
+ * `plan_json` embeds every configuration verbatim, including `agent.env`,
+ * and no UI surface needs it (round-4 review, 2026-09-12).
+ */
+export function stripPlanJson<T>(row: T): Omit<T, "plan_json"> {
+  if (row === null || typeof row !== "object") return row as Omit<T, "plan_json">;
+  const { plan_json: _omitted, ...rest } = row as T & { plan_json?: unknown };
+  void _omitted;
+  return rest;
+}
+
+const SECRET_ENV_PREFIX = "MICRO_EVAL_SECRET_";
+
+/**
+ * Mask declared `MICRO_EVAL_SECRET_*` values inside a string: an exact match
+ * of the whole string is masked first (round-6 review, 2026-09-12: any
+ * declared secret value is masked as a substring regardless of length — a
+ * short secret pasted inside a longer string, e.g. a Bearer header, must not
+ * survive redaction just because it is short).
+ */
+export function redactDeclaredSecrets(text: string, env: NodeJS.ProcessEnv = process.env): string {
+  const secrets = Object.entries(env).filter(
+    (entry): entry is [string, string] => entry[0].startsWith(SECRET_ENV_PREFIX) && typeof entry[1] === "string" && entry[1].length > 0,
+  );
+  for (const [name, value] of secrets) {
+    if (text === value) return `[REDACTED:${name}]`;
+  }
+  let redacted = text;
+  for (const [name, value] of secrets) {
+    const placeholder = `[REDACTED:${name}]`;
+    redacted = redacted.split(value).join(placeholder);
+  }
+  return redacted;
+}
+
+const SOURCE_PREFLIGHT_DETAIL_RE =
+  /^(task [A-Za-z0-9_.:-]+: (?:workspace source not found|workspace source is not a git repo|git ref cannot be resolved for workspace source): )(\.|[^/\\\r\n][^\\\r\n]*)$/;
+
+/** Preserve validated relative source paths without relaxing generic error masking. */
+export function sanitizePlanBuildDetail(detail: string, env: NodeJS.ProcessEnv = process.env): string {
+  const redacted = redactDeclaredSecrets(detail, env);
+  const match = SOURCE_PREFLIGHT_DETAIL_RE.exec(redacted);
+  if (!match) return sanitizeErrorDetail(redacted);
+  const [, prefix, source] = match;
+  if (source !== "." && source.split("/").some((part) => !part || part === "." || part === "..")) {
+    return sanitizeErrorDetail(redacted);
+  }
+  const maxSourceLength = 200 - prefix.length;
+  if (maxSourceLength < 4) return sanitizeErrorDetail(redacted);
+  return source.length > maxSourceLength
+    ? `${prefix}${source.slice(0, maxSourceLength - 3)}...`
+    : redacted;
+}
+
+/**
+ * The `micro-eval workspace enqueue` CLI prints one JSON object on stderr
+ * when it refuses (`{"error": "<kind>", ...}`). Return the last JSON line so
+ * a warning printed before it does not hide the refusal.
+ */
+export function parseCliRefusal(err: unknown): Record<string, unknown> | null {
+  const failure = err as { stderr?: string | Buffer };
+  const text = failure.stderr !== undefined ? String(failure.stderr) : "";
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try {
+      const parsed = JSON.parse(lines[index]) as unknown;
+      if (parsed && typeof parsed === "object" && typeof (parsed as { error?: unknown }).error === "string") {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // not a JSON line
+    }
+  }
+  return null;
 }

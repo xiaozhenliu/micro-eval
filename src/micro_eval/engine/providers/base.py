@@ -21,6 +21,19 @@ class WorkspaceHandle:
     source_repo: Path | None = None
     workspace_type: WorkspaceType = WorkspaceType.blank
     setup_exit_code: int | None = None
+    is_remote: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionRequest:
+    """An argv invocation expressed entirely in the execution filesystem."""
+
+    argv: list[str]
+    cwd: Path | None = None
+    env: dict[str, str] | None = None
+    stdin: bytes | None = None
+    timeout_s: float | None = None
+    output_cap_bytes: int = 10 * 1024 * 1024
 
 
 @dataclass
@@ -31,14 +44,17 @@ class CommandResult:
     stdout: str = ""
     stderr: str = ""
     timed_out: bool = False
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
 
 @runtime_checkable
 class WorkspaceProvider(Protocol):
     """Protocol for workspace isolation backends (spec §3.4.4).
 
-    Methods are synchronous for Level 0/1 providers (local operations).
-    Remote providers (P3-c) will introduce an AsyncWorkspaceProvider variant.
+    Cell execution is asynchronous and cancellation must terminate the owned
+    process or sandbox before propagating cancellation. The synchronous
+    exec_command method remains a compatibility entry point only.
     """
 
     @property
@@ -48,6 +64,8 @@ class WorkspaceProvider(Protocol):
     def supported_levels(self) -> list[IsolationLevel]: ...
 
     def create(self, spec: "WorkspaceSpec", *, cell_id: str, run_id: str) -> WorkspaceHandle: ...
+
+    async def execute(self, handle: WorkspaceHandle, request: ExecutionRequest) -> CommandResult: ...
 
     def exec_command(
         self,

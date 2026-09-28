@@ -1,10 +1,9 @@
 import { execFileSync } from "node:child_process";
-import path from "node:path";
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isServerMode } from "@/lib/server-mode";
-import { getWorkspaceRunsDir, resolveWorkspacePath } from "@/lib/workspace-api";
+import { resolveWorkspacePath, resolveWorkspaceRunDir, resolveInsideRunDir } from "@/lib/workspace-api";
 import { RunSchema } from "@/lib/schema";
 import { uvBin, validateWriteRequest, sanitizeErrorDetail } from "@/lib/server-validation";
 
@@ -37,11 +36,11 @@ export async function POST(request: Request, context: RouteContext) {
   const wsPath = resolveWorkspacePath(id);
   if (!wsPath) return NextResponse.json({ error: "workspace not found" }, { status: 404 });
 
-  const runsDir = getWorkspaceRunsDir(id);
-  if (!runsDir) return NextResponse.json({ error: "workspace not found" }, { status: 404 });
+  const runDir = resolveWorkspaceRunDir(id, runId);
+  if (!runDir) return NextResponse.json({ error: "run not found" }, { status: 404 });
 
-  const runJsonPath = path.join(runsDir, runId, "run.json");
-  if (!fs.existsSync(runJsonPath)) {
+  const runJsonPath = resolveInsideRunDir(runDir, "run.json");
+  if (!runJsonPath || !fs.existsSync(runJsonPath)) {
     return NextResponse.json({ error: "run not found" }, { status: 404 });
   }
 

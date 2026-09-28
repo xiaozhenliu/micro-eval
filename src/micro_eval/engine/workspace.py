@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from micro_eval.engine.providers.base import IsolationLevel, ProviderRegistry, WorkspaceHandle
+from micro_eval.engine.git_refs import GitRefResolutionError, resolve_commit
+from micro_eval.engine.command import resolve_command_argv
+from micro_eval.engine.execution import ExecutionContext
+from micro_eval.engine.providers.base import ExecutionRequest, IsolationLevel, ProviderRegistry, WorkspaceHandle
 from micro_eval.engine.providers.git_worktree import GitWorktreeProvider, WorkspaceProviderError
 from micro_eval.engine.providers.os_policy import BubblewrapProvider, SeatbeltProvider
 from micro_eval.engine.providers.remote import E2BProvider, ModalProvider
@@ -24,6 +29,31 @@ from micro_eval.models.task import TaskSpec, WorkspaceSpec, WorkspaceType
 
 class WorkspaceError(Exception):
     """Raised when workspace operations fail."""
+
+
+class GitRefWorkspaceError(WorkspaceError):
+    """Ref resolution failure with a stable machine-readable cause."""
+
+    def __init__(self, message: str, *, reason: str) -> None:
+        self.reason = reason
+        super().__init__(message)
+
+
+async def _finish_shielded(task: asyncio.Task, *, propagate: bool = False):
+    """Finish resource ownership work even if cancellation arrives again."""
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError:
+            cancelled = True
+            if task.done():
+                result = task.result()
+                break
+    if cancelled and propagate:
+        raise asyncio.CancelledError
+    return result
 
 
 def _assert_within_root(source: Path, root: Path) -> None:
@@ -46,6 +76,7 @@ class PreparedWorkspace:
     cleanup_kind: str
     source_repo: Path | None = None
     handle: WorkspaceHandle | None = None
+    execution_context: ExecutionContext | None = None
 
 
 class WorkspaceManager:
@@ -122,33 +153,111 @@ class WorkspaceManager:
         except WorkspaceProviderError as exc:
             raise WorkspaceError(str(exc)) from exc
 
-        snapshot = self.collect_cell_snapshot(
-            handle.workspace_path,
-            setup_exit_code=handle.setup_exit_code,
-            cleanup_status=None,
-        )
+        if caveats is not None and handle.provider_name in {"seatbelt", "bubblewrap"}:
+            caveats.append(
+                f"{handle.provider_name} applies OS policy to setup, agent and command validation; "
+                "host-readable files are not confidential; timeout/cancel cleanup covers only "
+                "descendants that remain in the owned process group"
+            )
+        if caveats is not None and handle.provider_name in {"e2b", "modal"}:
+            caveats.append(
+                f"{handle.provider_name} executes in a dedicated remote sandbox; "
+                "SDK contract tests do not prove cloud network or termination guarantees; "
+                "live validation is optional and remote workspace observation is unavailable"
+            )
+
+        if handle.is_remote:
+            snapshot = CellSnapshot(
+                workspace_path=str(handle.workspace_path),
+                setup_exit_code=handle.setup_exit_code,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            snapshot = self.collect_cell_snapshot(
+                handle.workspace_path, setup_exit_code=handle.setup_exit_code,
+                cleanup_status=None,
+            )
         prepared = PreparedWorkspace(
             path=handle.workspace_path,
             snapshot=snapshot,
             cleanup_kind="git_worktree" if handle.source_repo else "project_workspace",
             source_repo=handle.source_repo,
             handle=handle,
+            execution_context=ExecutionContext(provider, handle),
         )
         self._prepared.append(prepared)
         return prepared
+
+    async def prepare_async(
+        self, *, cell_id: str, workspace: WorkspaceSpec, output_dir: Path,
+        caveats: list[str] | None = None,
+    ) -> PreparedWorkspace:
+        """Materialize first, then run setup through the selected executor.
+
+        A canceled creator is joined before cleanup: abandoning a worker thread
+        would otherwise leak a remote sandbox created after cancellation.
+        """
+        creation = asyncio.create_task(asyncio.to_thread(
+            self.prepare, cell_id=cell_id,
+            workspace=workspace.model_copy(update={"setup": []}), caveats=caveats,
+        ))
+        prepared = None
+        try:
+            prepared = await asyncio.shield(creation)
+            context = prepared.execution_context
+            if context is None:
+                raise WorkspaceError("provider did not create an execution context")
+            await context.prepare_output(output_dir)
+            if workspace.setup:
+                for command in workspace.setup:
+                    argv = resolve_command_argv(command, replacements={"{python}": context.python_executable})
+                    env = {} if context.is_remote else {
+                        key: value for key, value in os.environ.items()
+                        if key in GitWorktreeProvider.SETUP_ENV_KEYS
+                    }
+                    result = await context.execute(ExecutionRequest(
+                        argv=argv, cwd=prepared.path, env=env, timeout_s=300,
+                        output_cap_bytes=64 * 1024,
+                    ))
+                    prepared.handle.setup_exit_code = result.exit_code
+                    prepared.snapshot.setup_exit_code = result.exit_code
+                    if result.timed_out or result.exit_code != 0:
+                        raise WorkspaceError(f"workspace setup failed: exit_code={result.exit_code}; {result.stderr}")
+                if not context.is_remote:
+                    prepared.snapshot = self.collect_cell_snapshot(
+                        prepared.path, setup_exit_code=prepared.handle.setup_exit_code,
+                        cleanup_status=None,
+                    )
+                    if prepared.snapshot.dirty:
+                        prepared.handle.metadata["setup_modified"] = "true"
+            return prepared
+        except BaseException as exc:
+            if prepared is None:
+                try:
+                    prepared = await _finish_shielded(creation)
+                except Exception:
+                    pass
+            if prepared is not None:
+                await self.cleanup_workspace_async(prepared)
+                if isinstance(exc, Exception):
+                    exc.prepared_workspace = prepared
+            raise
+
+    async def cleanup_workspace_async(self, prepared: PreparedWorkspace) -> CellSnapshot:
+        task = asyncio.create_task(asyncio.to_thread(self.cleanup_workspace, prepared))
+        return await _finish_shielded(task, propagate=True)
 
     def cleanup_workspace(self, prepared: PreparedWorkspace) -> CellSnapshot:
         """Cleanup one workspace and return the updated snapshot facts."""
         status = "cleaned"
         error: str | None = None
+        if prepared.snapshot.cleanup_status == "cleaned":
+            return prepared.snapshot
         try:
-            if prepared.handle is not None:
-                provider = self._registry.select(prepared.handle.isolation_level)
-                if provider is not None:
-                    provider.cleanup(prepared.handle)
-                else:
-                    import shutil
-                    shutil.rmtree(prepared.path, ignore_errors=False)
+            if prepared.execution_context is not None:
+                prepared.execution_context.provider.cleanup(prepared.execution_context.handle)
+            elif prepared.handle is not None:
+                raise WorkspaceError("workspace handle has no owning execution context")
             elif prepared.cleanup_kind == "git_worktree" and prepared.source_repo is not None:
                 _run_git(
                     ["worktree", "remove", "--force", str(prepared.path)],
@@ -162,13 +271,16 @@ class WorkspaceManager:
                 shutil.rmtree(prepared.path, ignore_errors=False)
         except Exception as exc:  # noqa: BLE001 - cleanup failure is recorded for evidence.
             status = "cleanup_failed"
-            error = str(exc)
-            try:
-                import shutil
-
-                shutil.rmtree(prepared.path, ignore_errors=True)
-            except Exception:
-                pass
+            from micro_eval.engine.adapter import Redactor
+            error = Redactor.from_env().redact(str(exc))
+        finally:
+            if prepared.execution_context is not None:
+                try:
+                    prepared.execution_context.cleanup_staging()
+                except Exception as exc:
+                    from micro_eval.engine.adapter import Redactor
+                    status = "cleanup_failed"
+                    error = Redactor.from_env().redact(str(exc))
         prepared.snapshot.cleanup_status = status
         prepared.snapshot.cleanup_error = error
         return prepared.snapshot
@@ -187,7 +299,7 @@ class WorkspaceManager:
                 workspace_type=workspace_type,
                 warnings=("observation_unavailable",),
             )
-        provider = self._registry.select(prepared.handle.isolation_level)
+        provider = prepared.execution_context.provider if prepared.execution_context else None
         if provider is None:
             return WorkspaceObservation(
                 workspace_type=prepared.handle.workspace_type,
@@ -312,14 +424,28 @@ def build_same_start_snapshot(
             source = source.resolve()
             try:
                 _assert_within_root(source, root)
-                commit = resolve_git_commit(source, task.workspace.ref)
-                dirty = _git_dirty(source)
             except WorkspaceError as exc:
-                commit = None
-                dirty = None
+                workspace_commits[task.id] = None
+                workspace_dirty[task.id] = None
                 caveats.append(f"[task={task.id}] {exc}")
+                continue
+            # A ref that cannot be resolved to a commit is a plan error, not
+            # a caveat: silently downgrading it would let a run start from an
+            # unknown commit (GRO-972).
+            try:
+                commit = resolve_git_commit(source, task.workspace.ref)
+            except GitRefWorkspaceError as exc:
+                raise GitRefWorkspaceError(f"[task={task.id}] {exc}", reason=exc.reason) from exc
+            except WorkspaceError as exc:
+                # A source that is not a usable git repository keeps the
+                # existing caveat policy; source diagnostics belong to the
+                # workspace source validation (GRO-576), not ref resolution.
+                workspace_commits[task.id] = None
+                workspace_dirty[task.id] = None
+                caveats.append(f"[task={task.id}] {exc}")
+                continue
             workspace_commits[task.id] = commit
-            workspace_dirty[task.id] = dirty
+            workspace_dirty[task.id] = _git_dirty(source)
         else:
             workspace_commits[task.id] = None
             workspace_dirty[task.id] = None
@@ -400,13 +526,21 @@ def evaluate_snapshot_gate(
 
 
 def resolve_git_commit(repo: Path, ref: str | None = None) -> str:
-    """Resolve a git ref to an immutable commit hash."""
-    target = ref or "HEAD"
+    """Resolve a git ref to an immutable commit hash.
+
+    Strict resolution (GRO-972): the ref may not be interpreted as a git
+    option and must resolve to exactly one commit object; tags are peeled to
+    their commit. Ref-specific failures raise :class:`GitRefWorkspaceError`;
+    a source that is not a git repository stays a generic
+    :class:`WorkspaceError` so existing source-validation paths keep their
+    own diagnostics.
+    """
     try:
-        result = _run_git(["rev-parse", target], cwd=repo, check=True)
-    except WorkspaceError as exc:
-        raise WorkspaceError(f"Failed to resolve git ref {target!r} in {repo}: {exc}") from exc
-    return result.stdout.strip()
+        return resolve_commit(ref, repo=repo)
+    except GitRefResolutionError as exc:
+        if exc.reason == GitRefResolutionError.REASON_NOT_A_REPOSITORY:
+            raise WorkspaceError(str(exc)) from exc
+        raise GitRefWorkspaceError(str(exc), reason=exc.reason) from exc
 
 
 def _git_commit(repo: Path) -> str | None:

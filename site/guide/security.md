@@ -1,16 +1,16 @@
 # Security Model
 
-micro-eval executes agent commands on your local machine. This page explains the trust model, the protections in place, and the limitations you need to understand before running evaluations with untrusted agents or tasks.
+micro-eval executes agent commands through the workspace provider selected for each cell. This page explains the trust model, the protections in place, and the limitations you need to understand before running evaluations with untrusted agents or tasks.
 
 ::: danger Review before you run
-micro-eval executes the commands you configure as subprocesses on your machine. An agent that writes files, calls external APIs, or modifies system state will do so under your user account. Always review task definitions, workspace types, and agent commands before running an evaluation — especially if the task prompts or agent binaries come from a source you do not control.
+With the default `logical` isolation, configured commands run locally under your user account and can access anything that account can access. Review task definitions, workspace types, and agent commands before running an evaluation — especially if the task prompts or agent binaries come from a source you do not control. Check the effective provider and run caveats when selecting stronger isolation.
 :::
 
 ---
 
 ## argv-Only Subprocess Execution
 
-Every agent command and validation command in micro-eval is executed as an **argv list**, not a shell string. Shell metacharacters in task prompts or agent output — backticks, semicolons, pipes, `$()` expansions — are passed as literal data to the process and never interpreted by a shell.
+Agent and validation commands use an **argv list**. Local providers and Modal execute that list directly; E2B serializes it with shell quoting at its SDK boundary. Shell metacharacters in task prompts or agent output — backticks, semicolons, pipes, `$()` expansions — remain literal argument data. An explicitly configured shell command still has its normal shell semantics.
 
 **Practical implication:** the following task definition is safe even though the prompt contains a shell injection attempt:
 
@@ -26,7 +26,7 @@ expectations:
     value: 0
 ```
 
-The prompt text is passed to the agent process as a command-line argument or via stdin, depending on the agent's `input_mode`. The shell never sees it.
+The prompt text is passed to the agent process as a command-line argument or via stdin, depending on the agent's `input_mode`. Its content does not trigger shell expansion.
 
 ::: warning Legacy string commands
 If you supply a command as a plain string rather than a list, micro-eval emits a deprecation warning and passes it through a migration bridge that splits it with `shlex.split`. This code path is not in the trusted path — migrate all commands to list form:
@@ -74,7 +74,7 @@ Secrets are injected into the subprocess environment under their full name. The 
 
 ### Auto-Redaction
 
-micro-eval scans all captured text — stdout, stderr, artifact content, evidence text, and human annotation comments — and redacts any value that matches a declared secret before persisting it to disk.
+micro-eval redacts declared secret values in captured text before persistence. For adapter stdout, stderr, and text artifacts, this includes secrets of any non-empty length: a whole-string match becomes exactly `[REDACTED:NAME]`, and longer values take priority when substring matches overlap. Binary artifacts containing a NUL byte are not text-redacted and must be treated separately.
 
 Redacted output looks like:
 
@@ -82,7 +82,7 @@ Redacted output looks like:
 Calling OpenAI API with key [REDACTED:MICRO_EVAL_SECRET_OPENAI_API_KEY]
 ```
 
-Secrets are **never written** to `eval.yaml`, `run.json`, `result.json`, HTML reports, or any other artifact.
+Keep secrets out of `eval.yaml` and task files. Text redaction protects run results and text artifacts, but it cannot sanitize binary bytes or data an agent sends to an external service.
 
 ::: tip What gets scanned
 Redaction runs on: subprocess stdout, subprocess stderr, `file_exists` artifact content, `command` expectation output, LLM judge inputs/outputs, and any human annotation text stored via the UI. The scan is value-based — it matches the actual secret string, not just the key name.
@@ -92,7 +92,7 @@ Redaction runs on: subprocess stdout, subprocess stderr, `file_exists` artifact 
 
 ## Workspace Boundary
 
-Each evaluation cell runs inside an isolated workspace directory. The agent process's working directory (`cwd`) is set to this cell workspace, not to your host project root.
+Each evaluation cell runs in its assigned workspace directory. The agent process's working directory (`cwd`) is set to this cell workspace. Local providers use a directory under the project; remote providers use the cell's remote filesystem.
 
 ```
 .micro-eval/
@@ -146,9 +146,9 @@ micro-eval supports four workspace isolation levels, selected per configuration.
 | Level | Provider | Network isolation | Filesystem isolation | Use when |
 |---|---|---|---|---|
 | `logical` | git worktree | None | Partial (cwd only) | Default; dev/test agents you trust |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | Optional (`network_policy: none`) | Yes (sandbox profile) | Untrusted agents on trusted hardware |
-| `container` | Docker (future) | Yes | Yes | CI environments |
-| `vm` | E2B / Modal | Yes | Yes | Untrusted agents, production evaluation |
+| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | `full` or `none` on cell commands | Host writes limited to the cell workspace and its output staging directory; readable host files remain exposed | Reviewed agents that need local tools |
+| `container` | Modal | `full` or `none` on the remote sandbox | One remote container per cell | Agents that need a remote environment |
+| `vm` | E2B | `full` or `none` on the remote sandbox | One remote VM per cell | Agents that need a remote environment |
 
 Configure isolation in your task's `workspace` block:
 
@@ -181,24 +181,33 @@ workspace:
 
 :::
 
-::: warning Network isolation is not provided by the local runner
-The default `logical` isolation level does **not** restrict network access. An agent running under `logical` isolation can make arbitrary outbound network calls, contact external APIs, or exfiltrate data. If you are evaluating agents you did not write, use `os_policy` with `network_policy: none` or a remote VM provider. Full network isolation requires `os_policy` (partial) or `vm` (complete).
+Single-turn setup, agent execution, and command expectations use the same cell execution context and selected provider. OS policy wrappers apply to all three; remote providers run all three in the same sandbox. Artifact transfer goes through that provider's filesystem boundary. Multi-turn conversations currently require `logical`; another isolation level is rejected before workspace preparation.
+
+::: warning Boundaries that remain
+OS policy isolation restricts host writes but does not protect secrets in readable host files. Timeout and cancellation send TERM, then KILL, to the local process group; descendants that leave that group are outside this cleanup guarantee. Remote timeout and cancellation explicitly terminate the cell sandbox, and cleanup failures remain visible in the result. Offline SDK contract tests check API calls, not the cloud service's containment or cleanup behavior; live verification needs provider credentials.
 :::
+
+`allowlist` is rejected by OS and remote providers because explicit allowlist rules are not implemented. It must not be interpreted as `none` or as an active domain filter. `logical` does not enforce a network policy.
 
 ### OS Policy Sandbox Degradation
 
 If `os_policy` is configured but the platform does not support it (e.g., Seatbelt not available, Bubblewrap not installed), micro-eval **degrades to `logical` isolation** and adds a caveat to the run result:
 
-```json
-{
-  "isolation_level": "logical",
-  "isolation_caveat": "os_policy requested but Seatbelt/Bubblewrap unavailable; degraded to logical"
-}
+```text
+requested isolation os_policy unavailable on Linux; ran at logical
 ```
 
-Check for caveats in `run.json` before treating results as comparable across runs with different effective isolation levels.
+Check for caveats in `run.json` before treating results as comparable across runs with different effective isolation levels. After an OS provider is selected, a wrapper launch, policy, or command failure fails the cell; it does not retry outside the sandbox.
 
-Remote VM providers (`e2b`, `modal`) do **not** degrade — if the provider is unavailable or credentials are missing, the run fails immediately.
+Remote providers (`e2b`, `modal`) do **not** degrade — if the provider is unavailable or credentials are missing, the run fails immediately. Their requested and effective network policies are recorded separately. Remote git observation is currently unavailable and is recorded as a caveat, not evidence of a verified same start.
+
+---
+
+## Protected Test Boundaries
+
+The `starter-tasks` template uses the installed `micro_eval.tools.verify_protected` module to check the protected `tests/` digest before and after running a read-only temporary test copy. The verifier is outside the agent-writable fixture, so editing the fixture's tests or adding test files is rejected at those checks.
+
+The tested module and the tests still share a Python process. Import-time code can interfere with the test runner or files it can access; the digest gate is not an adversarial isolation boundary. A pass means the protected tests passed and matched the expected digest at the checks. Keep the workspace evidence for review and select a suitable workspace provider.
 
 ---
 
@@ -206,9 +215,11 @@ Remote VM providers (`e2b`, `modal`) do **not** degrade — if the provider is u
 
 Artifacts collected from agent runs pass through several safety checks before being stored:
 
-**Binary detection** — files containing NUL bytes are flagged as binary. Binary artifacts are stored but not rendered as text in the UI or included in report summaries.
+**Binary detection** — files containing NUL bytes are flagged as binary. Complete binary artifacts within the limits are retained with `redacted: false` and a `binary_redaction_skipped` warning; they are not rendered as text or included in text summaries. Do not assume their bytes have been sanitized.
 
-**Size caps** — subprocess output (stdout/stderr combined) is capped at **10 MB**. Individual artifact files are capped at **50 MB**. Oversized output is truncated with a truncation marker appended.
+**Size caps** — `guardrails.output_cap_bytes` defaults to **10 MiB** and bounds each captured stdout/stderr stream and selected output. `guardrails.artifact_cap_bytes` defaults to **50 MiB** and limits artifact persistence. Oversized artifact bodies are omitted; a text output summary may retain a bounded, redacted prefix. Truncation or omission is recorded explicitly.
+
+**Staged publication** — provider output first enters a temporary receiving directory. Text is redacted there, and only artifacts selected by the configured output mode are exported to the durable run directory. Unselected raw files are not published as run artifacts.
 
 **Symlink and hardlink protection** — reserved artifact paths (e.g., paths that would resolve outside the run directory) are rejected at collection time. Symlinks pointing outside the artifact boundary are not followed.
 
@@ -262,7 +273,7 @@ All workspace and artifact access goes through ID-based lookup with containment 
 
 ### Config Override Whitelist
 
-When enqueuing runs, only these fields can be overridden: `repetitions`, `timeout_s`, `max_concurrency`. Agent commands, workspace paths, and output directories cannot be overridden via the API.
+Enqueue requests reject `config_overrides`. Edit the workspace configuration first, then preview the resulting plan before submitting it. The admission digest binds the queued plan to that preview; changed configuration or workspace inputs require another preview.
 
 ::: warning Intranet only
 The team server has no authentication layer. Do not expose it to the public internet. The `X-Micro-Eval-Member` header is self-reported and not verified — it provides attribution, not access control.

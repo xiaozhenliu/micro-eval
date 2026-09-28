@@ -1,16 +1,23 @@
+import json
 """Tests for run worker logic."""
 
 import asyncio
 import signal
+from pathlib import Path
 
 import pytest
 
 from micro_eval.models.configuration import Guardrails
-from micro_eval.models.run import RunPlan, RunRecord, RunStatus
+from micro_eval.config.loader import load_config, load_task_paths
+from micro_eval.config.planner import build_run_plan
+from micro_eval.engine.cell_lifecycle import FinalizedCell
+from micro_eval.models.run import CellResult, CellStatus, RunPlan, RunRecord, RunStatus
 from micro_eval.server.queue import QueueDB
 from micro_eval.server.models import WorkspaceMeta
 from micro_eval.server.worker import _attach_server_provenance, _persist_run_failure, worker_loop
 from micro_eval.store.run_store import RunStore, RunStoreError
+
+FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 
 
 @pytest.fixture
@@ -256,6 +263,21 @@ async def test_worker_timeout_persists_queue_and_run_failure(data_root, monkeypa
     workspace_id = "ws-20260808T080000Z-12345678"
     workspace_path = data_root / "workspaces" / workspace_id
     workspace_path.mkdir(parents=True)
+    # The resolver validates workspace.json (id must match the directory);
+    # a real workspace always has it because WorkspaceManager.create writes it.
+    (workspace_path / "workspace.json").write_text(
+        json.dumps(
+            {
+                "workspace_id": workspace_id,
+                "name": "timeout-ws",
+                "owner": "alice",
+                "template_id": None,
+                "template_version": None,
+                "created_at": "2026-08-08T08:00:00+00:00",
+                "description": "",
+            }
+        )
+    )
     plan = RunPlan(
         run_id="run-timeout",
         project_name="timeout-test",
@@ -270,7 +292,7 @@ async def test_worker_timeout_persists_queue_and_run_failure(data_root, monkeypa
     setup_db.close()
 
     class BlockingKernel:
-        def __init__(self, project_root, on_cell_complete=None):
+        def __init__(self, project_root, on_cell_complete=None, cancel_requested=None):
             self.store = RunStore(project_root)
 
         async def run(self, run_plan):
@@ -307,3 +329,96 @@ async def test_worker_timeout_persists_queue_and_run_failure(data_root, monkeypa
     assert record.status == RunStatus.failed
     assert record.completed_at is not None
     assert record.failure_reason == "run timed out after 0.01s"
+
+
+async def test_worker_cancel_between_cells_keeps_partial_run(data_root, monkeypatch):
+    workspace_id = "ws-20260808T080000Z-12345678"
+    workspace_path = data_root / "workspaces" / workspace_id
+    workspace_path.mkdir(parents=True)
+    (workspace_path / "workspace.json").write_text(json.dumps({
+        "workspace_id": workspace_id,
+        "name": "cancel-ws",
+        "owner": "alice",
+        "template_id": None,
+        "template_version": None,
+        "created_at": "2026-08-08T08:00:00+00:00",
+        "description": "",
+    }))
+    config_path = FIXTURES / "configs" / "eval_matrix.yaml"
+    config = load_config(config_path)
+    tasks = load_task_paths(config_path, config)
+    config.output_dir = ".micro-eval/runs"
+    plan = build_run_plan(config, tasks, max_concurrency=1)
+    assert len(plan.cells) == 3
+    plan.denominator_policy = "exclude_failed"
+    assert plan.evaluation_contract is not None
+    plan.evaluation_contract.denominator_policy = "exclude_failed"
+
+    setup_db = QueueDB(data_root / "queue.db")
+    queued = setup_db.enqueue(workspace_id, "alice", plan.model_dump_json())
+    setup_db.close()
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+    executed: list[str] = []
+
+    async def run_cell(self, cell, lifecycle, record):
+        executed.append(cell.cell_id)
+        started.set()
+        await release.wait()
+        return FinalizedCell(result=CellResult(
+            cell_id=cell.cell_id,
+            run_id=record.id,
+            task_id=cell.task.id,
+            configuration_id=cell.configuration.id,
+            configuration_name=cell.configuration.name,
+            repetition=cell.repetition,
+            status=CellStatus.passed,
+            score=1.0,
+            pass_fail="pass",
+        ), evaluations=())
+
+    monkeypatch.setattr("micro_eval.engine.kernel.ExecutionKernel._run_cell", run_cell)
+    handlers = {}
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "add_signal_handler", lambda sig, callback: handlers.setdefault(sig, callback))
+    worker_task = asyncio.create_task(worker_loop(data_root, poll_interval=0.01))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        cancel_db = QueueDB(data_root / "queue.db")
+        try:
+            assert cancel_db.request_cancel(queued["job_id"], "bob")["status"] == "running"
+        finally:
+            cancel_db.close()
+        release.set()
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            inspect_db = QueueDB(data_root / "queue.db")
+            job = inspect_db.get_job(queued["job_id"])
+            inspect_db.close()
+            if job["status"] == "cancelled":
+                break
+        else:
+            raise AssertionError("worker did not finish cancelled job")
+    finally:
+        release.set()
+        handlers[signal.SIGTERM]()
+        await asyncio.wait_for(worker_task, timeout=1)
+
+    assert executed == [plan.cells[0].cell_id]
+    assert job["finished_at"] is not None
+    assert job["progress"]["completed_cells"] == 1
+    assert job["progress"]["total_cells"] == 3
+    store = RunStore(workspace_path)
+    run_path = store.run_dir(plan.run_id) / "run.json"
+    assert json.loads(run_path.read_text())["status"] == "cancelled"
+    record = store.read_run(plan.run_id)
+    assert record.status == RunStatus.cancelled
+    assert len(record.results) == 1
+    assert record.results[0].cell_id == plan.cells[0].cell_id
+    assert (run_path.parent / "cells" / plan.cells[0].cell_id / "result.json").exists()
+    assert record.decision is not None
+    assert record.decision.verdict.value == "inconclusive"
+    stats = record.decision.aggregation.per_configuration[plan.cells[0].configuration.id]
+    assert stats.denominator_policy == "exclude_failed"
+    assert stats.n_cells == 1

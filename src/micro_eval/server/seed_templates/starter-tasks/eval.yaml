@@ -1,0 +1,48 @@
+# Starter tasks template: five small, deterministic bug-fix tasks.
+# This template ships with no configurations on purpose -- add your agent(s)
+# in the browser (Configurations page), then start a run against these tasks.
+project_name: starter-tasks
+description: >-
+  Five self-contained bug-fix tasks, each with a fixed unit test suite as
+  ground truth. This template ships with no configurations; add your agent
+  configurations in the browser, then run.
+
+configurations: []
+
+tasks:
+  - tasks/date-range-overlap.yaml
+  - tasks/csv-quoted-fields.yaml
+  - tasks/lru-cache-order.yaml
+  - tasks/slugify-hyphens.yaml
+  - tasks/page-bounds.yaml
+output_dir: .micro-eval/runs
+
+guardrails:
+  max_concurrency: 2
+  timeout_s: 900
+  output_cap_bytes: 1048576
+  artifact_cap_bytes: 5242880
+
+evaluation:
+  comparison_subject: null
+  task_set_version: ""
+  success_criteria:
+    - Validator expectations pass and any caveats are reviewed.
+  budget: null
+  decision_threshold: null
+  inconclusive_policy: warn
+  min_repetitions: 1
+  required_evaluators: [validator]
+  denominator_policy: include_failed
+
+trace:
+  enabled: true
+  provider: process
+
+judge:
+  enabled: false
+  provider: deepeval
+  model: ""
+  temperature: 0.0
+  pass_threshold: 0.5
+  required_secrets: []

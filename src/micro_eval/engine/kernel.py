@@ -8,7 +8,6 @@ import random
 from collections.abc import Callable
 from pathlib import Path
 
-from micro_eval.decision.summary import build_decision
 from micro_eval.engine.adapter import AgentAdapter, Redactor
 from micro_eval.engine.cell_lifecycle import CellLifecycle, FinalizedCell
 from micro_eval.engine.workspace import WorkspaceManager
@@ -28,10 +27,16 @@ class ExecutionKernel:
 
     SUMMARY_LIMIT = 500
 
-    def __init__(self, project_root: Path | str, on_cell_complete: Callable | None = None):
+    def __init__(
+        self,
+        project_root: Path | str,
+        on_cell_complete: Callable | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+    ):
         self.project_root = Path(project_root)
         self.run_store = RunStore(self.project_root)
         self._on_cell_complete = on_cell_complete
+        self._cancel_requested = cancel_requested
 
     async def run(self, plan: RunPlan) -> RunRecord:
         """Execute all cells in a plan and persist canonical run artifacts."""
@@ -53,8 +58,6 @@ class ExecutionKernel:
             judge_client=judge_client,
             validator=validate_cell,
         )
-        semaphore = asyncio.Semaphore(plan.guardrails.max_concurrency)
-
         # Determine dispatch order. Randomization (opt-in) avoids order-effect bias
         # in serial / >2-way comparisons; the order (and seed) are recorded so the
         # run stays reproducible. Default off keeps deterministic plan order.
@@ -63,20 +66,36 @@ class ExecutionKernel:
             seed = random.randrange(2**32)
             random.Random(seed).shuffle(cells)
             record.execution_seed = seed
-        record.execution_order = [cell.cell_id for cell in cells]
+        pending = iter(cells)
 
-        async def run_cell(cell: RunCell) -> FinalizedCell:
-            async with semaphore:
-                return await self._run_cell(cell, lifecycle, record)
+        async def dispatch_cells() -> None:
+            nonlocal record
+            while True:
+                # Only active workers take the next cell. Checking before each
+                # dispatch lets in-flight cells finish without starting queued ones.
+                if self._cancel_requested and self._cancel_requested():
+                    return
+                try:
+                    cell = next(pending)
+                except StopIteration:
+                    return
+                record.execution_order.append(cell.cell_id)
+                finalized = await self._run_cell(cell, lifecycle, record)
+                record = self.run_store.commit_cell(record, finalized)
+                if self._on_cell_complete:
+                    self._on_cell_complete(len(record.results), len(cells), finalized.result)
 
-        tasks = [asyncio.create_task(run_cell(cell)) for cell in cells]
-        for completed in asyncio.as_completed(tasks):
-            finalized = await completed
-            record = self.run_store.commit_cell(record, finalized)
-            if self._on_cell_complete:
-                completed_count = len(record.results)
-                total_count = len(cells)
-                self._on_cell_complete(completed_count, total_count, finalized.result)
+        tasks = [
+            asyncio.create_task(dispatch_cells())
+            for _ in range(min(plan.guardrails.max_concurrency, len(cells)))
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
         record.artifacts = artifact_store.manifest.artifacts
         record.evidence = artifact_store.manifest.evidence
@@ -88,8 +107,10 @@ class ExecutionKernel:
             record.same_start_snapshot.caveats.extend(
                 self.run_store.configuration_drift_caveats(record)
             )
-        record.decision = build_decision(record)
-        return self.run_store.finalize_run(record)
+        return self.run_store.finalize_run(
+            record,
+            cancelled=bool(self._cancel_requested and self._cancel_requested()),
+        )
 
     async def _run_cell(
         self,
@@ -104,7 +125,7 @@ class ExecutionKernel:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - per-cell isolation boundary.
-            logger.exception("Unexpected error in cell %s; isolating as error result", cell.cell_id)
+            logger.error("Unexpected %s in cell %s; isolating as error result", type(exc).__name__, cell.cell_id)
             return FinalizedCell(
                 result=self._isolated_failure_result(cell, record, exc),
                 evaluations=(),
@@ -114,6 +135,10 @@ class ExecutionKernel:
         """Build an error CellResult for an unexpected per-cell failure."""
         # str(exc) may carry secrets (paths, args); redact before persisting/exposing.
         redactor = Redactor.from_env()
+        redactor.values.update({
+            key: value for key, value in cell.configuration.agent.env.items()
+            if key.startswith(Redactor.SECRET_ENV_PREFIX) and value
+        })
         return CellResult(
             cell_id=cell.cell_id,
             run_id=record.id,
@@ -126,6 +151,7 @@ class ExecutionKernel:
             pass_fail="fail",
             stderr_summary=redactor.redact(str(exc))[: self.SUMMARY_LIMIT],
             failure_mode=f"kernel_error:{exc.__class__.__name__}",
+            cell_snapshot=getattr(getattr(exc, "prepared_workspace", None), "snapshot", None),
         )
 
     def _trace_providers(self, plan: RunPlan) -> list[TraceProvider]:

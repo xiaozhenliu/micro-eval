@@ -1,6 +1,9 @@
 ---
-title: "micro-eval Python 工程规范"
+title: "micro-eval Python Guidelines"
+language: en
+authoritative: true
 date: 2026-06-02
+updated_at: 2026-09-27T16:00+08:00
 status: draft
 type: engineering-guidelines
 tags:
@@ -9,68 +12,67 @@ tags:
   - micro-eval
 ---
 
-# micro-eval Python 工程规范
+# micro-eval Python Guidelines
 
-适用范围：`src/micro_eval/` 与 Python tests。
+Scope: `src/micro_eval/` and the Python tests.
 
 ## Language and Runtime
 
-- Python 版本：3.11+。
-- 包管理：优先 `uv`。
-- CLI：Typer。
-- 数据模型：Pydantic v2。
-- 输出格式：CLI 面向人类时可用 Rich；机器输出必须是结构化 JSON。
+- Python 3.11+.
+- Package management: prefer `uv`.
+- CLI: Typer.
+- Data models: Pydantic v2.
+- Output: Rich is fine for human-facing CLI output; machine-readable output must be structured JSON.
 
 ## Code Style
 
-- 函数签名必须有类型标注。
-- 模块内部可使用 dataclass / Pydantic model，但跨模块 JSON 优先 Pydantic model。
-- 路径使用 `pathlib.Path`。
-- 时间戳使用明确格式；进入 ID 的 timestamp 使用 compact 格式，避免与 `::` 冲突。
-- 错误类型要可区分，例如 config error、adapter error、workspace error、store error。
-- 代码注释必须使用英文。
+- Function signatures carry type annotations.
+- Dataclasses / Pydantic models may be used inside a module; cross-module JSON prefers Pydantic models.
+- Paths use `pathlib.Path`.
+- Timestamps use explicit formats; timestamps that enter IDs use the compact format to avoid clashing with `::`.
+- Error types must be distinguishable, e.g. config error, adapter error, workspace error, store error.
+- Code comments must be in English.
 
-避免：
+Avoid:
 
-- 用裸 dict 在多个模块间传递领域对象。
-- 在业务代码中拼接 `.micro-eval/runs/...`。
-- 直接调用 `asyncio.create_subprocess_shell`。
-- 用 display name 当 stable ID。
-- 捕获宽泛异常后吞掉错误。
+- Passing domain objects between modules as bare dicts.
+- Assembling `.micro-eval/runs/...` inside business code.
+- Calling `asyncio.create_subprocess_shell` directly.
+- Using a display name as a stable ID.
+- Catching broad exceptions and swallowing the error.
 
 ## Async and Subprocess
 
-- agent 执行是 I/O bound，使用 asyncio。
-- 并发必须受 `max_concurrency` 控制。
-- 每个 RunCell 的 timeout 单独处理。
-- 超时后先终止，再升级 kill。
-- 单个 cell 失败不能阻断其他 cell，除非 RunPlan 的 guardrail 明确要求停止。
+- Agent execution is I/O bound; use asyncio.
+- Concurrency must be governed by `max_concurrency`.
+- Each RunCell's timeout is handled individually.
+- On timeout, terminate first, then escalate to kill.
+- A single cell failure must not block other cells unless the RunPlan's guardrails explicitly require stopping.
 
 ## Safe Subprocess Checklist
 
-任何新增 subprocess 调用都要回答：
+Every new subprocess call must answer:
 
-- 输入从哪里来？
-- 是否经过 shell？
-- stdout / stderr 是否有大小上限？
-- secrets 是否可能泄露？
-- 超时后如何终止子进程？
-- 失败是否会影响其他 cell？
+- Where does the input come from?
+- Does it pass through a shell?
+- Do stdout / stderr have a size cap?
+- Could secrets leak?
+- How is the child terminated after a timeout?
+- Does the failure affect other cells?
 
-默认要求：
+Default requirements:
 
-- 使用 argv list。
-- 禁止 shell 字符串插值。
-- task input 通过 stdin 或文件传递。
-- output file / directory 通过明确环境变量或参数声明。
-- timeout、output cap、artifact size cap 必须从 guardrails 读取或使用默认值。
-- stdout / stderr 持久化前必须走 redaction。
+- Use an argv list.
+- No shell string interpolation.
+- Task input is passed via stdin or a file.
+- Output files / directories are declared through explicit environment variables or arguments.
+- Timeout, output cap, and artifact size cap must come from guardrails or default values.
+- stdout / stderr must pass redaction before persistence.
 
 ## Pydantic Models
 
-- 所有跨模块对象携带 `schema_version`。
-- enum 使用明确字符串，不使用隐式 bool 表达复杂状态。
-- Optional 字段必须有明确语义：unknown、not applicable、not collected 不能混淆。
-- digest 字段必须说明输入材料与 canonicalization 规则所在文档。
-- model 序列化结果必须进入 contract tests。
-
+- Every cross-module object carries `schema_version`.
+- Enums use explicit strings; complex state is never expressed with implicit bools.
+- Optional fields have explicit semantics: unknown, not applicable, and not collected must not be conflated.
+- Digest fields must state their input material and where the canonicalization rules are documented.
+- Serialized model output must be covered by contract tests.

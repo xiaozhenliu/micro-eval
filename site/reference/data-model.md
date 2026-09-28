@@ -25,7 +25,7 @@ The top-level record written when a run completes. It captures the full configur
 |---|---|---|
 | `id` | `string` | UUID v4. Stable across retries. |
 | `project_name` | `string` | Name from `eval.yaml`. |
-| `status` | `"planned" \| "running" \| "completed" \| "failed" \| "partial"` | Lifecycle status. `partial` means some cells errored. |
+| `status` | `"planned" \| "running" \| "completed" \| "failed" \| "partial" \| "cancelled"` | Lifecycle status. `partial` has fewer results than planned cells; `cancelled` retains completed cell results after a stop request. |
 | `created_at` | `string` | ISO-8601 UTC timestamp. |
 | `completed_at` | `string \| null` | Set when the run finishes or fails. |
 | `failure_reason` | `string \| null` | Human-readable explanation when a run fails or crashes; `null` on success. |
@@ -34,7 +34,7 @@ The top-level record written when a run completes. It captures the full configur
 | `tasks` | `TaskSpec[]` | Inline copies of every task definition. |
 | `configurations` | `ConfigurationSpec[]` | Inline copies of every configuration definition. |
 | `cells` | `CellSpec[]` | Flat list of `(task, configuration, repetition)` triples. |
-| `results` | `CellResult[]` | One entry per cell. May be a partial list during `running`. |
+| `results` | `CellResult[]` | One entry per completed cell; may be a partial list during `running` or after cancellation. |
 | `execution_order` | `string[]` | Ordered list of `cell_id`s actually executed. |
 | `execution_seed` | `integer` | Random seed used to shuffle execution order. |
 | `same_start_snapshot` | `SameStartSnapshot` | Reproducibility envelope captured before execution. |
@@ -43,8 +43,10 @@ The top-level record written when a run completes. It captures the full configur
 | `evidence` | `EvidenceItem[]` | Run-level evidence items. |
 | `traces` | `TraceRef[]` | Run-level Langfuse trace references. |
 | `evaluations` | `EvaluationResult[]` | All evaluation results across all cells. |
-| `decision` | `DecisionReport \| null` | Final verdict. `null` until all cells complete. |
-| `denominator_policy` | `"all_cells" \| "successful_cells"` | How pass rates are computed across the run. |
+| `decision` | `DecisionReport \| null` | Completed and cancelled runs receive a decision summary; cancelled results cannot establish a complete comparison. |
+| `configuration_roles` | `Record<string, string \| null>` | Planning-time baseline/candidate roles; never inferred from list order. |
+| `evaluation_contract` | `EvaluationContract \| null` | Immutable planning-time contract used for artifact-only recomputation. |
+| `denominator_policy` | `"include_failed" \| "exclude_failed"` | How pass rates are computed from completed cell results. |
 | `owner` | `string \| null` | Member who initiated the run. `null` in local mode; set by the worker from the job's `X-Micro-Eval-Member` header in server mode. |
 | `server_context` | `ServerContext \| null` | Typed Team Server provenance (`workspace_id`, `owner`, `template_id`, `template_version`, `job_id`, `server_name`). `null` in local mode. |
 
@@ -71,7 +73,7 @@ The top-level record written when a run completes. It captures the full configur
   "traces": [],
   "evaluations": ["..."],
   "decision": { "...": "see DecisionReport" },
-  "denominator_policy": "successful_cells",
+  "denominator_policy": "exclude_failed",
   "owner": null,
   "server_context": null
 }
@@ -154,17 +156,18 @@ A single cell is one `(task, configuration, repetition)` execution. CellResult h
 
 ## DecisionReport
 
-The final verdict computed after all cells complete. It aggregates per-configuration statistics and assigns a `DecisionStatus` with a confidence level.
+The final verdict computed after all cells complete. It aggregates per-configuration statistics and, for a two-configuration run, assigns an auditable task-level comparison. Automatic comparisons in the current MVP use `confidence: low`.
 
 | Field | Type | Description |
 |---|---|---|
 | `decision_report_id` | `string` | UUID. |
 | `verdict` | `DecisionStatus` | One of six statuses (see below). |
-| `confidence` | `"high" \| "medium" \| "low"` | Confidence in the verdict. |
+| `confidence` | `"high" \| "medium" \| "low"` | Current automatic decisions use `low`; the wider enum remains for record compatibility. |
 | `evaluation_refs` | `string[]` | Evaluation IDs that informed the verdict. |
 | `evidence_refs` | `string[]` | Evidence IDs that informed the verdict. |
 | `caveats` | `string[]` | Human-readable caveats (e.g. "only 2 repetitions"). |
 | `aggregation` | `AggregationResult` | Per-configuration `ConfigurationStats`. |
+| `comparison` | `ComparisonResult \| null` | Single baseline/candidate comparison with task-level rates, deltas, directions, and audit references. |
 | `timestamp` | `string` | ISO-8601 UTC timestamp when the report was generated. |
 | `recommended_action` | `string \| null` | Optional free-text recommendation. |
 
@@ -172,29 +175,42 @@ The final verdict computed after all cells complete. It aggregates per-configura
 
 | Status | Meaning |
 |---|---|
-| `improved` | The challenger configuration is statistically better. |
-| `regressed` | The challenger configuration is statistically worse. |
+| `improved` | At least one task meets the improvement threshold and none regress. |
+| `regressed` | At least one task meets the regression threshold and none improve. |
 | `mixed` | Some tasks improved, others regressed. |
-| `inconclusive` | Results are within noise — no clear winner. |
+| `inconclusive` | No task crosses a threshold, or comparison requirements are unmet. |
 | `not_comparable` | Cells ran under different starting conditions. |
-| `needs_human_review` | LLM judge or auto-evaluators could not reach a verdict. |
+| `needs_human_review` | The contract requires non-validator evaluation. |
 
 ```json
 {
-  "decision_report_id": "dr-2026-0615-001",
+  "decision_report_id": "run-example::decision::20260928",
   "verdict": "improved",
-  "confidence": "high",
-  "evaluation_refs": ["eval-001", "eval-002", "eval-003"],
-  "evidence_refs": ["ev-001"],
-  "caveats": ["Only 3 repetitions per configuration"],
+  "confidence": "low",
+  "evaluation_refs": ["eval-baseline", "eval-candidate"],
+  "evidence_refs": ["evidence-baseline", "evidence-candidate"],
+  "caveats": ["low sample size for repair: repetitions < 3"],
   "aggregation": {
-    "configurations": {
-      "gpt4o": { "pass_rate": 0.67, "mean_latency_ms": 18400 },
-      "claude-sonnet": { "pass_rate": 0.89, "mean_latency_ms": 12200 }
+    "per_configuration": {
+      "baseline": {"n_cells": 2, "pass_rate": 0.5},
+      "candidate": {"n_cells": 2, "pass_rate": 1.0}
     }
   },
-  "timestamp": "2026-06-15T09:04:30Z",
-  "recommended_action": "Adopt claude-sonnet configuration for production."
+  "comparison": {
+    "baseline_configuration_id": "baseline",
+    "candidate_configuration_id": "candidate",
+    "decision_threshold": 0.1,
+    "tasks": [{
+      "task_id": "repair",
+      "baseline_sample_count": 2,
+      "candidate_sample_count": 2,
+      "baseline_pass_rate": 0.5,
+      "candidate_pass_rate": 1.0,
+      "delta": 0.5,
+      "direction": "improved"
+    }]
+  },
+  "recommended_action": "Review task-level evidence before rollout."
 }
 ```
 
@@ -208,13 +224,13 @@ Aggregated statistics for one configuration across all tasks and repetitions in 
 |---|---|---|
 | `n_cells` | `integer` | Total cells for this configuration. |
 | `n_successful` | `integer` | Cells that did not error or timeout. |
-| `pass_rate` | `float` | Fraction of denominator cells that passed. |
-| `pass_at_k` | `float \| null` | Pass-at-k: probability at least one of k repetitions passes. |
-| `pass_hat_k` | `float \| null` | Pass-hat-k: expected fraction of k repetitions that pass. |
-| `mean_latency_ms` | `float \| null` | Mean wall-clock time across successful cells, in ms. |
+| `pass_rate` | `float \| null` | Fraction of denominator cells that passed. |
+| `pass_at_k` | `Record<int, float> \| null` | Pass-at-k: probability at least one of k repetitions passes. |
+| `pass_hat_k` | `Record<int, float> \| null` | Pass^k: estimated probability that all k attempts pass. |
+| `mean_latency_ms` | `float \| null` | Mean wall-clock time across all recorded cells, in ms. |
 | `median_latency_ms` | `float \| null` | Median wall-clock time, in ms. |
 | `total_cost` | `CostMetric` | Summed cost across all cells in this configuration. |
-| `denominator_policy` | `"all_cells" \| "successful_cells"` | Which cells contribute to `pass_rate`. |
+| `denominator_policy` | `"include_failed" \| "exclude_failed"` | Which cells contribute to `pass_rate`. |
 | `caveats` | `string[]` | e.g. `["2 cells timed out"]`. |
 
 ```json
@@ -222,8 +238,8 @@ Aggregated statistics for one configuration across all tasks and repetitions in 
   "n_cells": 9,
   "n_successful": 9,
   "pass_rate": 0.889,
-  "pass_at_k": 0.999,
-  "pass_hat_k": 0.889,
+  "pass_at_k": {"1": 0.8888888888888888, "2": 1.0},
+  "pass_hat_k": {"1": 0.8888888888888888, "2": 0.7901234567901234},
   "mean_latency_ms": 12200,
   "median_latency_ms": 11800,
   "total_cost": {
@@ -231,7 +247,7 @@ Aggregated statistics for one configuration across all tasks and repetitions in 
     "currency": "USD",
     "source": "langfuse"
   },
-  "denominator_policy": "successful_cells",
+  "denominator_policy": "exclude_failed",
   "caveats": []
 }
 ```
@@ -321,7 +337,7 @@ A pointer to a file artifact produced by an agent or the evaluation pipeline. Th
 | `warning` | `string \| null` | Set when redaction was partial or file is suspect. |
 
 ::: warning Secret redaction
-Any artifact whose content matches a `MICRO_EVAL_SECRET_*` environment variable pattern is automatically redacted before being written to disk. The `redacted` flag is set to `true` and `warning` is populated with the redaction summary.
+Captured text is redacted by secret value before persistence. Complete binary artifacts within the limits remain available with `redacted: false` and `warning: binary_redaction_skipped`. Oversized artifact bodies are omitted; a text summary may retain a bounded, redacted prefix.
 :::
 
 ```json
@@ -421,7 +437,7 @@ Captured before execution begins. The snapshot verifies that all cells in a run 
 | `setup_commands_digest` | `string \| null` | Hash of the concatenated setup commands. |
 | `guardrails_digest` | `string \| null` | Hash of the active guardrail policy file. |
 | `sandbox_policy` | `string` | Isolation level: `"logical"`, `"os_policy"`, `"container"`, or `"vm"`. |
-| `network_policy` | `string` | Network access policy: `"none"`, `"localhost"`, `"unrestricted"`. |
+| `network_policy` | `string` | Requested network policy: `"full"`, `"allowlist"`, or `"none"`; OS and remote providers reject unsupported `allowlist`. Effective policy is recorded in workspace evidence. |
 | `toolchain_fingerprint` | `object` | Key tool versions (e.g. `{"uv": "0.4.1", "node": "22.0.0"}`). |
 | `fixture_digests` | `object` | Map of fixture path → SHA-256 for multi-source fixtures. |
 | `timestamp` | `string` | ISO-8601 UTC timestamp. |
@@ -436,10 +452,10 @@ If `dirty: true` the run will complete, but `DecisionReport.verdict` may be set 
 |---|---|---|
 | `logical` | git worktree | Default. Fast, no OS isolation. |
 | `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | Restricts filesystem and network without containers. |
-| `container` | Docker / OCI | Full container isolation. |
-| `vm` | E2B / Modal | Remote cloud execution. Maximum isolation. |
+| `container` | Modal | One remote container per cell; requires SDK and credentials. |
+| `vm` | E2B | One remote VM per cell; requires SDK and credentials. |
 
-If the requested policy is unavailable, `logical` is used as fallback and a caveat is added.
+Only an unavailable `os_policy` provider may fall back to `logical`, with a caveat. Remote providers fail without a local fallback.
 :::
 
 ```json
@@ -609,14 +625,14 @@ Stored in the SQLite queue database at `<data-root>/queue.db`, table `jobs`.
 | `job_id` | `TEXT` | UUID v4. Primary key. |
 | `workspace_id` | `TEXT` | Foreign key — workspace that owns this job. |
 | `owner` | `TEXT` | Value of `X-Micro-Eval-Member` header at enqueue time. |
-| `plan_json` | `TEXT` | Serialised `RunPlan` JSON built from the workspace `eval.yaml` plus any overrides. |
+| `plan_json` | `TEXT` | Serialised admitted `RunPlan` built from workspace configuration and tasks. Enqueue does not accept `config_overrides`. |
 | `status` | `TEXT` | Job lifecycle status (see below). |
 | `enqueued_at` | `TEXT` | ISO-8601 UTC timestamp. |
 | `started_at` | `TEXT \| null` | Set when the worker picks up the job. |
 | `finished_at` | `TEXT \| null` | Set when the job reaches a terminal state. |
 | `run_id` | `TEXT \| null` | The `RunRecord.id` created for this job. `null` until execution begins. |
 | `error` | `TEXT \| null` | Error message if `status = "failed"`. |
-| `progress` | `TEXT \| null` | JSON progress snapshot updated by the worker during execution (e.g. `{"done": 3, "total": 12}`). |
+| `progress` | `TEXT \| null` | JSON progress snapshot with `completed_cells` and `total_cells`; the retained count remains after cancellation. |
 | `cancel_requested_at` | `TEXT \| null` | Set when a cancellation is requested while the job is running. |
 | `cancelled_by` | `TEXT \| null` | Member who requested cancellation. |
 

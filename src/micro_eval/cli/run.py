@@ -9,9 +9,10 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape as rich_markup_escape
 from rich.table import Table
 
-from micro_eval.config.loader import ConfigError, load_config, load_task_paths
+from micro_eval.config.loader import ConfigError, config_error_hint, load_config, load_task_paths
 from micro_eval.config.planner import build_run_plan, plan_summary
 from micro_eval.engine.kernel import ExecutionKernel
 from micro_eval.models.run import CellStatus
@@ -45,8 +46,9 @@ def run_command(
         concurrency = project.guardrails.max_concurrency if parallel else 1
     try:
         plan = build_run_plan(project, tasks, max_concurrency=concurrency, project_root=config_path.parent)
-    except ValueError as exc:
-        _error("Plan error", str(exc), output_format)
+    except (ValueError, ConfigError) as exc:
+        hint = config_error_hint(exc) if isinstance(exc, ConfigError) else ""
+        _error("Plan error", f"{exc} {hint}".strip() if hint else str(exc), output_format)
         raise typer.Exit(1)
 
     if dry_run:
@@ -101,7 +103,9 @@ def _error(kind: str, message: str, output_format: str) -> None:
     if output_format == "json":
         typer.echo(json.dumps({"error": {"type": kind, "message": message}}, indent=2), err=True)
     else:
-        console.print(f"[red]{kind}:[/red] {message}")
+        # Escape the message: snapshot errors carry "[task=...]" context that
+        # rich would otherwise swallow as a style tag.
+        console.print(f"[red]{kind}:[/red] {rich_markup_escape(message)}")
 
 
 def _resolve_config_path(config: Path | None) -> Path:

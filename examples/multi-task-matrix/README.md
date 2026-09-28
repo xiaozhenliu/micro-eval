@@ -12,7 +12,7 @@ A micro-eval example that demonstrates the full 2D evaluation matrix with all fo
 | `command` expectation | `tasks/generate-report.yaml` |
 | `setup` commands in workspace spec | `tasks/check-style.yaml` |
 | Caveat system (partial failure) | `checker-beta` on `generate-report` |
-| Mixed decision status | `decision.json` after the run |
+| Comparative decision status | `decision.json` after the run |
 
 ## Quick start
 
@@ -26,7 +26,7 @@ After the run:
 - Open `examples/multi-task-matrix/report.html` to view the matrix in a browser.
 - `checker-alpha` (baseline) shows all PASS across all 3 tasks.
 - `checker-beta` (candidate) shows FAIL on `generate-report`, PASS on the other two.
-- The decision status is `inconclusive` (baseline all-pass vs candidate partial-fail).
+- The decision status is `regressed (low)`: `checker-beta` is unchanged on two tasks and regresses on `generate-report`.
 
 ## Launch the web UI
 
@@ -129,13 +129,13 @@ All executable commands are argv arrays. Placeholder replacement happens per arg
 | Workspace setup command | `{python}` |
 | Command expectation | `{python}`, `{output_dir}` |
 
-`{python}` always resolves to the interpreter running micro-eval. Setup runs before cell artifact paths are available, so input/output placeholders are intentionally limited to agent and validation contexts. In command expectations, `{output_dir}` resolves to the persisted cell artifact directory; the command otherwise runs in the cell workspace unless `cwd` selects the output directory.
+For local providers, `{python}` resolves to the interpreter running micro-eval; remote providers use their sandbox's `python3`. Setup supports `{python}`; input/output placeholders remain limited to agent and validation contexts. Command expectations execute in the same provider context as the agent: `{output_dir}` selects that context's output directory, which may be staging or remote storage rather than the persisted host artifact directory. The default command cwd is the cell workspace.
 
-## How the inconclusive outcome works
+## How the comparative outcome works
 
 - `checker-alpha` (baseline) completes all three tasks. All 2 × 3 = 6 cells pass. Pass rate: 100%.
 - `checker-beta` (candidate) passes `check-style` and `find-bugs`, but skips creating `report/summary.json`. The `command` expectation fails for all 2 repetitions of `generate-report`. Pass rate: 67%.
-- The decision shows: `inconclusive (low)` — micro-eval does not yet have a higher-confidence automated decision rule, but the matrix and pass-rate table make the difference visible at a glance.
+- The decision shows: `regressed (low)` — candidate relative to baseline, with two unchanged tasks and one regressed task. Each task has only two repetitions, so the report keeps the `low_sample` caveat.
 - The aggregation table shows `@1=67%` for checker-beta vs `@1=100%` for checker-alpha.
 
 ## Switching to stdout or directory output

@@ -48,6 +48,19 @@ jobs:
             exit 1
           fi
 
+  private-dev-workflow:
+    name: Private dev workflow tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Run private workflow tests
+        if: ${{ hashFiles('.agents/workflows/private_dev/tests/test_workflow.py') != '' }}
+        run: uv run python -m unittest discover .agents/workflows/private_dev/tests
+
   release-policy:
     name: Public projection and artifact policy
     runs-on: ubuntu-latest

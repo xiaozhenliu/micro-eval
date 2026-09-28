@@ -1,6 +1,6 @@
 # CLI 命令
 
-`micro-eval` 全部命令参考。当前版本：**0.4.6**。
+`micro-eval` 全部命令参考。当前版本：**0.5.0**。
 
 ## 配置文件查找顺序
 
@@ -90,6 +90,7 @@ micro-eval validate [OPTIONS]
 - `eval.yaml` 能通过 Pydantic schema 解析，无报错。
 - `tasks:` 下引用的每个任务文件存在且有效。
 - 每个 `WorkspaceSpec` 拥有可访问的 `git_repo`（`git_repo` 类型）或有效的文件列表。
+- `git_repo` 的 `ref` 严格解析为恰好一个 commit（分支、tag——annotated tag peel 到其 commit——、SHA 以及 `HEAD~1` 等表达式；形如选项的值、tree/blob 对象、缺失或歧义的 ref 会被拒绝）。无效 `ref` 使计划阶段以非零退出失败并附固定提示；不会回退到 `HEAD` 或其它版本。相同规则适用于 `run --dry-run`、`build-plan` 和 `workspace enqueue`。
 - 所有 `expectations` 引用的类型受支持：`exit_code`、`contains`、`file_exists` 或 `command`。
 - 隔离级别在当前平台可用（若 Seatbelt/Bubblewrap 不存在则发出警告并回退到 `logical`）。
 
@@ -156,7 +157,7 @@ micro-eval run [OPTIONS]
 - RunPlan 展开为一个有序的 `(task, config, repetition)` cell 列表。
 - Cell 在 `asyncio` 下运行，受 `--max-concurrency` 控制并发上限。
 - 每个 agent 仅通过 `argv` 传参，**不进行 shell 字符串插值**。
-- 匹配 `MICRO_EVAL_SECRET_*` 的 secrets 会传递到子进程环境，但在所有日志和存储的 artifact 中**自动脱敏**。
+- 仅声明的 agent secret 会被注入。捕获文本在持久化前脱敏；保留的二进制产物标记 `redacted: false` 并记录 warning。
 - 执行完成后，确定性校验器检查 `expectations`；如已配置，可选的 LLM judge 也会运行。
 
 **隔离级别**（在运行时解析）
@@ -165,11 +166,11 @@ micro-eval run [OPTIONS]
 |------|------|------|
 | `logical` | 每个 cell 使用 git worktree | 全平台 |
 | `os_policy` | Seatbelt（macOS）/ Bubblewrap（Linux） | macOS / Linux |
-| `container` | 容器运行时 | 需要 Docker 或等效工具 |
-| `vm` | E2B / Modal 远程沙箱 | 需要凭证 |
+| `container` | Modal 远程容器 | 需要 SDK 与凭据 |
+| `vm` | E2B 远程 VM | 需要 SDK 与凭据 |
 
 ::: warning
-如果请求 `os_policy` 隔离但平台二进制文件不可用，执行将回退到 `logical` 并在运行结果中记录一条 caveat。远程 provider（`vm`）**不会回退** — 若凭证缺失则直接报错。
+如果请求 `os_policy` 隔离但平台二进制文件不可用，执行将回退到 `logical` 并在运行结果中记录一条 caveat。远程 provider（`container` 和 `vm`）**不会回退**，缺少 SDK 或凭据时直接报错。命令必须已安装在远程运行环境中，或随工作区提供；宿主可执行文件路径不能直接复用。
 :::
 
 **示例**
@@ -278,7 +279,7 @@ run-20260613-172300-11223344          2026-06-13 17:23:00      3        3  parti
 
 ## micro-eval report
 
-渲染已完成运行的 ResultMatrix，包括每个 cell 的得分、聚合统计、总体 decision、caveats 以及 artifact 引用。
+渲染已完成运行的 ResultMatrix，包括每个 cell 的得分、聚合统计、candidate 相对 baseline 的 task 级比较、总体 decision、caveats 以及 artifact 引用。
 
 **语法**
 
@@ -341,7 +342,8 @@ Tasks: 3  Configurations: 2  Repetitions: 1
   task: classify            0.74            0.68  ▼
   task: extract             0.90            0.90  —
 
-Decision: mixed
+Comparison: candidate-new relative to config-baseline (threshold 10pp)
+Decision: mixed (low)
 Caveats:
   - Isolation fell back to logical (seatbelt unavailable)
   - LLM judge used for task:summarize (deterministic score N/A)
@@ -501,6 +503,8 @@ micro-eval serve [OPTIONS]
 
 `micro-eval serve` 同时启动两个进程并保持它们运行。停止时（Ctrl-C）会同时关闭两个进程。如需独立管理 worker，可用 `micro-eval serve` 启动前端，用 `micro-eval worker` 启动 worker。
 
+首次启动时，生成的 `server.json` 默认允许本机 hostname、FQDN 和 `--host` 绑定地址在服务端口上的 Host 值；loopback 值也始终允许。启动日志会打印实际生效的 Host 白名单。如需接受其他名称，请将其 `name:port` 值加入 `server.json` 的 `allowed_hosts` 后重启。已有的显式列表会保持原样。
+
 **示例**
 
 ::: code-group
@@ -653,6 +657,39 @@ micro-eval workspace delete WORKSPACE_ID [OPTIONS]
 |------|------|--------|------|
 | `--force` | 标志 | `false` | 跳过确认提示。 |
 | `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+---
+
+### micro-eval workspace enqueue
+
+在一次加锁步骤中构建 workspace 的运行计划并加入服务器队列。Team Server UI 在你确认 **Enqueue Run** 时调用的就是它；加 `--dry-run` 只构建计划并连同准入 digest 一起输出（即 UI 的预览）。
+
+**语法**
+
+```
+micro-eval workspace enqueue WORKSPACE_ID [OPTIONS]
+```
+
+**参数**
+
+| 参数 | 描述 |
+|------|------|
+| `WORKSPACE_ID` | Workspace 标识符。 |
+
+**选项**
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--owner TEXT` | string | — | 提交运行的成员（非 `--dry-run` 时必填）。 |
+| `--expected-plan-digest TEXT` | string | — | 除非新构建的计划具有该 digest（由 `--dry-run` 打印），否则拒绝。 |
+| `--dry-run` | 标志 | `false` | 只打印 `{"plan_digest", "plan"}`，不入队。 |
+| `--data-root PATH` | path | `~/.micro-eval-server` | 服务器数据根目录。 |
+
+**输出**
+
+成功时在 stdout 打印入队的 job JSON。拒绝时在 stderr 打印一个 JSON 对象（`{"error": "<kind>", ...}`）并以非零退出：`workspace_not_found`（1）、`queue_full`（2）、`workspace_not_active`（3）、`plan_build_failed`（4）、`plan_changed`（5）、`workspace_unavailable`（6）。准入条件：workspace 处于 active、`output_dir: .micro-eval/runs`、task 路径留在 workspace 内且不经过 symlink、队列有空位（`server.json` 的 `max_queue_size`）。
+
+enqueue 命令没有 `config_overrides` 选项。请先修改 workspace 配置，再预览并入队；Team Server HTTP 端点对包含 `config_overrides` 的请求返回 `400`，job 入队成功时返回 `202 Accepted`。
 
 ---
 
@@ -855,7 +892,7 @@ micro-eval queue cancel JOB_ID [OPTIONS]
 
 ```bash
 micro-eval --version
-# micro-eval 0.4.6
+# micro-eval 0.5.0
 ```
 
 ---
@@ -872,7 +909,7 @@ micro-eval --version
 | `LANGFUSE_HOST` | `run` | 可选的 Langfuse host 覆盖。 |
 
 ::: danger
-永远不要在 `eval.yaml` 中硬编码 secrets。请使用 `MICRO_EVAL_SECRET_*` 环境变量。它们会自动从所有存储的 artifact 和日志输出中脱敏。
+永远不要在 `eval.yaml` 中硬编码 secrets。请使用 `MICRO_EVAL_SECRET_*` 环境变量。其值在捕获文本持久化前脱敏；二进制产物不做脱敏，并保留 warning。
 :::
 
 ---

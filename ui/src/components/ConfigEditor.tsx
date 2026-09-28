@@ -6,9 +6,15 @@ import { getMemberName } from "@/lib/member-identity";
 interface ConfigEditorProps {
   workspaceId: string;
   initialContent: string;
+  /** True when `initialContent` has declared secret values replaced by `[REDACTED:<NAME>]` (N1). */
+  redacted?: boolean;
+  /** True when eval.yaml could not be read; saving is disabled so an empty editor never overwrites it. */
+  readFailed?: boolean;
+  /** Archived workspaces are read-only: the editor shows the file but cannot save. */
+  readOnly?: boolean;
 }
 
-export function ConfigEditor({ workspaceId, initialContent }: ConfigEditorProps) {
+export function ConfigEditor({ workspaceId, initialContent, redacted = false, readFailed = false, readOnly = false }: ConfigEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
@@ -51,8 +57,20 @@ export function ConfigEditor({ workspaceId, initialContent }: ConfigEditorProps)
 
   return (
     <div className="flex flex-col gap-3">
+      {readFailed && (
+        <p className="text-xs text-red-400">
+          eval.yaml could not be read, so saving is disabled: an empty editor must never overwrite the file.
+        </p>
+      )}
+      {redacted && (
+        <p className="text-xs text-amber-400">
+          Declared secret values are shown as [REDACTED:NAME]; saving a placeholder is rejected.
+        </p>
+      )}
       <textarea
         value={content}
+        readOnly={readOnly}
+        aria-readonly={readOnly}
         onChange={(e) => {
           setContent(e.target.value);
           setStatus(null);
@@ -64,7 +82,7 @@ export function ConfigEditor({ workspaceId, initialContent }: ConfigEditorProps)
       <div className="flex items-center gap-4">
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || readFailed || readOnly}
           className="inline-flex items-center gap-2 px-4 py-2 rounded bg-neutral-700 text-white text-sm font-medium hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {saving && (

@@ -38,7 +38,7 @@ micro-eval 默认的评测路径为单次 prompt/response 交互打分。会话�
 3. 会话结束后，整段对话记录会按照配置的 metric 进行打分。
 4. 结果的写入方式与单轮评测一致：一条 `EvaluationResult`（`evaluator_type: conversational_judge`）、对应的 evidence，以及一个汇入该 cell decision 的 pass/fail 判定。
 
-单轮任务的各项执行保障在这里同样适用——workspace 隔离、超时、环境变量白名单、secrets 脱敏均保持不变。
+对话当前要求 `workspace.isolation_level: logical`。cell 执行上下文通过所属 provider 创建持久化的交互 bridge，该路径与单轮命令执行分开。其他隔离级别尚不支持该 bridge，会在工作区准备前被拒绝。环境变量白名单和 secrets 脱敏仍然生效；这个长驻进程使用对话轮次超时和 bridge 关闭流程。
 
 ## 配置
 

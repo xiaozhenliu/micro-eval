@@ -335,19 +335,25 @@ def test_undeclared_micro_eval_secret_in_task_input_is_redacted(tmp_path: Path, 
     assert "[REDACTED:MICRO_EVAL_SECRET_UNDECLARED]" in persisted_text
 
 
-def test_short_micro_eval_secret_value_is_not_over_redacted(tmp_path: Path, monkeypatch) -> None:
-    """Secrets shorter than 4 chars are intentionally NOT redacted to avoid
-    over-replacement (GRO-188). A 2-char secret like "xy" would replace all
-    occurrences of that substring in all output, corrupting results."""
-    monkeypatch.setenv("MICRO_EVAL_SECRET_SHORT", "xy")
-    task = TaskSpec(id="short-secret-task", name="Short secret task", input_payload="xy")
+def test_short_micro_eval_secret_value_is_redacted_before_persistence(tmp_path: Path, monkeypatch) -> None:
+    """A short declared secret must not survive in run results or text artifacts."""
+    monkeypatch.setenv("MICRO_EVAL_SECRET_SHORT", "qz")
+    task = TaskSpec(id="short-secret-task", name="Short secret task", input_payload="")
     config = ProjectConfigV2(
         project_name="short-secret-test",
         configurations=[
             ConfigurationSpec(
                 id="agent",
                 name="agent",
-                agent=AgentSpec(name="agent", command=[sys.executable, "-c", "import sys; print(sys.stdin.read())"]),
+                agent=AgentSpec(
+                    name="agent",
+                    command=[
+                        sys.executable,
+                        "-c",
+                        "import os; print('x' + os.environ['MICRO_EVAL_SECRET_SHORT'] + 'x')",
+                    ],
+                    required_secrets=["MICRO_EVAL_SECRET_SHORT"],
+                ),
             )
         ],
     )
@@ -356,10 +362,18 @@ def test_short_micro_eval_secret_value_is_not_over_redacted(tmp_path: Path, monk
 
     record = asyncio.run(ExecutionKernel(tmp_path).run(plan))
     run_dir = tmp_path / ".micro-eval" / "runs" / record.id
-    persisted_text = "\n".join(path.read_text(errors="ignore") for path in run_dir.rglob("*.txt"))
+    persisted_text = "\n".join(
+        path.read_text(errors="ignore")
+        for path in run_dir.rglob("*")
+        if path.is_file() and path.suffix in {".json", ".txt"}
+    )
 
-    # Short secrets are preserved — no [REDACTED] replacement for short values
-    assert "[REDACTED:MICRO_EVAL_SECRET_SHORT]" not in persisted_text
+    result = record.results[0]
+    assert result.status.value == "pass"
+    assert result.stdout_summary == "x[REDACTED:MICRO_EVAL_SECRET_SHORT]x\n"
+    assert "qz" not in result.model_dump_json()
+    assert "[REDACTED:MICRO_EVAL_SECRET_SHORT]" in persisted_text
+    assert "qz" not in persisted_text
 
 
 def test_binary_directory_artifact_records_redaction_warning(tmp_path: Path) -> None:

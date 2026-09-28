@@ -103,14 +103,16 @@ Browser → Next.js API route → .micro-eval/runs/<id>/*.json
 
 | 徽章 | 含义 |
 |---|---|
-| `improved` | 新配置在大多数任务上得分更高 |
+| `improved` | 至少一个 task 达到改进阈值，且没有 task 回退 |
 | `regressed` | 新配置得分下降 |
 | `mixed` | 各任务结果不一 |
 | `inconclusive` | 信号不足，无法区分 |
 | `not_comparable` | Run 快照不一致——基线对比无效 |
 | `needs_human_review` | 自动评分已延后；需要人工标注 |
 
-徽章旁会同时显示**置信度**（低 / 中 / 高），由分数方差和重复次数推算得出。
+比较 run 会显示 candidate 相对 baseline、配置的 task 级阈值，以及每个 task 的通过率、delta、方向、样本数和 caveat。
+
+徽章旁展示已持久化的**置信度**。当前自动决策始终使用 `low`；UI 不会根据分数方差或重复次数推断置信度。
 
 #### Caveats 面板
 
@@ -254,7 +256,7 @@ MICRO_EVAL_PROJECT_ROOT=/absolute/path/to/project
 所有对 `.micro-eval/` 的读写均相对于此根目录。不需要其他任何配置。
 
 ::: tip Secrets 不会被对外提供
-匹配 `MICRO_EVAL_SECRET_*` 的环境变量会在服务端自动脱敏，不会包含在 API 响应或渲染的 artifact 内容中。
+捕获文本在持久化前按 secret 值脱敏。下载的二进制产物可能含有未脱敏字节，其 manifest 记录 `redacted: false` 和 warning。
 :::
 
 ---

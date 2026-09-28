@@ -35,7 +35,7 @@ cd micro-eval
 |---|---|
 | Python 3.11+ | 必须 |
 | 已安装 micro-eval | 在仓库根目录执行 `uv sync --all-extras`，或 `pip install micro-eval` |
-| Node.js 18+ | 可选——仅在使用 Web UI（`--ui` 标志）时需要 |
+| Node.js 20.9+ | 可选——仅在使用 Web UI（`--ui` 标志）时需要 |
 | 本地 agent CLI | 可选——仅在 `--real` 模式下需要 |
 
 ::: tip 无需模型调用
@@ -323,7 +323,7 @@ LLM judge 分数是附加证据。一个未通过 `contains` 期望的 cell，�
 
 - 每个 cell 在一次性临时目录中获得 `workspace/` 的**全新副本**。fixture 源文件不会被修改。
 - agent 子进程获得**最小化环境**——仅包含 `PATH`、`HOME`、临时目录变量和 `NO_COLOR`。宿主环境中的凭证不会透传。
-- `required_secrets` 中声明的 **`MICRO_EVAL_SECRET_*` 变量**在运行时注入，并从所有日志、trace 和存储制品中**自动脱敏**。
+- `required_secrets` 中声明的 **`MICRO_EVAL_SECRET_*` 变量**在运行时注入，捕获文本在持久化前**脱敏**。二进制产物不做文本脱敏，并记录 warning。
 - 输出大小上限为 `output_cap_bytes`，制品大小上限为 `artifact_cap_bytes`，防止无限写入。
 
 **你需要自行处理的事项：**
@@ -333,7 +333,7 @@ LLM judge 分数是附加证据。一个未通过 `contains` 期望的 cell，�
 - 分享报告前，请检查 `.micro-eval/runs/` 下的制品。
 - 如果 agent 需要密钥，请使用 `MICRO_EVAL_SECRET_` 通道——切勿将值硬编码在 YAML、prompt 或 fixture 文件中。
 
-如需更强隔离，请参阅 [Git Workspace Isolation](/zh/examples/git-workspace-isolation)，该示例演示 OS 策略沙箱（macOS 上的 Seatbelt、Linux 上的 Bubblewrap）以及通过 E2B/Modal 的远程 VM 执行。
+如需更强隔离，请参阅 [Git Workspace Isolation](/zh/examples/git-workspace-isolation)，该示例演示 OS 策略沙箱（macOS 上的 Seatbelt、Linux 上的 Bubblewrap）以及通过 E2B 的远程 VM 执行或通过 Modal 的远程容器执行。远程运行环境必须提供 agent 命令，不能直接复用宿主 CLI 路径。
 
 ---
 

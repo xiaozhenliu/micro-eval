@@ -1,8 +1,7 @@
-import path from "node:path";
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { getWorkspaceRunsDir } from "@/lib/workspace-api";
+import { getWorkspaceRunsDir, resolveWorkspaceRunDir, resolveInsideRunDir } from "@/lib/workspace-api";
 import { RunSchema } from "@/lib/schema";
 
 interface RouteContext {
@@ -22,9 +21,11 @@ export async function GET(request: Request, context: RouteContext) {
   const runsDir = getWorkspaceRunsDir(id);
   if (!runsDir) return NextResponse.json({ error: "workspace not found" }, { status: 404 });
 
-  const runDir = path.join(runsDir, runId);
-  const runJsonPath = path.join(runDir, "run.json");
-  if (!fs.existsSync(runJsonPath)) {
+  const runDir = resolveWorkspaceRunDir(id, runId);
+  if (!runDir) return NextResponse.json({ error: "run not found" }, { status: 404 });
+
+  const runJsonPath = resolveInsideRunDir(runDir, "run.json");
+  if (!runJsonPath || !fs.existsSync(runJsonPath)) {
     return NextResponse.json({ error: "run not found" }, { status: 404 });
   }
 
@@ -44,17 +45,10 @@ export async function GET(request: Request, context: RouteContext) {
   const artifact = run.artifacts.find((a) => a.artifact_id === artifactId);
   if (!artifact) return NextResponse.json({ error: "artifact not found" }, { status: 404 });
 
-  // Path traversal check
-  const artifactPath = path.resolve(runDir, artifact.path);
-  const realRunDir = fs.realpathSync(runDir);
-  if (!artifactPath.startsWith(realRunDir + path.sep)) {
-    return NextResponse.json({ error: "artifact not found" }, { status: 404 });
-  }
-  if (!fs.existsSync(artifactPath)) {
-    return NextResponse.json({ error: "artifact not found" }, { status: 404 });
-  }
-  const realArtifactPath = fs.realpathSync(artifactPath);
-  if (!realArtifactPath.startsWith(realRunDir + path.sep)) {
+  // Every path component between runDir and the artifact file is re-checked
+  // for symlinks (round-6 review, 2026-09-12).
+  const artifactPath = resolveInsideRunDir(runDir, artifact.path);
+  if (!artifactPath || !fs.existsSync(artifactPath)) {
     return NextResponse.json({ error: "artifact not found" }, { status: 404 });
   }
 
@@ -68,5 +62,5 @@ export async function GET(request: Request, context: RouteContext) {
     });
   }
 
-  return NextResponse.json({ artifact, content: fs.readFileSync(realArtifactPath, "utf-8") });
+  return NextResponse.json({ artifact, content: fs.readFileSync(artifactPath, "utf-8") });
 }

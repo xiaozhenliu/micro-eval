@@ -70,7 +70,7 @@ Runtime behaviour:
 - **Linux**: the Bubblewrap provider uses `bwrap` for namespace isolation
 - **Neither available**: graceful downgrade to `logical` isolation (git worktree only) + caveat recorded
 
-The `same_start_snapshot.sandbox_policy` field in `run.json` records which level was actually used.
+`same_start_snapshot.sandbox_policy` records the requested isolation. Check each cell's workspace evidence (`provider`, `network_effective`) and `snapshot_gate_result.caveats` for the effective provider and any downgrade. Once selected, a provider failure does not retry outside its sandbox. OS policy limits host writes, but readable host files remain exposed.
 
 ### Fixture digest and toolchain fingerprint
 
@@ -187,23 +187,35 @@ export LANGFUSE_SECRET_KEY=...
 export LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-### Remote VM isolation (E2B / Modal)
+### Remote Isolation: E2B VM / Modal Container
 
-Change the workspace isolation level in the task YAML:
+In the Git Workspace Isolation example, keep the workspace's existing source and choose `vm` for E2B or `container` for Modal:
 
 ```yaml
 workspace:
-  isolation_level: vm
+  type: git_repo
+  path: fixture-repo
+  ref: HEAD
+  isolation_level: vm  # use container for Modal
   trust_level: untrusted
+  network_policy: none
 ```
 
-Set credentials:
+Install the extra and set host-side control credentials for the chosen provider:
 
 ```bash
-export E2B_API_KEY=e2b_...
-# or
-export MODAL_TOKEN_ID=...
-export MODAL_TOKEN_SECRET=...
+# E2B (isolation_level: vm)
+uv pip install 'micro-eval[e2b]'
+export MICRO_EVAL_SECRET_E2B_API_KEY=e2b_...
+
+# Modal (isolation_level: container)
+uv pip install 'micro-eval[modal]'
+export MICRO_EVAL_SECRET_MODAL_TOKEN_ID=...
+export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET=...
 ```
 
-Note: without credentials, remote VM providers fail hard (no silent downgrade).
+`micro-eval[remote]` installs both SDKs. Control credentials are not agent `required_secrets`. Missing SDKs or credentials fail the cell; neither remote provider falls back locally.
+
+The example's `command: ["{python}", "scripts/mock-refactor-agent.py"]` uses the sandbox's `python3` and an uploaded fixture script. A real agent command must also be installed in, or supplied to, the remote runtime. Host absolute paths to Codex or another CLI cannot be reused there. If setup or the agent needs a package registry or model API, explicitly choose `network_policy: full`; `none` blocks outbound access and `allowlist` is rejected.
+
+Remote `git_repo` transfers the pinned ref's files without `.git` history. Setup, the agent, and command validators share one sandbox. Remote git observation remains unavailable, so the run records a caveat instead of claiming a verified same start. Offline SDK contract tests are separate from optional credentialed live checks.

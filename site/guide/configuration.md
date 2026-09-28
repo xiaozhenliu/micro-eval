@@ -88,7 +88,7 @@ evaluation:
     - validator
   denominator_policy: exclude_failed  # include_failed | exclude_failed
   decision_threshold: 0.10    # delta below which result is "inconclusive"
-  inconclusive_policy: needs_human_review
+  inconclusive_policy: warn
 
 # ─── Trace ───────────────────────────────────────────────────────────────────
 trace:
@@ -152,7 +152,7 @@ configurations:
 | `baseline` | The reference. Decisions like `improved`/`regressed` are relative to this. |
 | `candidate` | The variant being tested. |
 
-If only one configuration is present, `role` is optional. If two or more exist and no `baseline` is marked, micro-eval treats the first as the baseline.
+A single configuration can run without a role, but automatic comparison requires exactly one explicit `baseline` and one explicit `candidate`. Missing or ambiguous roles produce `inconclusive`; list order never assigns roles.
 
 #### `repetitions`
 
@@ -161,7 +161,7 @@ configurations:
   - repetitions: 3
 ```
 
-Each task is executed this many times for this configuration. The result matrix aggregates across repetitions (mean score, pass rate, p-value). Set to `1` for deterministic tasks; `3–5` for LLM-driven agents where variance matters.
+Each task is executed this many times for this configuration. The result matrix records repetitions, pass rates, pass@k/pass^k, and timing statistics; it does not compute a p-value. Set to `1` for deterministic tasks; `3–5` for LLM-driven agents where variance matters.
 
 #### `agent`
 
@@ -280,10 +280,10 @@ guardrails:
 | Field | Default | Description |
 |---|---|---|
 | `max_concurrency` | `4` | Maximum number of cells (task × configuration × repetition) executing in parallel. |
-| `timeout_s` | `300` | Hard wall-clock timeout per cell in seconds. Overrides any higher value in agent `timeout_s`. |
-| `output_cap_bytes` | `10485760` | Maximum bytes captured from stdout/stderr per cell (10 MB). Output beyond this is truncated. |
-| `artifact_cap_bytes` | `52428800` | Maximum total bytes of artifacts stored per cell (50 MB). |
-| `stop_on_cell_error` | `false` | If `true`, the entire run aborts immediately when any cell exits with an error. |
+| `timeout_s` | `300` | Recorded guardrail value; current execution uses `agent.timeout_s` and does not apply this as a global override. |
+| `output_cap_bytes` | `10485760` | Maximum bytes retained per stdout/stderr stream and selected output (10 MiB). Excess output is marked truncated. |
+| `artifact_cap_bytes` | `52428800` | Artifact persistence cap (50 MiB). Output-mode and provider-transfer limits may be lower. |
+| `stop_on_cell_error` | `false` | Recorded policy intent. Current dispatch continues after cell errors; this flag does not stop the run. |
 | `randomize_execution_order` | `false` | Shuffle cell execution order to reduce systematic ordering bias. |
 
 ::: tip Tuning concurrency
@@ -294,7 +294,7 @@ guardrails:
 
 ### `evaluation`
 
-Controls how per-cell scores are aggregated into a decision for each task row.
+Records the comparison contract. Automatic decisions compare task-level validator pass rates; roles and this contract are preserved with the run.
 
 ```yaml
 evaluation:
@@ -304,25 +304,25 @@ evaluation:
     - validator
   denominator_policy: exclude_failed
   decision_threshold: 0.10
-  inconclusive_policy: needs_human_review
+  inconclusive_policy: warn
 ```
 
 | Field | Default | Description |
 |---|---|---|
-| `comparison_subject` | `score` | The metric to compare across configurations. |
-| `min_repetitions` | `1` | Minimum completed repetitions required before a decision can be computed. Rows with fewer completions are marked `not_comparable`. |
-| `required_evaluators` | `["validator"]` | Evaluator IDs that must have produced a result for a cell to be included in aggregation. |
-| `denominator_policy` | `exclude_failed` | Whether failed cells count in the denominator when computing pass rate. |
-| `decision_threshold` | `0.05` | Minimum score delta between baseline and candidate to render a non-`inconclusive` decision. |
-| `inconclusive_policy` | `needs_human_review` | What decision status to assign when the delta is below `decision_threshold`. |
+| `comparison_subject` | `null` | Human-readable description of the comparison, not a metric selector. |
+| `min_repetitions` | `1` | Minimum denominator samples on both sides of every task. An unmet count makes the decision `inconclusive`. |
+| `required_evaluators` | `["validator"]` | Required evaluation contract. Automatic comparisons currently support only `["validator"]`; other contracts require human review. |
+| `denominator_policy` | `include_failed` | `include_failed` counts errors/timeouts; `exclude_failed` keeps passed/failed results and excludes execution failures. |
+| `decision_threshold` | `null` | Task-level candidate-minus-baseline pass-rate threshold in `(0, 1]`. `null` disables automatic winner decisions. |
+| `inconclusive_policy` | `warn` | Recorded policy intent: `warn` or `block`. It does not select or override the guarded report verdict. |
 
 **`denominator_policy`**
 
 ::: code-group
 
 ```yaml [exclude_failed]
-# Only completed cells count toward the denominator.
-# Use when failures are expected and you want to compare quality among successful runs.
+# Count passed and failed results; exclude execution errors and timeouts.
+# Failed expectations still count.
 denominator_policy: exclude_failed
 ```
 
@@ -338,12 +338,12 @@ denominator_policy: include_failed
 
 | Status | Meaning |
 |---|---|
-| `improved` | Candidate score is meaningfully higher than baseline. |
-| `regressed` | Candidate score is meaningfully lower than baseline. |
+| `improved` | At least one task reaches the improvement threshold and none regress. |
+| `regressed` | At least one task reaches the regression threshold and none improve. |
 | `mixed` | Different tasks show opposite directions. |
-| `inconclusive` | Delta is within `decision_threshold`. |
-| `not_comparable` | Insufficient data (too few repetitions, missing evaluators). |
-| `needs_human_review` | Routed to human annotator (see `inconclusive_policy`). |
+| `inconclusive` | No task reaches a threshold, or roles, contract, samples, or machine evidence are insufficient. |
+| `not_comparable` | A cell snapshot gate warns/fails or the compared task sets differ. |
+| `needs_human_review` | The contract requires non-validator evaluation. |
 
 ---
 

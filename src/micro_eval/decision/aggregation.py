@@ -49,15 +49,20 @@ def aggregate_configuration(
     n_cells = len(results)
     successful_results = [result for result in results if result.status in {CellStatus.passed, CellStatus.failed}]
     n_successful = len(successful_results)
-    binary_results = [result for result in results if _has_binary_outcome(result)]
     caveats: list[str] = []
-    if n_successful < 3:
+    by_task: dict[str, list[CellResult]] = {}
+    for result in results:
+        by_task.setdefault(result.task_id, []).append(result)
+    if any(
+        len(_denominator_results(task_results, denominator_policy)) < 3
+        for task_results in by_task.values()
+    ):
         caveats.append("low_sample")
 
-    denominator_results = results if denominator_policy == "include_failed" else successful_results
+    denominator_results = _denominator_results(results, denominator_policy)
     denominator = len(denominator_results)
     passed = sum(1 for result in denominator_results if _is_pass(result))
-    has_binary_signal = bool(binary_results)
+    has_binary_signal = any(_has_binary_outcome(result) for result in results)
     pass_rate = passed / denominator if has_binary_signal and denominator else None
     pass_at_k = _pass_at_k(denominator, passed) if pass_rate is not None else None
     pass_hat_k = _pass_hat_k(denominator, pass_rate) if pass_rate is not None else None
@@ -79,6 +84,14 @@ def aggregate_configuration(
 
 def _has_binary_outcome(result: CellResult) -> bool:
     return result.pass_fail in {"pass", "fail"} or result.status in {CellStatus.passed, CellStatus.failed}
+
+
+def _denominator_results(
+    results: list[CellResult], denominator_policy: DenominatorPolicy
+) -> list[CellResult]:
+    if denominator_policy == "include_failed":
+        return results
+    return [result for result in results if result.status in {CellStatus.passed, CellStatus.failed}]
 
 
 def _is_pass(result: CellResult) -> bool:

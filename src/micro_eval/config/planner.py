@@ -12,7 +12,8 @@ from micro_eval.models.environment import ReplayCanonical, SameStartSnapshot
 from micro_eval.models.ids import canonical_digest, compact_timestamp, new_run_id
 from micro_eval.models.run import RunCell, RunPlan
 from micro_eval.models.task import TaskSpec
-from micro_eval.engine.workspace import build_same_start_snapshot
+from micro_eval.engine.workspace import GitRefWorkspaceError, build_same_start_snapshot
+from micro_eval.config.loader import ConfigError, load_config, load_task_paths
 
 
 def build_run_plan(
@@ -56,16 +57,22 @@ def build_run_plan(
             "stop_on_cell_error": guardrails.stop_on_cell_error,
         }
     )
-    snapshot = build_same_start_snapshot(
-        project_root=project_root or Path.cwd(),
-        tasks=tasks,
-        config_hash=config.config_hash,
-        configuration_digests=configuration_digests,
-        task_revisions=task_revisions,
-        python_version=platform.python_version(),
-        guardrails_digest=guardrails_digest,
-        timestamp=created_at,
-    )
+    try:
+        snapshot = build_same_start_snapshot(
+            project_root=project_root or Path.cwd(),
+            tasks=tasks,
+            config_hash=config.config_hash,
+            configuration_digests=configuration_digests,
+            task_revisions=task_revisions,
+            python_version=platform.python_version(),
+            guardrails_digest=guardrails_digest,
+            timestamp=created_at,
+        )
+    except GitRefWorkspaceError as exc:
+        # A workspace ref that does not resolve to a commit fails the plan
+        # with a stable reason instead of being downgraded to a snapshot
+        # caveat (GRO-972).
+        raise ConfigError(str(exc), reason=exc.reason) from exc
     workspace_fingerprint = canonical_digest(
         {
             "workspace_type": snapshot.workspace_type,
@@ -120,6 +127,8 @@ def build_run_plan(
         migration_warnings=config.migration_warnings,
         same_start_snapshot=snapshot,
         replay_canonical=replay,
+        configuration_roles={configuration.id: configuration.role for configuration in config.configurations},
+        evaluation_contract=config.evaluation.model_copy(deep=True),
         denominator_policy=config.evaluation.denominator_policy,
     )
 
@@ -140,3 +149,27 @@ def plan_summary(plan: RunPlan) -> dict[str, object]:
 def compact_now() -> str:
     """Expose compact timestamp for tests and CLI display."""
     return compact_timestamp()
+
+
+def build_workspace_plan(
+    workspace: Path | str,
+    *,
+    strict_paths: bool = False,
+    max_concurrency: int | None = None,
+) -> RunPlan:
+    """Load ``<workspace>/eval.yaml`` plus its tasks and expand the RunPlan.
+
+    Shared by the ``build-plan`` CLI and the Team Server enqueue path so both
+    read the configuration through the same (optionally strict) loader.
+    Raises :class:`ConfigError` for every load-time failure, including a
+    workspace with no tasks.
+    """
+    workspace = Path(workspace)
+    config_path = workspace / "eval.yaml"
+    if not config_path.exists():
+        raise ConfigError("eval.yaml not found in workspace")
+    project = load_config(config_path, strict_paths=strict_paths)
+    tasks = load_task_paths(config_path, project, strict_paths=strict_paths)
+    if not tasks:
+        raise ConfigError("no tasks found")
+    return build_run_plan(project, tasks, max_concurrency=max_concurrency, project_root=workspace)

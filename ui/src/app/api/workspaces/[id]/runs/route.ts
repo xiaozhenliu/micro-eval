@@ -1,8 +1,7 @@
-import path from "node:path";
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { getWorkspaceRunsDir } from "@/lib/workspace-api";
+import { getWorkspaceRunsDir, resolveWorkspaceRunDir, resolveInsideRunDir } from "@/lib/workspace-api";
 import { RunSchema } from "@/lib/schema";
 
 interface RouteContext {
@@ -23,15 +22,19 @@ export async function GET(_request: Request, context: RouteContext) {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const runJsonPath = path.join(runsDir, entry.name, "run.json");
-    if (!fs.existsSync(runJsonPath)) continue;
+    // Same symlink-free resolution as the per-run routes: a run.json or
+    // decision.json swapped for a symlink is skipped, not followed.
+    const runDir = resolveWorkspaceRunDir(id, entry.name);
+    if (!runDir) continue;
+    const runJsonPath = resolveInsideRunDir(runDir, "run.json");
+    if (!runJsonPath || !fs.existsSync(runJsonPath)) continue;
     try {
       const raw = JSON.parse(fs.readFileSync(runJsonPath, "utf-8"));
       const run = RunSchema.parse(raw);
 
       // Merge decision.json if present
-      const decisionPath = path.join(runsDir, entry.name, "decision.json");
-      if (fs.existsSync(decisionPath)) {
+      const decisionPath = resolveInsideRunDir(runDir, "decision.json");
+      if (decisionPath && fs.existsSync(decisionPath)) {
         const decision = JSON.parse(fs.readFileSync(decisionPath, "utf-8"));
         runs.push({ ...run, decision });
       } else {

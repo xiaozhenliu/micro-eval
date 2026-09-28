@@ -177,7 +177,7 @@ agent:
 | `command` | `string[]` | — | **Yes** | Argv list for launching the agent. Must be non-empty. The first element must be the executable. |
 | `input_mode` | `"stdin" \| "file"` | `"stdin"` | No | How the task prompt is delivered. `stdin`: written to the process stdin. `file`: written to a temp file; path passed as the last argv element. |
 | `output_mode` | `"stdout" \| "file" \| "directory"` | `"stdout"` | No | Where the agent writes its result. `stdout`: captured from stdout. `file`: agent writes to a known file path. `directory`: agent writes multiple artifacts to a directory. |
-| `timeout_s` | `float` | `300.0` | No | Per-cell execution timeout in seconds. Must be greater than `0`. Overrides `guardrails.timeout_s` when set. |
+| `timeout_s` | `float` | `300.0` | No | Agent execution timeout in seconds. Must be greater than `0`; this is the timeout applied by the current executor. |
 | `env` | `dict` | `{}` | No | Additional environment variables injected into the agent subprocess. Values must be strings. Do not put secrets here — use `required_secrets` instead. |
 | `required_secrets` | `string[]` | `[]` | No | Names of secrets this agent needs. Each name must begin with `MICRO_EVAL_SECRET_`. micro-eval reads them from the host environment and injects them into the subprocess; they are never logged or stored in output files. |
 
@@ -250,10 +250,10 @@ guardrails:
 | Field | Type | Default | Required | Description |
 |---|---|---|---|---|
 | `max_concurrency` | `integer` | `4` | No | Maximum number of cells executing in parallel. Minimum: `1`. Controls asyncio bounded concurrency. |
-| `timeout_s` | `float` | `300.0` | No | Default per-cell timeout in seconds. Can be overridden per-agent with `agent.timeout_s`. |
+| `timeout_s` | `float` | `300.0` | No | Recorded guardrail value. Current execution applies `agent.timeout_s`, not this global value. |
 | `output_cap_bytes` | `integer` | `10485760` | No | Maximum bytes captured from stdout/stderr per cell (10 MB). Output beyond this limit is truncated. |
-| `artifact_cap_bytes` | `integer` | `52428800` | No | Maximum total bytes of file artifacts collected per cell (50 MB). |
-| `stop_on_cell_error` | `boolean` | `false` | No | When `true`, a cell failure (non-zero exit, timeout, error) aborts the entire run immediately. Default `false` collects all results before reporting. |
+| `artifact_cap_bytes` | `integer` | `52428800` | No | Artifact persistence cap (50 MiB); output-mode and provider-transfer limits can be lower. |
+| `stop_on_cell_error` | `boolean` | `false` | No | Recorded policy intent. Current dispatch continues after cell errors; this flag does not stop the run. |
 | `randomize_execution_order` | `boolean` | `false` | No | When `true`, cells are executed in random order. Useful for detecting order-dependent flakiness. |
 
 ::: tip Tuning concurrency
@@ -288,10 +288,10 @@ evaluation:
 | `task_set_version` | `string` | — | No | Version tag for the task set. Stored in run metadata; used to detect non-comparable runs in trend analysis. |
 | `success_criteria` | `string[]` | `[]` | No | Human-readable criteria for what constitutes a successful evaluation. Stored as documentation in the run record. |
 | `budget` | `dict \| null` | `null` | No | Optional cost budget constraints. Keys and schema depend on your trace provider. |
-| `decision_threshold` | `float \| null` | `null` | No | Minimum score delta required to declare a result `improved` or `regressed`. Values below this threshold yield `inconclusive`. |
-| `inconclusive_policy` | `"warn" \| "block"` | `"warn"` | No | What happens when the decision is `inconclusive`. `warn` emits a warning and continues. `block` exits with a non-zero status code. |
-| `min_repetitions` | `integer` | `1` | No | Minimum repetitions required for a cell to be included in the decision. Cells with fewer successful repetitions are excluded. |
-| `required_evaluators` | `string[]` | `["validator"]` | No | Evaluators that must produce a score for a cell to be counted. Supported values: `validator`, `judge`. |
+| `decision_threshold` | `float \| null` | `null` | No | Task-level candidate-minus-baseline pass-rate delta threshold; must be in `(0, 1]`. `null` disables automatic winner decisions. |
+| `inconclusive_policy` | `"warn" \| "block"` | `"warn"` | No | Recorded policy intent (`warn` or `block`). It currently does not change the guarded verdict or the CLI exit status. |
+| `min_repetitions` | `integer` | `1` | No | Minimum denominator samples required on each side of every task. Insufficient samples make the decision inconclusive. |
+| `required_evaluators` | `string[]` | `["validator"]` | No | Required evaluator IDs. Automatic comparison currently supports only `["validator"]`; other contracts produce `needs_human_review`. |
 | `denominator_policy` | `"include_failed" \| "exclude_failed"` | `"include_failed"` | No | Whether failed cells (timeout, error) count in the denominator when computing pass rates. `include_failed` is more conservative. |
 
 ### Decision statuses
@@ -401,8 +401,8 @@ Workspace configuration lives in individual task files, but the isolation level 
 |---|---|---|
 | Logical | `logical` | Git worktree per cell. Fast, no OS-level isolation. Default. |
 | OS policy | `os_policy` | Seatbelt (macOS) or Bubblewrap (Linux). Degrades to `logical` with a caveat when unavailable. |
-| Container | `container` | OCI container (not local Docker). Planned. |
-| VM / Remote | `vm` | E2B or Modal remote sandbox. Requires credentials; fails hard when not configured (no silent degradation). |
+| Container | `container` | Modal remote container. Requires SDK and credentials; no local fallback. |
+| VM | `vm` | E2B remote VM. Requires SDK and credentials; no local fallback. |
 
 The three task workspace types are:
 
@@ -433,7 +433,7 @@ micro-eval:
 1. Reads declared secrets from the host environment at startup.
 2. Validates that all `required_secrets` are present before launching any cell.
 3. Injects them into subprocess environments directly — never via shell interpolation.
-4. Auto-redacts all `MICRO_EVAL_SECRET_*` values from stdout, stderr, and artifact captures before writing to disk.
+4. Redacts secret values from captured stdout, stderr, and text artifacts before persistence. Binary artifacts are retained without text redaction and carry a warning.
 
 ---
 

@@ -14,7 +14,8 @@ guarantees with executable assertions.
 
 from __future__ import annotations
 
-import asyncio.subprocess
+import os
+import signal
 import sys
 from pathlib import Path
 
@@ -58,20 +59,19 @@ def test_kernel_does_not_spawn_subprocesses_directly() -> None:
     assert "adapter.invoke" in source, "kernel.py must invoke the adapter"
 
 
-# adapter.py is the sole agent spawner in the engine (the legacy AgentRunner was
-# retired in #3). Any other engine module that spawns async subprocesses is a
-# contract violation — agent execution belongs in the adapter.
-SANCTIONED_SPAWNERS = {"adapter.py", "agent_bridge.py"}
+# Adapter and providers delegate local process ownership to the shared runner.
+# The bridge remains the separate, explicitly supported agent protocol path.
+SANCTIONED_SPAWNERS = {"process_runner.py", "agent_bridge.py"}
 
 
-def test_only_the_adapter_spawns_agent_subprocesses_in_engine() -> None:
-    """No new engine module may spawn async subprocesses outside the adapter."""
+def test_only_the_runner_and_bridge_spawn_subprocesses_in_engine() -> None:
+    """Adapter and orchestration must delegate asynchronous process ownership."""
     for path in ENGINE_DIR.glob("*.py"):
         if path.name in SANCTIONED_SPAWNERS:
             continue
         source = path.read_text(encoding="utf-8")
         assert "create_subprocess_exec" not in source and "create_subprocess_shell" not in source, (
-            f"{path.name} spawns async subprocesses; agent execution must go through AgentAdapter"
+            f"{path.name} spawns async subprocesses; execution must use the shared runner"
         )
 
 
@@ -84,23 +84,17 @@ def _agent(command: list[str], *, timeout_s: float) -> AgentSpec:
     return AgentSpec(name="timeout-agent", command=command, timeout_s=timeout_s)
 
 
-def _spy_signals(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Record terminate()/kill() calls on the asyncio subprocess transport."""
-    calls: list[str] = []
-    proc_cls = asyncio.subprocess.Process
-    orig_terminate = proc_cls.terminate
-    orig_kill = proc_cls.kill
+def _spy_signals(monkeypatch: pytest.MonkeyPatch) -> list[signal.Signals]:
+    """Record signals sent to the adapter-owned process group."""
+    calls: list[signal.Signals] = []
+    original_killpg = os.killpg
 
-    def rec_terminate(self):  # type: ignore[no-untyped-def]
-        calls.append("terminate")
-        return orig_terminate(self)
+    def record_killpg(pgid: int, sig: signal.Signals) -> None:
+        if sig:
+            calls.append(sig)
+        original_killpg(pgid, sig)
 
-    def rec_kill(self):  # type: ignore[no-untyped-def]
-        calls.append("kill")
-        return orig_kill(self)
-
-    monkeypatch.setattr(proc_cls, "terminate", rec_terminate)
-    monkeypatch.setattr(proc_cls, "kill", rec_kill)
+    monkeypatch.setattr(os, "killpg", record_killpg)
     return calls
 
 
@@ -118,7 +112,7 @@ async def test_timeout_terminates_a_responsive_process(
 
     assert result.status == CellStatus.timeout
     assert result.timed_out is True
-    assert calls == ["terminate"], f"expected terminate only, got {calls}"
+    assert calls == [signal.SIGTERM], f"expected group SIGTERM only, got {calls}"
 
 
 async def test_timeout_escalates_to_kill_when_sigterm_ignored(
@@ -136,4 +130,4 @@ async def test_timeout_escalates_to_kill_when_sigterm_ignored(
 
     assert result.status == CellStatus.timeout
     assert result.timed_out is True
-    assert calls == ["terminate", "kill"], f"expected terminate then kill, got {calls}"
+    assert calls == [signal.SIGTERM, signal.SIGKILL], f"expected group SIGTERM then SIGKILL, got {calls}"

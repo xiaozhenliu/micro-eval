@@ -23,7 +23,7 @@ features:
     details: Every cell runs from a reproducible starting point. Snapshot mismatch downgrades the decision — no fake winner claims.
   - icon: 🛡️
     title: Multi-Level Sandbox
-    details: Git worktree isolation by default. OS policy sandbox (Seatbelt/Bubblewrap) or remote VM (E2B/Modal) for untrusted agents.
+    details: Git worktree isolation by default. OS policy sandbox (Seatbelt/Bubblewrap) or remote VM (E2B) or container (Modal) for untrusted agents.
   - icon: 📊
     title: Guarded Decisions
     details: Decisions come with evidence chains and caveats. Inconclusive is a valid answer — not silence.

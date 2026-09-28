@@ -9,6 +9,12 @@
  * preview and shows a confirmation card; the actual enqueue POST only fires
  * after "Confirm & Enqueue". A failed/absent plan-summary degrades to a
  * warning card that still allows enqueue.
+ *
+ * Round-6 review (R9/R10, 2026-09-12): the preview's plan_digest is echoed
+ * back as `expected_plan_digest` on the enqueue POST, a 409 (configuration
+ * changed since the preview) surfaces the server message and drops the
+ * stale preview, and the cells formula only shows the `× reps` factor when
+ * `repetitions_uniform` is true.
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
@@ -70,8 +76,10 @@ describe("RunEnqueueButton", () => {
             tasks: 1,
             configurations: 2,
             repetitions: 1,
+            repetitions_uniform: true,
             total_cells: 2,
             agent_commands: ["python agent-a.py", "python agent-b.py"],
+            plan_digest: "hash-abc",
           }),
           text: async () => "",
         });
@@ -103,6 +111,73 @@ describe("RunEnqueueButton", () => {
     expect(url).toBe("/api/workspaces/ws-1/runs/enqueue");
     expect(options.method).toBe("POST");
     expect(options.headers["X-Micro-Eval-Member"]).toBe("Alice");
+    expect(options.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(options.body)).toEqual({ expected_plan_digest: "hash-abc" });
+  });
+
+  it("shows the 'repetitions vary' phrasing instead of the × reps factor when repetitions_uniform is false", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        tasks: 2,
+        configurations: 3,
+        repetitions: 1,
+        repetitions_uniform: false,
+        total_cells: 5,
+        agent_commands: [],
+        plan_digest: "hash-xyz",
+      }),
+      text: async () => "",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+
+    expect(await screen.findByText(/2 tasks × 3 configs = 5 cells \(repetitions vary per configuration\)/i)).toBeTruthy();
+  });
+
+  it("shows the server message and drops the stale preview on a 409 (configuration changed)", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/workspaces/ws-1/plan-summary") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            tasks: 1,
+            configurations: 1,
+            repetitions: 1,
+            repetitions_uniform: true,
+            total_cells: 1,
+            agent_commands: [],
+            plan_digest: "stale-hash",
+          }),
+          text: async () => "",
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "configuration changed since the preview; review the new preview" }),
+        text: async () => "",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByRole("button", { name: /confirm & enqueue/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(await screen.findByText(/configuration changed since the preview/i)).toBeTruthy();
+    // The stale preview card is gone — the button is back to its initial state.
+    expect(screen.queryByText(/run preview/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /enqueue run/i })).toBeTruthy();
   });
 
   it("degrades to a warning card and still allows enqueue when plan-summary fails", async () => {
@@ -126,6 +201,169 @@ describe("RunEnqueueButton", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe("/api/workspaces/ws-1/runs/enqueue");
+  });
+
+  it("still surfaces the invalid-ref hint when the degraded enqueue is refused by the backend", async () => {
+    // Round-1 coverage: a preview that failed without a detail degrades and
+    // lets the member enqueue; the backend still validates the ref and the
+    // refusal carries the fixed hint.
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/workspaces/ws-1/plan-summary") {
+        return Promise.resolve({ ok: false, status: 502, json: async () => ({}), text: async () => "" });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 502,
+        json: async () => ({
+          error: "failed to build run plan",
+          detail: "[task=t] git ref cannot be resolved to a commit",
+          reason: "invalid_git_ref",
+          hint: "Use a branch, tag, or commit SHA that exists in the server repository and resolves to a commit. Correct the ref or fetch the required commit, then preview again.",
+        }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+    expect(await screen.findByText(/could not load plan preview/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /confirm & enqueue/i }));
+
+    expect(await screen.findByText(/then preview again/)).toBeTruthy();
+    expect(await screen.findByText(/\[task=t\] git ref cannot be resolved to a commit/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows source preflight detail and blocks confirmation when preview is refused", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: "failed to build plan summary", detail: "task t: workspace source not found: missing" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+
+    expect(await screen.findByText("task t: workspace source not found: missing")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /confirm & enqueue/i })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("appends the fixed invalid-git-ref hint when the preview refusal carries the reason", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({
+        error: "failed to build plan summary",
+        detail: "[task=t] git ref cannot be resolved to a commit",
+        reason: "invalid_git_ref",
+        hint: "Use a branch, tag, or commit SHA that exists in the server repository and resolves to a commit. Correct the ref or fetch the required commit, then preview again.",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+
+    expect(await screen.findByText(/\[task=t\] git ref cannot be resolved to a commit/)).toBeTruthy();
+    expect(await screen.findByText(/Use a branch, tag, or commit SHA/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /confirm & enqueue/i })).toBeNull();
+  });
+
+  it("ignores a hint that does not belong to the known refusal reason", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({
+        error: "failed to build plan summary",
+        detail: "task t: workspace source not found: missing",
+        reason: "something_else",
+        hint: "arbitrary backend hint",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+
+    expect(await screen.findByText("task t: workspace source not found: missing")).toBeTruthy();
+    expect(screen.queryByText(/arbitrary backend hint/)).toBeNull();
+  });
+
+  it("appends the fixed hint when the enqueue refusal carries the invalid-git-ref reason", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/workspaces/ws-1/plan-summary") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            tasks: 1,
+            configurations: 1,
+            repetitions: 1,
+            repetitions_uniform: true,
+            total_cells: 1,
+            agent_commands: [],
+            plan_digest: "hash-abc",
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 502,
+        json: async () => ({
+          error: "failed to build run plan",
+          detail: "[task=t] git ref cannot be resolved to a commit",
+          reason: "invalid_git_ref",
+          hint: "Use a branch, tag, or commit SHA that exists in the server repository and resolves to a commit. Correct the ref or fetch the required commit, then preview again.",
+        }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /confirm & enqueue/i }));
+
+    expect(await screen.findByText(/then preview again/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows source preflight detail when enqueue is refused after a preview", async () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/workspaces/ws-1/plan-summary") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            tasks: 1,
+            configurations: 1,
+            repetitions: 1,
+            repetitions_uniform: true,
+            total_cells: 1,
+            agent_commands: [],
+            plan_digest: "hash-abc",
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 502,
+        json: async () => ({ error: "failed to build run plan", detail: "task t: workspace source not found: missing" }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /enqueue run/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /confirm & enqueue/i }));
+
+    expect(await screen.findByText("task t: workspace source not found: missing")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("cancels the confirmation card without enqueueing", async () => {
@@ -165,6 +403,21 @@ describe("RunEnqueueButton", () => {
     fireEvent.click(button);
 
     expect(await screen.findByText(/set your name first/i)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("disables the button and shows the reason when disabledReason is set", () => {
+    window.localStorage.setItem(MEMBER_NAME_KEY, "Alice");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RunEnqueueButton workspaceId="ws-1" disabledReason="Add at least one configuration and one task first" />);
+
+    const button = screen.getByRole("button", { name: /enqueue run/i });
+    expect(button).toHaveProperty("disabled", true);
+    expect(screen.getByText(/add at least one configuration and one task first/i)).toBeTruthy();
+
+    fireEvent.click(button);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

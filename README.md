@@ -4,16 +4,18 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.4.6](https://img.shields.io/badge/version-0.4.6-6f42c1)](VERSION)
+[![Version: 0.5.0](https://img.shields.io/badge/version-0.5.0-6f42c1)](VERSION)
 [![Local-first](https://img.shields.io/badge/evaluation-local--first-2ea44f)](docs/engineering/security-guidelines.md)
 
-Current version: `0.4.6`
+Current version: `0.5.0`
 
 **A local-first Agent / Skill evaluation assistant for small AI teams that need evidence, not vibes.**
 
 `micro-eval` turns “the candidate feels better” into a reproducible comparison: the same tasks, the same starting point, the same evidence chain, and a guarded decision about where a baseline or candidate is stronger, weaker, inconclusive, or not comparable.
 
-The bilingual [documentation site](https://xiaozhenliu.github.io/micro-eval/) is organized around a clear design system — decision loop, three design tensions, and seven core objects — with guides structured by user journey (Get Started → Using → Advanced → Reference). Phase 3 provider-based sandbox isolation (local OS policy via Seatbelt/Bubblewrap + optional remote via E2B/Modal), complex workspace types with fixture digests and toolchain fingerprinting, and cross-run trend analysis backed by SQLite indexing with drift-aware breakpoints remain fully available. A shared **Team Server** (`micro-eval serve`) adds per-member workspace isolation, a serial run queue, a read-only template library, and attribution records for trusted-LAN teams (v0.4.0). **Conversational evaluation** adds multi-turn agent evaluation via DeepEval's ConversationSimulator over a JSONL subprocess bridge, as a parallel path to the single-turn GEval judge (v0.4.2). Langfuse, DeepEval, E2B, and Modal remain optional extras; local subprocess execution with deterministic validation still works without external services.
+Version **0.5.0** adds browser-based configuration and task setup to **Team Server** (`micro-eval serve`), five bundled starter tasks, live job progress, and cancellation with partial results. Baseline/candidate comparisons now show task-level deltas and link guarded verdicts to their evidence across reports and the Web UI.
+
+Cell setup, single-turn agents, and command validators run through the selected workspace provider: local logical workspaces, optional Seatbelt/Bubblewrap OS policies, or optional E2B/Modal sandboxes. Conversational evaluation uses a JSONL bridge and currently requires logical isolation. Langfuse, DeepEval, E2B, and Modal remain optional extras; deterministic local evaluation works without external services. See the bilingual [documentation site](https://xiaozhenliu.github.io/micro-eval/) for setup, examples, and provider limits.
 
 ## Why micro-eval?
 
@@ -31,8 +33,8 @@ Small AI engineering teams often compare prompt, skill, agent, or tool changes w
 - **Self-owned execution layer**: asyncio bounded concurrency, per-cell timeout, and non-blocking cell failures.
 - **Safe subprocess contract**: canonical `agent.command` is an argv list; legacy string commands only pass through a migration bridge with warnings.
 - **Same-start evidence**: `SameStartSnapshot`, `CellSnapshot`, `SnapshotGateResult`, and `ReplayCanonical` are persisted with the run.
-- **Multi-level workspace isolation**: Level 0 git worktree (default), Level 1 OS policy sandbox (Seatbelt macOS / Bubblewrap Linux), Level 3-4 remote container/VM (E2B / Modal, optional).
-- **Provider registry**: pluggable `WorkspaceProvider` Protocol selects isolation backend by level; unavailable OS policy degrades gracefully with a caveat; remote levels fail hard.
+- **Workspace providers**: `blank`, `files`, and `git_repo` workspaces support per-cell setup, single-turn agent execution, and command validation through one provider context. Choose `logical` (default), `os_policy` (Seatbelt on macOS or Bubblewrap on Linux), `container` (Modal), or `vm` (E2B).
+- **Explicit isolation limits**: unavailable OS policy may fall back to logical isolation with a recorded caveat; a selected provider's execution failure never triggers a local fallback. Remote providers require their SDKs and credentials.
 - **Artifact / evidence / trace chain**: `manifest.json` indexes `ArtifactRef`, `EvidenceItem`, and optional `TraceRef` records.
 - **Deterministic validation**: supports `exit_code`, `contains`, `file_exists`, and argv-only `command` expectations.
 - **Pass@k / pass^k aggregation**: repeated cells produce per-configuration pass rates, latency summaries, low-sample caveats, and `CostMetric` source metadata.
@@ -41,8 +43,8 @@ Small AI engineering teams often compare prompt, skill, agent, or tool changes w
 - **Guarded decisions**: snapshot mismatch, missing evidence, or insufficient repetitions produce caveats instead of fake winner claims.
 - **Cross-run trend analysis**: SQLite-indexed run data enables time-series trend queries per configuration, with drift-aware breakpoints when configuration content changes across runs.
 - **Local review UI/API**: a Next.js UI reads canonical run, cell, artifact, evaluation, trace, cost, trend, and decision data through zod schemas.
-- **Team Server** — shared server for trusted LANs: per-member workspace isolation, serial run queue, read-only template library, attribution records (v0.4.0)
-- **Conversational evaluation** — multi-turn agent evaluation via DeepEval ConversationSimulator with a JSONL subprocess bridge; parallel path to the single-turn GEval judge (v0.4.2)
+- **Team Server**: browser configuration/task forms, an Advanced YAML editor, starter templates, a serial run queue, job progress/cancellation, and member attribution for trusted internal networks.
+- **Conversational evaluation**: multi-turn evaluation through DeepEval ConversationSimulator and a JSONL subprocess bridge, with logical isolation only.
 
 ## Quick Start
 
@@ -75,6 +77,8 @@ micro-eval ui --port 3000
 ```
 
 In the Web UI, follow: Run List → Decision Summary → Result Matrix → Cell Evidence → Review Page → Artifact / Trace Viewer → Human Evaluation → Decision/Caveats.
+
+For the shared Team Server workflow, run `uv run micro-eval serve` from the source checkout. Choose a starter template, create a workspace, configure agents and tasks in the browser, then preview and enqueue a run. `serve` opens the browser in an interactive terminal; use `--no-open` to suppress it. Team Server has no authentication and is intended only for trusted internal networks.
 
 ### Ready-to-run example
 
@@ -116,13 +120,22 @@ Config lookup order is `--config` → `$MICRO_EVAL_CONFIG` → `./eval.yaml`.
 | `micro-eval list [--format text\|json]` | List `.micro-eval/runs/*/run.json` records. |
 | `micro-eval report [--run RUN_ID] [--format text\|json\|html]` | Render the matrix, Basic Honest Stats, decision/caveats, and artifacts. |
 | `micro-eval apply-evaluation --run-id ID --cell-id ID` | Apply a human evaluation via stdin JSON and recompute the run decision (used by the UI). |
-| `micro-eval build-plan --workspace PATH [--overrides JSON]` | Construct a `RunPlan` from `eval.yaml` and print it as JSON to stdout. |
+| `micro-eval build-plan --workspace PATH` | Construct a `RunPlan` from `eval.yaml` and print it as JSON to stdout. Runtime configuration overrides are not supported. |
+| `micro-eval config <command> --project PATH` | Read/edit configurations and tasks, or use `show-raw` / `set-raw` for validated YAML editing. |
 | `micro-eval ui [--port 3000]` | Start the local Next.js UI from a source checkout. |
-| `micro-eval serve [--port 3000] [--host HOST] [--data-root PATH]` | Start the Team Server (Next.js + worker) for shared, trusted-LAN use. |
+| `micro-eval serve [--port 3000] [--host HOST] [--data-root PATH] [--no-open]` | Start the Team Server (Next.js + worker) for shared, trusted-LAN use. |
 | `micro-eval worker [--data-root PATH]` | Start the run worker standalone (used internally by `serve`, or independently). |
 | `micro-eval workspace create\|list\|update\|delete` | Manage server workspaces (create, list, update metadata, delete). |
+| `micro-eval workspace enqueue ID [--dry-run] [--owner MEMBER]` | Preview a workspace plan or enqueue it; use the preview's digest with `--expected-plan-digest` to reject intervening changes. |
 | `micro-eval template create\|update\|list\|delete` | Manage the read-only evaluation template library. |
 | `micro-eval queue status\|cancel` | Show run-queue status or cancel a queued/running job. |
+
+## Upgrading to 0.5.0
+
+- Legacy `baseline` / `candidate` configs still load. Convert them to `configurations[]` in the Advanced YAML editor before using the basic browser forms.
+- Older runs without the new roles/contract fields remain readable. Recomputed decisions use only saved run data; a missing contract yields `comparison_contract_unavailable` and `inconclusive`, without guessing from the current `eval.yaml`. Start a new run with explicit roles and an evaluation contract for the new comparison output.
+- Set `evaluation.decision_threshold` to a value in `(0, 1]` or `null`. Zero, negative, and greater-than-one values are invalid; `null` does not produce an automatic winner.
+- Strict JSON clients must accept `cancelled` run status, nullable `decision.comparison`, and the new `configuration_roles` / `evaluation_contract` fields.
 
 ## Configuration and Tasks
 
@@ -207,15 +220,21 @@ The decision trace is explicit: `decision.evaluation_refs → EvaluationResult.e
 
 ## Security and Local Data
 
-`micro-eval` runs local agent commands on your machine. Review tasks, workspaces, and credentials before running real agents.
+`micro-eval` runs agent commands locally or in the selected remote provider. Review tasks, workspaces, credentials, and the provider's limits before running real agents.
 
 - Canonical agent and validation commands are argv lists; trusted paths do not use shell interpolation.
 - Agent cwd is the assigned cell workspace.
-- The local runner does not provide network isolation; local CLIs may call external services according to their own configuration.
+- Default `logical` workspaces do not restrict host-file or network access. If no OS-policy provider is available, a request for `os_policy` falls back to `logical` and records a caveat.
+- OS and remote providers support `full` or `none` network policy and reject `allowlist`. OS policy defaults to `full`; remote providers default to `none`. OS policies do not make host-readable files confidential, and process-group cleanup cannot cover descendants that deliberately leave the group.
+- Remote providers never fall back to local execution. SDK contract tests do not establish live cloud isolation or termination guarantees; remote workspace observation is unavailable.
 - Secrets must use `MICRO_EVAL_SECRET_*` environment variables and be explicitly declared by a configuration.
 - Declared and detected `MICRO_EVAL_SECRET_*` values are redacted before stdout/stderr/text artifacts/evidence/human comments are persisted.
+- Complete binary artifacts cannot be text-redacted and retain an explicit warning. Starter-task protected-test checks detect file changes but do not provide process isolation from the submitted Python module.
 - Raw artifact access is mediated by manifest `artifact_id` plus run-directory boundary checks.
 - Trace and judge integrations are default-off optional extras. Credentials stay in environment variables, not `eval.yaml`, run JSON, artifacts, or release docs.
+- Team Server provides member attribution and Host checks for trusted networks, without authentication or a multi-tenant security boundary.
+
+Public release commits use a single-parent `main` history: `dev` supplies the allowed files without being merged into the public ancestry. The publisher verifies the candidate tree, history, and version 2 receipt before an explicitly authorized publication. See the [release process](docs/engineering/release-process.md) for the maintainer workflow.
 
 For the authoritative security routing, see [`docs/engineering/security-guidelines.md`](docs/engineering/security-guidelines.md).
 
@@ -235,6 +254,7 @@ Routes:
 | `/run/[id]` | Decision Summary, caveats, Result Matrix, Cell Evidence, and Human Evaluation |
 | `/run/[id]/review` | Human review surface with cost, trace, matrix heatmap, and per-cell evidence |
 | `/run/[id]/artifact/[artifactId]` | Artifact viewer by manifest `artifact_id` |
+| `/workspace/[id]/jobs/[jobId]` | Team Server job progress, cancellation, and completed-run navigation |
 | `/api/runs/[id]/cells/[cellId]/trace` | Manifest-bound trace lookup for one cell |
 | `/api/runs/...` | Read-only run/cell/artifact API plus append-only human evaluation API |
 
@@ -302,7 +322,7 @@ title: micro-eval README
 doc_type: tutorial
 status: active
 created_at: 2026-05-31T01:43+08:00
-updated_at: 2026-07-02
+updated_at: 2026-09-28T16:02+08:00
 owner: micro-eval maintainers
 source_of_truth: false
 tags:

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from micro_eval.engine.adapter import Redactor
+from micro_eval.engine.agent_bridge import BridgeError
 from micro_eval.evaluation.conversational_judge import (
     _rubric_text,
     simulate_conversation,
@@ -218,3 +220,65 @@ async def test_evaluate_cell_conversational_simulator_failure(tmp_path: Path) ->
         )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "bridge_timeout", "callback_timeout", "unexpected_error"])
+async def test_simulation_uses_supplied_provider_bridge_and_redacts_output(tmp_path: Path, failure: str | None) -> None:
+    cell = _conversational_cell()
+    config = JudgeConfig(enabled=True, provider="deepeval_conversational", turn_timeout_s=0.05)
+    secret = "conversation-provider-secret"
+    bridge = MagicMock()
+    bridge.start = AsyncMock()
+    bridge.send_turn = AsyncMock(return_value=f"reply {secret}")
+    callback_cancelled = asyncio.Event()
+    if failure == "bridge_timeout":
+        bridge.send_turn.side_effect = BridgeError(f"turn timed out {secret}", timed_out=True)
+    elif failure == "callback_timeout":
+        async def stalled_turn(_):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                callback_cancelled.set()
+        bridge.send_turn.side_effect = stalled_turn
+    elif failure == "unexpected_error":
+        bridge.send_turn.side_effect = RuntimeError(secret)
+    bridge.stop = AsyncMock(return_value=(0, f"stderr {secret}"))
+    test_case = MagicMock()
+
+    def simulator(**kwargs):
+        def simulate(**_):
+            kwargs["model_callback"](f"request {secret}")
+            return [test_case]
+        return MagicMock(simulate=simulate)
+
+    with patch.dict("sys.modules", {
+        "deepeval.test_case": MagicMock(Turn=MagicMock()),
+        "deepeval.dataset": MagicMock(ConversationalGolden=MagicMock()),
+        "deepeval.simulator": MagicMock(ConversationSimulator=simulator),
+        "deepeval": MagicMock(),
+    }), patch("micro_eval.evaluation.conversational_judge.SubprocessBridge", side_effect=AssertionError("host fallback")):
+        result = await simulate_conversation(
+            cell=cell,
+            config=config,
+            agent=cell.configuration.agent,
+            cwd=tmp_path,
+            env={},
+            redactor=Redactor({"TOKEN": secret}),
+            bridge=bridge,
+        )
+
+    assert result is not None
+    returned_case, adapter_result, log = result
+    assert returned_case is test_case
+    bridge.start.assert_awaited_once()
+    bridge.send_turn.assert_awaited_once_with(f"request {secret}")
+    bridge.stop.assert_awaited_once()
+    assert secret not in adapter_result.output
+    assert secret not in adapter_result.stderr
+    assert all(secret not in entry["content"] for entry in log)
+    timed_out = failure in {"bridge_timeout", "callback_timeout"}
+    assert adapter_result.timed_out is timed_out
+    assert adapter_result.status.value == ("timeout" if timed_out else "error" if failure else "pass")
+    if failure == "callback_timeout":
+        await asyncio.wait_for(callback_cancelled.wait(), timeout=1)

@@ -51,6 +51,27 @@ export function DecisionSummary({ run }: { run: Run }) {
           ))}
         </div>
       )}
+      {decision?.comparison && (
+        <div className="mt-4 rounded border border-neutral-800 p-3 text-sm">
+          <div className="font-medium">
+            {decision.comparison.candidate_configuration_id} relative to {decision.comparison.baseline_configuration_id}
+          </div>
+          <div className="mt-1 text-xs text-neutral-400">
+            threshold {Math.round(decision.comparison.decision_threshold * 100)} percentage points
+          </div>
+          <div className="mt-2 space-y-1">
+            {decision.comparison.tasks.map((task) => (
+              <div key={task.task_id} className="flex flex-wrap gap-x-3 gap-y-1 text-neutral-300">
+                <span className="font-mono">{task.task_id}</span>
+                <span>{task.direction}</span>
+                <span>delta {task.delta >= 0 ? "+" : ""}{Math.round(task.delta * 100)}pp</span>
+                <span>n={task.baseline_sample_count}/{task.candidate_sample_count}</span>
+                {task.caveats.includes("low_sample") && <span className="text-amber-300">low sample</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {decision?.recommended_action && (
         <p className="mt-3 text-sm text-neutral-300">{decision.recommended_action}</p>
       )}

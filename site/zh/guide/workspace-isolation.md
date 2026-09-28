@@ -50,7 +50,7 @@ workspace:
 
 ### `git_repo`
 
-在指定 ref 处创建一个隔离的 git worktree。这是代码编辑任务最具可复现性的选项——agent 获得真实的 git 历史记录，可以创建分支，其改动完全与你的工作树隔离。
+本机 provider 在指定 ref 处创建隔离的 git worktree，agent 获得 git 历史记录并可以创建分支。远程 provider 先在本机准备该 ref，再上传其中的文件，排除 `.git` 和开发控制目录；远程 agent 不会获得仓库的 git 历史记录。
 
 ```yaml
 workspace:
@@ -74,12 +74,12 @@ workspace 上的 `isolation_level` 字段控制 agent 进程被约束的严格�
 |-------|------|---------|--------------|
 | 0 | `logical` | Git worktree | 始终可用 |
 | 1 | `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | 取决于宿主 OS |
-| 3 | `container` | 保留 | 未来 |
-| 4 | `vm` | E2B / Modal | 需要凭证 |
+| 3 | `container` | Modal | 需要 SDK 与凭证 |
+| 4 | `vm` | E2B | 需要 SDK 与凭证 |
 
 ### 级别 0 — `logical`
 
-默认级别。agent 进程以你的完整用户权限运行，但接收一个隔离的 git worktree 作为其工作目录。改动被限制在 worktree 中，不会影响你的工作树。
+默认级别。agent 进程以你的完整用户权限运行，并以当前 cell 工作区作为工作目录。相对路径写入落在该工作区，但此级别不阻止访问其他宿主路径或网络。
 
 适用于针对自己仓库运行的受信任 agent（你自己的代码）。
 
@@ -93,7 +93,7 @@ workspace:
 
 ### 级别 1 — `os_policy`
 
-在 agent 进程周围添加 OS 级别的沙箱策略。此级别可防止 agent 意外（或故意）读取 `~/.ssh` 中的密钥、向工作区外的路径写入，或修改你的全局配置文件。
+setup、单轮 agent 和 command validator 通过同一个 Seatbelt 或 Bubblewrap 执行上下文运行。宿主写入仅限当前 cell 工作区及独立的 cell 输出 staging 目录；不能写入 run 元数据或其他 cell 工作区。Seatbelt 允许广泛的宿主读取；Bubblewrap 暴露只读的运行时与项目根目录。两者都不承诺可读宿主文件的保密性。
 
 ```yaml
 workspace:
@@ -102,20 +102,22 @@ workspace:
   ref: main
   isolation_level: os_policy
   trust_level: semi_trusted
-  network_policy: allowlist
+  network_policy: none
 ```
 
 ::: warning 降级至 logical
-如果请求 `os_policy` 但宿主机上 Seatbelt 或 Bubblewrap 不可用（例如，未安装 `bwrap` 的 Linux），micro-eval 会**降级至 `logical`** 并在运行结果中记录一个 `mixed_isolation` 告警。运行不会中止，但该告警会在 UI 中显示，并在严格可比性检查中被排除。
+如果请求 `os_policy` 但宿主机上 Seatbelt 或 Bubblewrap 不可用（例如，未安装 `bwrap` 的 Linux），micro-eval 会**降级至 `logical`**，并在 run caveat 中记录 provider 不可用及实际隔离级别。cell 的 snapshot gate 会带有告警，比较结果前需要检查该 caveat。
 :::
 
-### 级别 4 — `vm`（远程执行）
+OS provider 一旦选定，包装器启动、不支持的策略和执行失败都会使 cell 失败，不会在沙箱外重试。`full` 允许网络访问，`none` 拒绝网络访问；由于尚未实现明确规则，`allowlist` 会被拒绝。
 
-在 E2B 或 Modal 提供的远程 VM 内运行 agent。这是最高隔离级别，适用于：
+### 级别 3 和 4 — 远程执行
 
-- 不受信任或对抗性的 agent
-- 无论宿主 OS 如何都需要干净 Linux 环境的 agent
-- 需要特定 OS 包或内核特性的任务
+`container` 选择 Modal，`vm` 选择 E2B。每个 cell 拥有一个远程沙箱，工作区准备、setup、单轮 agent 和 command validator 都复用该沙箱。工作区输入和输出产物通过 provider 的有界文件传输接口流转，不会把宿主本地路径当作远程路径。远程命令必须已安装在沙箱中，或随工作区一起提供。
+
+安装 provider extra：`uv pip install 'micro-eval[e2b]'`、`uv pip install 'micro-eval[modal]'`，或安装 `uv pip install 'micro-eval[remote]'` 同时支持两者。受支持的 SDK 版本固定为 `e2b==2.31.0` 和 `modal==1.5.5`。
+
+远程输入传输只接受常规文件，最多 4,096 个条目、总计 50 MiB。输出传输同时遵守配置的产物字节上限。链接、特殊文件、越界路径以及 `.git`、`.micro-eval` 等开发控制目录不会被传输。
 
 ```yaml
 workspace:
@@ -137,7 +139,21 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_ID="your-modal-token-id"
 export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 ```
 
-以 `MICRO_EVAL_SECRET_` 为前缀的密钥会自动从日志、运行产物和 LLM judge 提示词中脱敏。
+已声明的 agent secret 会在捕获文本中脱敏。provider 控制凭据留在宿主环境中；远程命令拒绝这些凭据名和凭据值，即使它们被列入 agent 的 `required_secrets`。
+
+远程网络策略默认为 `none`；`full` 和 `none` 在创建沙箱时生效，请求策略和实际生效策略分别记录。`allowlist` 会被拒绝。离线 SDK contract 测试验证受支持 SDK 接口的调用，不能证明 live 服务的隔离行为。带凭据的 live probe 为可选验证，必须单独报告。
+
+远程沙箱生命周期为 3,600 秒，这是回收时限，不能作为显式清理成功的证据。无法确认创建或终止结果时，结果会记录分配或终止状态未知，不会声称成功。`tests/e2e/test_remote_provider_live.py` 中的带凭据检查需显式启用，默认跳过。
+
+远程 git observation 当前不可用。结果会记录该限制，不会据此声称已验证同起点或 diff 为空。本机 agent 执行后的 observation 在 validator 之前采集，因此 validator 写入不会被记作 agent 改动。
+
+超时终止远程沙箱后，无法再下载其中的输出产物；结果会记录该传输限制。
+
+远程输出清单限制在 512 KiB 编码元数据内；其余条目会被省略并记录截断。无效控制响应若超出接收上限，会直接失败并触发沙箱清理。每个输出文件要么完整、原子地下载，要么被省略。
+
+对于本机单轮命令，超时和取消会向进程组发送 TERM，再发送 KILL；主动脱离进程组的后代不在保证内。远程超时和取消会显式终止该 cell 的沙箱；正常完成也会清理，清理失败会被记录。
+
+多轮对话当前仅支持 `logical`。cell 上下文创建所属 provider 的持久交互 bridge，与单轮命令执行分开。其他隔离级别不支持该 bridge，会在工作区准备前被拒绝。
 
 ## 信任级别
 
@@ -156,13 +172,13 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 
 ## 网络策略
 
-workspace 上的 `network_policy` 字段控制 agent 进程的出站网络访问。它在级别 1 及以上生效。
+workspace 上的 `network_policy` 字段作用于所选 OS 或远程 provider 内的 setup、单轮 agent 和 command validator。`logical` 不强制执行网络限制。OS provider 不可用时可能降级至 `logical`，因此需要检查实际隔离级别和 caveat。
 
 | 策略 | 行为 |
 |--------|----------|
-| `full` | 无网络限制（级别 0 的默认值） |
-| `allowlist` | 仅 `network_allowlist` 中列出的域名可达 |
-| `none` | 阻止所有出站网络访问 |
+| `full` | provider 允许网络访问；OS 策略的默认值 |
+| `allowlist` | OS 和远程 provider 拒绝；尚未实现明确规则 |
+| `none` | Seatbelt 拒绝网络操作；Bubblewrap 创建独立网络命名空间；远程 provider 禁止出站访问。远程 provider 的默认值。 |
 
 ```yaml{6-10}
 workspace:
@@ -171,7 +187,7 @@ workspace:
   ref: main
   isolation_level: os_policy
   trust_level: semi_trusted
-  network_policy: allowlist
+  network_policy: none
 ```
 
 ## SameStartSnapshot：可比性维度
@@ -242,7 +258,7 @@ workspace:
     - ./fixtures/tests/
   isolation_level: os_policy
   trust_level: semi_trusted
-  network_policy: allowlist
+  network_policy: none
 expectations:
   - type: exit_code
     value: 0
@@ -257,8 +273,6 @@ configurations:
       command: ["./downloaded-agent"]
       input_mode: stdin
       timeout_s: 300
-    required_secrets:
-      - MICRO_EVAL_SECRET_E2B_API_KEY
 
 tasks:
   - tasks/code-challenge.yaml

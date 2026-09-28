@@ -108,6 +108,17 @@ micro-eval workspace delete <ws-id>
     └── runs/          ← run JSON files (source of truth)
 ```
 
+## Set up in the browser (no YAML)
+
+Every workspace's **Config** page has three tabs: **Configurations**, **Tasks**, and **Advanced**. The first two build `eval.yaml` and `tasks/<id>.yaml` from forms instead of hand-editing YAML; Advanced edits the raw `eval.yaml` for project-level settings the forms do not cover. Form saves rewrite the affected YAML: configuration edits rewrite `eval.yaml`, and task edits also rewrite `tasks/<id>.yaml`. Hand-written comments in rewritten files are not preserved.
+
+1. Create a new workspace and open it.
+2. On the **Configurations** tab, click **Add configuration** and pick a preset — Claude Code, Codex CLI, Echo (a no-op `cat` command useful for testing the pipeline), or Custom for your own argv. Set a name, role (baseline/candidate), and timeout; a read-only command preview shows exactly what will run.
+3. On the **Tasks** tab, click **Add task** and write a prompt. Optionally add expectations (`contains`, `exit_code`, `file_exists`, or `command`) for automatic validation, and pick a workspace type (blank, files, or a git repo).
+4. Once at least one configuration and one task exist, the workspace page's setup strip (**Configurations → Tasks → Run**) clears its warning highlight and the **Enqueue Run** button becomes active.
+
+The Tasks form edits common fields. Existing conversation fields (`scenario`, `expected_outcome`, `user_description`) and advanced workspace settings (`isolation_level`, `trust_level`, `network_policy`, `setup`, fixtures, and toolchain) are preserved when saving the form, but are not editable there. Edit the task YAML in the server workspace for those settings; the Advanced tab edits `eval.yaml`, not the referenced task files.
+
 ## Templates
 
 A **template** is a read-only snapshot in `~/.micro-eval-server/templates/`. Templates capture a known-good `eval.yaml` plus any associated task files so that new workspaces start from a consistent baseline.
@@ -136,9 +147,11 @@ Updating a template has no effect on workspaces already created from it. If you 
 
 ### Demo template
 
-On first start with an empty template registry, `micro-eval serve` automatically seeds a demo template named `demo-codefix` ("Demo: Codefix Showdown (mock agents, free)"). It only seeds when the registry has zero templates, so it never overwrites or duplicates templates an admin has already created.
+`micro-eval serve` ships two read-only bundled templates — `demo-codefix` ("Demo: Codefix Showdown (mock agents, free)") and `starter-tasks` — and seeds whichever ones are missing on startup, not only when the registry is completely empty. Seeding is tracked per template id in a `.seeded-templates.json` marker file in the server's data root: if an admin deletes a bundled template, the seeder records that and never recreates it, but a template newly bundled in a later micro-eval version is still added the first time that version runs `serve`, even against an existing data root.
 
 The demo template uses a deterministic mock agent (a plain Python script, no LLM calls) to fix a rounding bug in a small ledger function — a self-contained task that runs end to end with **zero API cost**. It's meant as a working example: create a workspace from `demo-codefix` and enqueue a run to see the whole pipeline (workspace → queue → `ExecutionKernel` → results) without needing any API keys or spending any money.
+
+`starter-tasks` supplies five bug-fix tasks and starts with no agent configurations. Add a configuration in the browser, then preview and enqueue the run. The tasks verify a protected `tests/` digest before and after running a read-only test copy; this catches test edits but does not isolate malicious code from the Python test runner. See [Protected tests in starter tasks](/guide/tasks#protected-tests-in-starter-tasks).
 
 ## Run Queue
 
@@ -156,23 +169,29 @@ Runs are enqueued from the browser and executed serially by the Python worker. T
 
 ### Enqueueing a run
 
-Runs are enqueued from the browser only — there is no CLI equivalent. Navigate to a workspace and click **Enqueue Run**. If you haven't set your member name yet (see [Member Identity](#member-identity)), the UI asks for it first.
+Runs are enqueued from the browser. Navigate to a workspace and click **Enqueue Run**. Under the hood the UI calls `micro-eval workspace enqueue` on the server (see the CLI reference); the same command with `--dry-run` produces the preview, so what you confirm is exactly what gets queued. If you haven't set your member name yet (see [Member Identity](#member-identity)), the UI asks for it first.
 
 Before the run is actually submitted, a confirmation card ("Run Preview") shows what is about to be enqueued:
 
 - The cell count as `{tasks} task(s) × {configurations} config(s) × {repetitions} rep(s) = {total} cell(s)`
 - The agent commands that will be executed
 
-Review the preview and click **Confirm & Enqueue** to submit, or **Cancel** to back out without enqueueing anything. If the preview data can't be loaded, the card still lets you proceed — it shows a note that you can enqueue without a preview.
+Review the preview and click **Confirm & Enqueue** to submit, or **Cancel** to back out without enqueueing anything. The preview carries a plan digest; if anyone edits the tasks or configuration in between, the server refuses the stale submission and asks you to review a fresh preview. If the preview data can't be loaded without a server error detail, the card still lets you proceed — it shows a note that you can enqueue without a preview.
 
-Once submitted, the UI shows a live queue position and progress indicator while the job is `queued` or `running`. The page polls the server for status updates — no WebSocket connection is required.
+Preview and enqueue both refuse a task whose `files` source is missing, whose `git_repo` path is empty or is not a Git repository, or whose Git `ref` cannot be resolved. The error detail identifies the task and its workspace-relative source path (an empty Git path is shown as `.`). The browser shows this detail before submitting a job; correct the task's workspace source and try again.
 
-The CLI's `queue` subcommand only supports read/administrative operations — checking status and cancelling jobs (see [Cancellation semantics](#cancellation-semantics)) — not submitting new runs.
+A `git_repo` `ref` is resolved strictly: it must resolve to exactly one commit in the server repository. Branches, remote-tracking refs, full refs, tags (annotated tags are peeled to their commit), full and unambiguous short SHAs, and expressions like `HEAD~1` are accepted; option-like values, tree/blob objects, missing or ambiguous refs, and whitespace-only values are refused. Nothing is fetched, rolled back, or retried with another version: fix the ref — or fetch the required commit into the server repository — and preview again. Ref refusals carry a fixed hint in the browser and in the CLI output. Annotated tags resolve to their peeled commit, a deliberate digest change from earlier releases that recorded the tag object id.
+
+The enqueue API returns `202 Accepted` when the job enters the queue. The worker executes it later; accepting the job does not mean the run has finished.
+
+Once submitted, the UI shows a live queue position and progress indicator while the job is `queued` or `running`. Running progress is the completed cell count divided by the total cell count. The workspace job page polls only jobs belonging to that workspace; the queue dashboard still covers all workspaces. No WebSocket connection is required.
+
+The CLI's `queue` subcommand covers read/administrative operations — checking status and cancelling jobs (see [Cancellation semantics](#cancellation-semantics)). Submitting goes through `micro-eval workspace enqueue`, which applies the same admission rules as the browser (workspace must be active, `output_dir` must be `.micro-eval/runs`, queue capacity from `server.json`).
 
 ### Cancellation semantics
 
 - **Queued jobs** are cancelled immediately — the record is removed from the queue before the worker ever touches it.
-- **Running jobs** receive a cancellation signal after the current run cell finishes. The worker does not kill a cell mid-execution; it stops before starting the next cell. Completed cells are preserved in the run result.
+- **Running jobs** check for cancellation before starting each cell. No new cell starts after the request is observed; cells already in flight are allowed to finish. The job then records `cancelled` and `finished_at`, and the run's `run.json` records `cancelled` while retaining completed cell results. Its decision summary covers only those results under the run's `denominator_policy` and cannot establish a complete comparison. The job page shows the retained count as N/M cells. Cancellation does not kill an active agent process.
 
 ### Crash recovery
 
@@ -210,6 +229,12 @@ The member name is stored in the workspace metadata and recorded in the run reco
 Any member can claim any name. The header exists for attribution and audit trails — not for access control. If a member claims the wrong identity, they can attribute runs incorrectly, but they cannot gain any capabilities they would not otherwise have.
 :::
 
+## Network access
+
+On first start, `micro-eval serve` writes the machine's hostname, its fully qualified domain name (FQDN), and the `--host` binding address to `allowed_hosts` in `server.json`, each with the serving port. Loopback names are always allowed. The startup log prints the effective Host allowlist. A teammate on the trusted LAN can open `http://<hostname>:3000/` if their machine can resolve that hostname and reach the server.
+
+To use another DNS name or alias, add its `name:port` value to `allowed_hosts` in `server.json` and restart the server. Existing explicit `allowed_hosts` lists are not overwritten; add the hostname there yourself if the config was created before this default changed. Requests with other `Host` values receive a `400` response explaining where to add them.
+
 ## Security Model
 
 The server is designed for a trusted intranet environment. Its security model has four layers:
@@ -223,9 +248,9 @@ All state-changing endpoints require:
 3. **No permissive CORS headers** — the server does not respond with `Access-Control-Allow-Origin: *`
 4. **`Host` header allowlist** — requests from unexpected `Host` values are rejected
 
-### `config_overrides` whitelist
+### Enqueue configuration overrides
 
-Members can submit `config_overrides` when enqueueing a run to change a subset of configuration parameters (e.g., `max_concurrency`, `timeout_s`). The server enforces a strict whitelist of overridable fields. Fields that could affect workspace boundaries, provider selection, or secrets handling are not overridable.
+Enqueue requests do not support `config_overrides`. Set the desired values in the workspace configuration before opening the run preview. The API returns `400 Bad Request` if the request contains `config_overrides`; it does not silently ignore the field.
 
 ### Path traversal protection
 

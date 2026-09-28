@@ -1,0 +1,37 @@
+id: lru-cache-order
+name: Fix LRU cache recency tracking
+description: Fix an LRU cache whose get() does not refresh recency.
+input_payload: |
+  You are in a copied workspace. The code to fix is at
+  `lru-cache-order/lru_cache_order.py`.
+
+  Goal:
+  - `lru-cache-order/tests/test_lru_cache_order.py` describes the expected
+    behaviour of `LRUCache(capacity)`: `get()` must mark the accessed key
+    as most recently used so `put()` evicts the correct (least recently
+    used) key once capacity is exceeded.
+  - Fix the bug in `lru_cache_order.py` so all the tests pass.
+
+  Constraints:
+  - Do not edit anything under `lru-cache-order/tests/`; the judge checks that
+    directory from outside the workspace.
+  - Only change `lru-cache-order/lru_cache_order.py`.
+
+  Done means:
+  - `python -m unittest discover -s tests` passes when run from `lru-cache-order/`.
+  - Your final response briefly explains the change.
+expectations:
+  - type: command
+    command: ["{python}", "-m", "micro_eval.tools.verify_protected", "--protected-dir", "tests", "--expected-sha256", "3d8e8fd7e9b4273924e6f6b249738e8d57d4e7be6fac2fe92600249351403b9f"]
+    cwd: "lru-cache-order"
+    timeout_s: 60
+workspace:
+  type: files
+  files:
+    - fixtures/lru-cache-order
+rubric: |
+  A useful result makes get() refresh recency (e.g. move_to_end) without
+  touching tests/, and the protected-tests judge passing
+  is the primary signal for this small, self-contained bug-fix task.
+business_impact_tier: 3
+tags: [starter, codefix]

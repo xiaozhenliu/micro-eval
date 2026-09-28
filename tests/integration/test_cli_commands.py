@@ -467,3 +467,108 @@ class TestReportCommand:
         missing = tmp_path / "nonexistent-run.json"
         result = runner.invoke(app, ["report", str(missing), "--format", "json"])
         assert result.exit_code == 1
+
+
+# ===========================================================================
+# git workspace ref refusal (GRO-972)
+# ===========================================================================
+
+
+class TestGitRefRefusal:
+    """An unresolvable workspace ref fails the plan phase with the fixed hint."""
+
+    def _git_project(self, tmp_path: Path, ref: str) -> Path:
+        import subprocess
+
+        (tmp_path / "tasks").mkdir()
+        (tmp_path / "eval.yaml").write_text(_VALID_EVAL_YAML)
+        (tmp_path / "tasks" / "hello.yaml").write_text(
+            _VALID_TASK_YAML + f"workspace:\n  type: git_repo\n  path: .\n  ref: {ref}\n"
+        )
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.email=t@t.com",
+                "-c",
+                "user.name=T",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "init",
+            ],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        return tmp_path
+
+    def test_validate_refuses_invalid_ref_with_hint(self, tmp_path: Path) -> None:
+        project = self._git_project(tmp_path, "missing-ref")
+        result = runner.invoke(app, ["validate", "--config", str(project / "eval.yaml")])
+        assert result.exit_code == 1
+        assert "[task=hello] git ref cannot be resolved to a commit" in result.output
+        # rich wraps the fixed hint across lines; assert stable fragments.
+        assert "Use a branch" in result.output
+        assert "Correct the ref" in result.output
+
+    def test_run_dry_run_refuses_invalid_ref(self, tmp_path: Path) -> None:
+        project = self._git_project(tmp_path, "--help")
+        result = runner.invoke(app, ["run", "--dry-run", "--config", str(project / "eval.yaml")])
+        assert result.exit_code == 1
+        assert "git ref cannot be resolved to a commit" in result.output
+        assert "--help" not in result.output
+
+    def test_build_plan_refuses_invalid_ref_with_hint(self, tmp_path: Path) -> None:
+        project = self._git_project(tmp_path, "missing-ref")
+        result = runner.invoke(app, ["build-plan", "--workspace", str(project)])
+        assert result.exit_code == 1
+        payload = json.loads(result.output.strip().splitlines()[-1])
+        assert "git ref cannot be resolved to a commit" in payload["error"]
+        assert payload["hint"].startswith("Use a branch, tag, or commit SHA")
+        assert str(project) not in result.output
+
+    def test_run_with_valid_ref_builds_plan(self, tmp_path: Path) -> None:
+        project = self._git_project(tmp_path, "main")
+        result = runner.invoke(app, ["run", "--dry-run", "--config", str(project / "eval.yaml")])
+        assert result.exit_code == 0, result.output
+
+    def test_non_string_ref_is_refused_without_echoing_the_value(self, tmp_path: Path) -> None:
+        """Round-1 review: a list-valued ref must not leak through the
+        pydantic validation message on any CLI surface."""
+        import subprocess
+
+        marker = "leaky-token-9f13a"
+        (tmp_path / "tasks").mkdir()
+        (tmp_path / "eval.yaml").write_text(_VALID_EVAL_YAML)
+        (tmp_path / "tasks" / "hello.yaml").write_text(
+            _VALID_TASK_YAML + f"workspace:\n  type: git_repo\n  path: .\n  ref: [{marker}]\n"
+        )
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", "user.email=t@t.com", "-c", "user.name=T", "commit", "--allow-empty", "-qm", "init"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        for args in (
+            ["validate", "--config", str(tmp_path / "eval.yaml")],
+            ["validate", "--config", str(tmp_path / "eval.yaml"), "--format", "json"],
+            ["run", "--dry-run", "--config", str(tmp_path / "eval.yaml")],
+            ["run", "--dry-run", "--config", str(tmp_path / "eval.yaml"), "--format", "json"],
+            ["build-plan", "--workspace", str(tmp_path)],
+        ):
+            result = runner.invoke(app, args)
+            assert result.exit_code == 1, args
+            assert marker not in result.output, args
+
+    def test_validate_json_hint_matches_the_refusal_cause(self, tmp_path: Path) -> None:
+        project = self._git_project(tmp_path, "missing-ref")
+        result = runner.invoke(
+            app, ["validate", "--config", str(project / "eval.yaml"), "--format", "json"]
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["error"]["type"] == "config"
+        assert payload["error"]["hint"].startswith("Use a branch, tag, or commit SHA")

@@ -87,7 +87,7 @@ evaluation:
     - validator
   denominator_policy: exclude_failed  # include_failed | exclude_failed
   decision_threshold: 0.10    # delta below which result is "inconclusive"
-  inconclusive_policy: needs_human_review
+  inconclusive_policy: warn
 
 # ─── Trace ───────────────────────────────────────────────────────────────────
 trace:
@@ -151,7 +151,7 @@ configurations:
 | `baseline` | 参照基准。`improved`/`regressed` 等决策均相对于此。 |
 | `candidate` | 被测变体。 |
 
-如果只有一个 configuration，`role` 是可选的。如果存在两个或以上且没有标记 `baseline`，micro-eval 将第一个视为 baseline。
+单个 configuration 可以不设角色，但自动比较要求恰好一个显式 `baseline` 和一个显式 `candidate`。角色缺失或有歧义时结果为 `inconclusive`；列表顺序不会分配角色。
 
 #### `repetitions`
 
@@ -160,7 +160,7 @@ configurations:
   - repetitions: 3
 ```
 
-每个任务在此 configuration 下执行的次数。结果矩阵会对多次重复取聚合（均值分数、pass rate、p-value）。对于确定性任务设为 `1`；对于受方差影响的 LLM 驱动 agent，设为 `3–5`。
+每个任务在此 configuration 下执行的次数。结果矩阵记录重复执行、通过率、pass@k/pass^k 和时间统计，不计算 p-value。对于确定性任务设为 `1`；对于受方差影响的 LLM 驱动 agent，设为 `3–5`。
 
 #### `agent`
 
@@ -279,10 +279,10 @@ guardrails:
 | 字段 | 默认值 | 说明 |
 |---|---|---|
 | `max_concurrency` | `4` | 并行执行的最大 cell 数（task × configuration × repetition）。 |
-| `timeout_s` | `300` | 每个 cell 的挂钟超时时间（秒）。覆盖 agent `timeout_s` 中的较大值。 |
-| `output_cap_bytes` | `10485760` | 每个 cell 从 stdout/stderr 捕获的最大字节数（10 MB）。超出部分被截断。 |
-| `artifact_cap_bytes` | `52428800` | 每个 cell 存储的 artifact 总字节数上限（50 MB）。 |
-| `stop_on_cell_error` | `false` | 若为 `true`，任何 cell 以错误退出时立即中止整个 run。 |
+| `timeout_s` | `300` | 记录的 guardrail 值；当前执行使用 `agent.timeout_s`，不会将此字段作为全局覆盖。 |
+| `output_cap_bytes` | `10485760` | 每个 stdout/stderr 流及选中输出保留的最大字节数（10 MiB）。超额输出标记为截断。 |
+| `artifact_cap_bytes` | `52428800` | 产物持久化上限（50 MiB）。output mode 和 provider 传输上限可能更低。 |
+| `stop_on_cell_error` | `false` | 记录的策略意图。当前调度在 cell 错误后继续执行；该标志不会停止 run。 |
 | `randomize_execution_order` | `false` | 打乱 cell 执行顺序以减少系统性排序偏差。 |
 
 ::: tip 调整并发数
@@ -293,7 +293,7 @@ guardrails:
 
 ### `evaluation`
 
-控制每个 cell 的分数如何聚合为每个任务行的决策。
+记录比较 contract。自动决策比较 task 级 validator 通过率；角色及该 contract 会随 run 一起保留。
 
 ```yaml
 evaluation:
@@ -303,25 +303,25 @@ evaluation:
     - validator
   denominator_policy: exclude_failed
   decision_threshold: 0.10
-  inconclusive_policy: needs_human_review
+  inconclusive_policy: warn
 ```
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `comparison_subject` | `score` | 跨 configuration 比较的指标。 |
-| `min_repetitions` | `1` | 计算决策所需的最少完成重复次数。完成数不足的行被标记为 `not_comparable`。 |
-| `required_evaluators` | `["validator"]` | cell 纳入聚合必须产生结果的 evaluator ID。 |
-| `denominator_policy` | `exclude_failed` | 计算 pass rate 时，失败 cell 是否计入分母。 |
-| `decision_threshold` | `0.05` | baseline 与 candidate 之间产生非 `inconclusive` 决策所需的最小分数差值。 |
-| `inconclusive_policy` | `needs_human_review` | 差值低于 `decision_threshold` 时分配的决策状态。 |
+| `comparison_subject` | `null` | 比较对象的人类可读描述，不是指标选择器。 |
+| `min_repetitions` | `1` | 每个 task 两侧所需的最少分母样本数。不满足时决策为 `inconclusive`。 |
+| `required_evaluators` | `["validator"]` | 要求的评测 contract。自动比较当前仅支持 `["validator"]`；其他合同要求人工复核。 |
+| `denominator_policy` | `include_failed` | `include_failed` 计入错误/超时；`exclude_failed` 保留 passed/failed 结果并排除执行失败。 |
+| `decision_threshold` | `null` | task 级 candidate 减 baseline 的通过率阈值，范围 `(0, 1]`。`null` 禁用自动 winner 判断。 |
+| `inconclusive_policy` | `warn` | 记录的策略意图：`warn` 或 `block`。它不会选择或覆盖受保护条件约束的报告 verdict。 |
 
 **`denominator_policy`**
 
 ::: code-group
 
 ```yaml [exclude_failed]
-# Only completed cells count toward the denominator.
-# Use when failures are expected and you want to compare quality among successful runs.
+# Count passed and failed results; exclude execution errors and timeouts.
+# Failed expectations still count.
 denominator_policy: exclude_failed
 ```
 
@@ -337,12 +337,12 @@ denominator_policy: include_failed
 
 | 状态 | 含义 |
 |---|---|
-| `improved` | candidate 分数显著高于 baseline。 |
-| `regressed` | candidate 分数显著低于 baseline。 |
+| `improved` | 至少一个 task 达到改进阈值，且没有 task 回退。 |
+| `regressed` | 至少一个 task 达到回退阈值，且没有 task 改进。 |
 | `mixed` | 不同任务呈现相反方向。 |
-| `inconclusive` | 差值在 `decision_threshold` 范围内。 |
-| `not_comparable` | 数据不足（重复次数太少、缺少 evaluator）。 |
-| `needs_human_review` | 路由至人工标注员（见 `inconclusive_policy`）。 |
+| `inconclusive` | 没有 task 达到阈值，或角色、contract、样本或机器证据不足。 |
+| `not_comparable` | cell snapshot gate 告警/失败，或比较的 task 集不同。 |
+| `needs_human_review` | contract 要求非 validator 的评测。 |
 
 ---
 

@@ -1,9 +1,9 @@
 ---
-title: Work Tracking and Local Ticket Governance
+title: Work Tracking and Issue Governance
 doc_type: reference
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T18:09+08:00
+updated_at: 2026-09-05T13:20+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -11,245 +11,118 @@ tags:
   - ticket
   - governance
 related:
-  - docs/agents/ticket-template.md
   - docs/agents/triage-labels.md
   - docs/documentation-standard.md
   - docs/DEVELOPMENT.md
 ---
 
-# Work Tracking and Local Ticket Governance
+# Work Tracking and Issue Governance
 
-This document defines the work-tracking contract. `TODOS.md` on `dev` is the
-only Work Register, and `.scratch/` is the durable private work-record
-directory. This public guide describes the contract, while those development-
-only records remain outside the public projection.
+This document defines the work-tracking contract. Since 2026-09-05 the
+**Linear project `micro-eval` (team `GRO`) is the only Work Register**.
+The former `TODOS.md` register and the `.scratch/<effort>/issues/`
+front-matter ticket contract were retired by GRO-284; the old local
+tickets remain under `.scratch/` as a read-only historical archive.
 
-## Six objects, six responsibilities
+## Four objects, four responsibilities
 
 | Object | Only responsibility | Canonical source |
 | --- | --- | --- |
-| Work Register | List every unfinished committed item, its portfolio lane, and one navigable authority pointer. | `TODOS.md` on `dev` |
-| Roadmap item | Hold a short, not-yet-committed option and its entry trigger. | `TODOS.md`, `Roadmap` lane |
-| Workstream | Group local tickets that share one stable problem domain and routing boundary. | `.scratch/<effort>/map.md` |
-| Local ticket | Own the scope, acceptance criteria, dependencies, lifecycle, discussion, and completion evidence for internal work. | A tracked Markdown file under the private work-record directory |
-| GitHub Issue | Own the scope and public discussion for work that needs public feedback or collaboration. | The GitHub Issue body and discussion |
-| Completion evidence | Prove what was delivered and where it can be audited; never re-open a completed backlog item. | Ticket evidence plus `CHANGELOG.md` or a development log |
+| Linear issue | Own the scope, acceptance criteria, dependencies, lifecycle, discussion, and completion evidence for all committed and roadmap work. | Linear, project `micro-eval`, team `GRO` |
+| Roadmap item | Hold a short, not-yet-committed option and its entry trigger. | A `Backlog` Linear issue whose description keeps `Trigger / promote when` |
+| Archived local ticket | Preserve the pre-migration record (scope, decisions, evidence). | Read-only Markdown under `.scratch/<effort>/issues/resolved/` |
+| Completion evidence | Prove what was delivered and where it can be audited. | The Linear issue's `## Completion evidence`, plus `CHANGELOG.md` or a development log |
 
-The Work Register is an index, not a second specification. An active ticket or
-Issue appears there once, with a short label and exactly one authority pointer.
-Details belong only to that ticket or Issue.
+Linear is the index and the specification at the same time: an issue's
+description holds its scope and acceptance criteria, and discussion
+happens in its comments. There is no repo-side mirror of open work.
 
-## Stable identifiers and lanes
+## Identifiers
 
-Use uppercase, stable source identifiers:
+- Linear issues use `GRO-<number>`, for example `GRO-285`.
+- GitHub Issues keep `GH-<number>` and remain reserved for work that
+  genuinely needs public feedback or collaboration.
+- Historical local ticket IDs (`LOCAL-<WORKSTREAM>-<NN>`) are frozen;
+  they identify archive files only and must never be reused.
 
-- Local tickets use `LOCAL-<WORKSTREAM>-<NN>`, for example
-  `LOCAL-COMPARATIVE-DECISION-01`. For new workstreams, the ID stem is the
-  uppercase `effort` slug from `.scratch/<effort>/`; historical aliases are
-  compatibility exceptions, not templates for new IDs.
-- GitHub Issues use `GH-<number>`, for example `GH-15`.
-- A bare GitHub number and a priority-like label such as `[P8]` are not source
-  identifiers. Priority is represented by lane and ordering, not by a second
-  numbering system.
+## Workflow states and lanes
 
-The Work Register has five portfolio lanes. Lanes describe planning, not
-execution state:
+`Backlog`, `Todo`, `ready-for-agent`, `ready-for-human`,
+`In Progress`, `Done`, and `Canceled` are the Linear workflow states of
+team `GRO`; their meanings and the mapping from the retired local
+vocabularies are defined in `triage-labels.md`. Planning position is
+expressed by state, priority, and project assignment, not by repo files:
 
-- `Now` — committed work being executed immediately.
-- `Next` — specified work queued for execution.
-- `Waiting` — committed work waiting on an external dependency or decision.
-- `Roadmap` — future options that are not yet committed and are not blocked
-  tickets; every item records `Planning state: Roadmap (not blocked)` and a
-  `Trigger / promote when:` condition.
-- `Inbox` — untriaged ideas or requests; keep the description short until a
-  decision is made.
+- `Backlog` — a roadmap option that is not yet committed; its
+  description must keep the remaining scope and a `Trigger / promote
+  when` condition.
+- `Todo` — committed, not yet routed to an executor.
+- `ready-for-agent` / `ready-for-human` — committed and routed.
+- `In Progress` — being executed.
+- `Done` — acceptance criteria and completion evidence are satisfied.
+- `Canceled` — evaluated and will not be actioned (the old `wontfix`).
+- Blocked work stays in its current state and records the dependency
+  with Linear's blocked-by relation; `blocked` is not a workflow state.
 
-`Now`, `Next`, and committed `Waiting` entries must each contain exactly one
-`LOCAL-...` or `GH-...` pointer. `Roadmap` and `Inbox` may contain a brief
-inline description and do not need a ticket before commitment. A Roadmap item
-must retain its remaining scope and the condition that promotes it into a
-ticket and an execution lane; it must not silently become a blocked item.
+## Issue-first threshold and flow
 
-## Workstream routing
-
-Each direct child `.scratch/<effort>/` is a **workstream**. The front matter
-field remains named `effort` for schema compatibility, but its value is a
-stable routing slug: it names the problem domain that owns the ticket, not a
-release horizon, priority, lifecycle state, or `TODOS.md` lane.
-
-Route a new local ticket in this order:
-
-1. Read the active workstream maps and choose one whose `Scope` includes the
-   work and whose `Boundaries` do not exclude it.
-2. If no active workstream fits, create a descriptive workstream and its
-   `map.md` before creating the ticket.
-3. Derive the ticket ID stem from that workstream slug and use the next unused
-   two-digit sequence within the workstream.
-4. Put the ticket in `Now`, `Next`, or `Waiting` to express when it will be
-   acted on; update ticket `status` to express its execution lifecycle.
-
-Use durable names such as `monid`, `site-skill`, `work-governance`, or
-`comparative-decision`. Relative-time and catch-all names such as
-`next-release`, `current-release`, `later`, `misc`, and `general` cannot be
-active workstreams. The existing `next-release` directory is an archived
-compatibility record for its completed release-hardening tickets and must not
-receive new work.
-
-## Local ticket contract
-
-Every file under a workstream's `.scratch/<effort>/issues/` follows the path
-`NN-lowercase-kebab.md`. Ticket metadata lives in YAML front matter at the very
-top of the file, in the same style as `docs/documentation-standard.md`. Prose
-never carries metadata: a `Key: value` line in the body is ordinary text, not a
-field.
-
-This document is the contract. To write an ordinary ticket, copy
-`docs/agents/ticket-template.md` instead of reading this section.
-
-```md
----
-id: LOCAL-EXAMPLE-01
-title: Short title
-effort: example
-type: task
-status: ready
-triage: ready-for-agent
-executor: agent
-blocked_by: []
-created_at: 2026-08-29T16:52+08:00
-updated_at: 2026-08-29T16:52+08:00
-tags:
-  - example
-related:
-  - docs/agents/issue-tracker.md
----
-
-# LOCAL-EXAMPLE-01 — Short title
-
-## What to build
-
-...
-
-## Acceptance criteria
-
-- ...
-```
-
-### Front matter fields
-
-| Field | Required | Format | Meaning |
-| --- | --- | --- | --- |
-| `id` | Yes | `LOCAL-<WORKSTREAM>-<NN>` | Stable ticket identifier; unique across active and archived tickets and never reused. |
-| `title` | Yes | Short string | Ticket title; must match the text after `— ` in the H1 heading. |
-| `effort` | Yes | Lowercase kebab-case | Stable workstream slug; must equal the `.scratch/<effort>/` directory name. |
-| `type` | Yes | Enum | One of `task`, `research`, `prototype`, `grilling`, `governance`. |
-| `status` | Yes | Enum | Lifecycle status; see `triage-labels.md`. |
-| `triage` | Yes | Enum | Intake/routing role; see `triage-labels.md`. |
-| `executor` | Yes | Enum | Expected implementer; see `triage-labels.md`. |
-| `blocked_by` | Yes | List of stable IDs | `[]` when nothing blocks it; otherwise `LOCAL-...` / `GH-...` entries. |
-| `created_at` | Yes | ISO-8601 minute precision | Creation timestamp, e.g. `2026-08-29T16:52+08:00`. |
-| `updated_at` | Yes | ISO-8601 minute precision | Last meaningful update timestamp. |
-| `tags` | Optional | String list | Search and grouping keywords. |
-| `related` | Optional | Path or URL list | Closely related documents, specs, Issues, or evidence. |
-
-No other keys are allowed. Unknown keys fail the governance check rather than
-being silently ignored, so the vocabulary cannot drift ticket by ticket.
-
-`status` is the lifecycle field. `resolved` is the single completion status;
-`completed`, `done`, and `in-progress` are not accepted spellings. `triage` is
-an intake/routing role and `executor` identifies who is expected to do the
-work; their vocabularies are defined in `triage-labels.md` and must not be
-merged into `status`.
-
-A blocked committed ticket uses `status: blocked`, lists its dependencies in
-`blocked_by`, and belongs in `Waiting`. An optional future dependency belongs
-in `Roadmap` until its trigger occurs.
-
-Timestamps follow the project timestamp rule: ISO-8601 with minute precision
-and a timezone offset, no seconds. For a historical ticket whose exact time is
-unknown, use `18:00` on the known date.
-
-### Body structure
-
-The H1 heading is `# <id> — <title>`. The body then contains:
-
-- `## What to build` — the scope, in user-visible terms.
-- `## Acceptance criteria` — a checkable list.
-- Optional sections such as `## Context`, `## Confirmed decisions`, or
-  `## Comments` for discussion history.
-- `## Completion evidence` — required once `status` is `resolved` or
-  `archived`; records the commit, development log, changelog entry, release
-  evidence, or verification command that proves delivery.
-
-The ticket may remain as a durable record after it leaves the Work Register.
-
-### Storage layout
-
-Active tickets live directly under `.scratch/<effort>/issues/`. As soon as a
-ticket becomes terminal, file it under `.scratch/<effort>/issues/resolved/` so
-that the parent `issues/` directory always shows unfinished work only. The
-move preserves history: the ticket keeps its ID, terminal status, and full
-completion evidence, remains the authority for its record, and its ID stays
-reserved — resolved IDs are still checked for uniqueness and must never be
-reused.
-
-`.scratch/` is tracked on `dev`. Its allowed content is limited to tickets,
-`spec.md`, `map.md`, and necessary attachments. Caches, build products, runtime
-data, logs, databases, credentials, and secret-bearing files do not belong
-there. The release projection policy classifies `.scratch/**` as private and
-forbids it in public output.
-
-### Workstream map files
-
-Every workstream has `.scratch/<effort>/map.md`. It uses the generic
-documentation front matter from `docs/documentation-standard.md` (`title`,
-`doc_type: reference`, `status`, `created_at`, `updated_at`, `owner`,
-`source_of_truth: true`), not ticket front matter. It is authoritative only
-for the workstream's routing scope and boundaries; `TODOS.md` remains the Work
-Register and each ticket remains authoritative for its own work. Its status is:
-
-- `active` — the declared scope may receive new tickets;
-- `archived` — the workstream is historical and `issues/` contains no active
-  ticket.
-
-The body must contain `## Scope` and `## Boundaries`. It may link its tickets
-for navigation, but it never repeats their scope or acts as another Work
-Register.
-
-## Ticket-first threshold and flow
-
-Create the ticket and add its one pointer to `TODOS.md` before implementing
-any behavior, schema, security, release, or multi-file change. Also use a
-ticket for work that needs acceptance criteria, coordination, a dependency,
-or more than a small focused edit. A one-file typo, formatting-only change,
-or similarly trivial documentation correction may proceed without a ticket;
-when uncertain, use the ticket-first path.
+Create a Linear issue before implementing any behavior, schema,
+security, release, or multi-file change. Also use an issue for work that
+needs acceptance criteria, coordination, a dependency, or more than a
+small focused edit. A one-file typo, formatting-only change, or
+similarly trivial documentation correction may proceed without an
+issue; when uncertain, create the issue first.
 
 The normal flow is:
 
-1. Capture an uncommitted idea in `Inbox` or a future option in `Roadmap`.
-2. When work is committed, route it through an active workstream map, create
-   one local ticket by default (creating a stable workstream first when none
-   fits), or use one GitHub Issue when public collaboration is genuinely
-   needed. Add exactly one pointer to `Now`, `Next`, or `Waiting` before
-   implementation starts.
-3. Set the ticket's `triage` role and `executor` independently from its
-   lifecycle `status`. Move the portfolio lane as planning changes.
-4. Record a blocking dependency in `blocked_by` and use `Waiting` for
-   committed blocked work. Do not use `Blocked` as a synonym for Roadmap.
-5. When delivery is verified, set `status: resolved`, record completion
-   evidence, remove the pointer from `TODOS.md`, file the ticket under its
-   workstream's `issues/resolved/` directory, and move user-visible facts to
+1. Capture an uncommitted idea as a `Backlog` issue with a trigger
+   condition, or briefly in a dev log.
+2. When work is committed, write the scope and acceptance criteria into
+   one issue in project `micro-eval`; use `GH-<number>` only when
+   public collaboration is genuinely needed.
+3. Route execution by moving the issue to `ready-for-agent` or
+   `ready-for-human`, and set priority independently of state.
+4. Record blocking dependencies with Linear blocked-by relations.
+5. Before implementation starts, split the issue into **sub-issues**:
+   one sub-issue per independently deliverable, verifiable
+   implementation step. The parent issue keeps the goal and the
+   acceptance criteria; each sub-issue carries one step, its own
+   checklist, and its own completion evidence. An issue that is small
+   enough to be a single verifiable step does not need sub-issues.
+6. When delivery is verified, move the issue to `Done` and record
+   completion evidence in it; move user-visible facts to
    `CHANGELOG.md` or implementation evidence to a development log.
-6. Keep the resolved ticket and workstream map for auditability. Archive the
-   workstream map only when its problem domain is intentionally closed.
 
-GitHub open/closed state is checked by a human during triage. Ordinary CI and
-the local governance check do not require network access or mutate GitHub.
+GitHub open/closed state is checked by a human during triage. Ordinary
+CI does not require network access to Linear and does not mutate it.
+
+## Labels and grouping
+
+The workspace label group `area/*` replaces the retired workstream
+directories (`landing-page`, `agent-collaboration`, `work-governance`,
+`testing`, `engine`, `cost`, `schema`, `ui`, `adoption`, `platform`).
+Tag every new issue with one `area/*` label; add `security`, `Feature`,
+`Bug`, `Improvement`, or `UX` when they apply.
+
+## Archived local tickets
+
+`.scratch/<effort>/issues/resolved/` holds the pre-2026-09-05 ticket
+archive. It is a historical record: it never receives new tickets, its
+front matter stays frozen, and no active work may point at it. It stays
+tracked on `dev` and classified private by the public projection.
+`scripts/check-work-governance.py` validates the archive's structural
+integrity and its private projection classification offline.
 
 ## Branch and visibility boundary
 
-Work tracking and source changes happen on `dev`. `main` is a verified public
-projection and is not a source-development branch. Public documentation may
-describe this contract, but it must not link to development-only Work Register,
-ticket, or log paths that are absent from the public projection.
+Work tracking and source changes happen on `dev`. `main` is a verified
+public projection and is not a source-development branch. Public
+documentation may describe this contract, but it must not link to
+development-only Linear-external work records, `.scratch/`, or dev-log
+paths that are absent from the public projection.
+
+When the private development Pull Request workflow is active, its flow
+is `work discovery → authorization / issue → lease → worktree → Pull
+Request`. A Linear issue remains the authority for committed work; a
+lease is only short-lived operational state and must never be mirrored
+into repo files or issue metadata managed by the repo.

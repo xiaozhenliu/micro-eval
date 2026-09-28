@@ -259,9 +259,11 @@ workspace:
 | 级别 | 后端 | 描述 |
 |---|---|---|
 | `logical` | git worktree | 每次 run 拥有独立的 worktree，速度快，无 OS 级沙箱。默认选项。 |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | OS 强制执行的系统调用和文件系统策略，不可用时降级为 `logical` 并附带 caveat。 |
-| `container` | 预留 | 尚未实现。 |
-| `vm` | E2B / Modal | 远程 VM 执行，需要 provider 凭证，未配置时直接失败，不会回退到其他级别。 |
+| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | 作用于 setup、单轮 agent 和 command validator。宿主写入仅限 cell 工作区/输出 staging，支持 `full`/`none` 网络策略。仅在选择前不可用时降级为 `logical` 并记录 caveat。 |
+| `container` | Modal | 每个 cell 一个远程容器，由 setup、单轮 agent 和 command validator 共享。需要 SDK 与 provider 凭据；不会回退本机。 |
+| `vm` | E2B | 每个 cell 一个远程 VM，由 setup、单轮 agent 和 command validator 共享。需要 SDK 与 provider 凭据；不会回退本机。 |
+
+OS 和远程 provider 拒绝 `network_policy: allowlist`，尚未实现明确的允许规则。`logical` 不强制执行网络限制。多轮对话要求 `logical`。读取权限、清理和远程 observation 的限制见[工作区隔离](/zh/guide/workspace-isolation)。
 
 ::: code-group
 
@@ -530,7 +532,7 @@ tags: [sandboxed, untrusted]
 ```
 
 ::: warning vm 隔离需要凭证
-`isolation_level: vm` 使用 E2B 或 Modal 作为远程 provider。若未配置 provider 凭证，run 会立即失败，不会回退到较低隔离级别。使用前请设置 `MICRO_EVAL_SECRET_E2B_API_KEY` 或 `MICRO_EVAL_SECRET_MODAL_TOKEN`。
+`isolation_level: vm` 使用 E2B，`container` 使用 Modal。缺少 SDK 或 provider 凭据时，run 直接失败，不会回退本机。E2B 需设置 `MICRO_EVAL_SECRET_E2B_API_KEY`；Modal 需同时设置 `MICRO_EVAL_SECRET_MODAL_TOKEN_ID` 和 `MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET`。
 :::
 
 ---
@@ -559,6 +561,6 @@ tags: [sandboxed, untrusted]
 | `isolation_level` | 后端 | 可用性 |
 |---|---|---|
 | `logical` | git worktree | 始终可用 |
-| `os_policy` | Seatbelt / Bubblewrap | macOS / Linux；不可用时优雅降级 |
-| `container` | 预留 | 尚未实现 |
-| `vm` | E2B / Modal | 需要凭证；无回退 |
+| `os_policy` | Seatbelt / Bubblewrap | macOS / Linux；仅在选择前不可用时降级 logical 并记录 caveat |
+| `container` | Modal | 需要 SDK 与凭据；不会回退本机 |
+| `vm` | E2B | 需要 SDK 与凭据；不会回退本机 |

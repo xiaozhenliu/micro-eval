@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from micro_eval.engine.adapter import AdapterError, AgentAdapter, Redactor
+from micro_eval.engine.providers.base import IsolationLevel
+from micro_eval.engine.providers.git_worktree import WorkspaceProviderError
 from micro_eval.engine.workspace import (
     PreparedWorkspace,
     WorkspaceError,
@@ -81,52 +83,77 @@ class CellLifecycle:
     async def execute(self, cell: RunCell) -> FinalizedCell:
         """Run one cell through the normal lifecycle in its required order."""
         prepared: PreparedWorkspace | None = None
+        finalized: FinalizedCell | None = None
+        outcome: InvocationOutcome | None = None
         workspace_caveats: list[str] = []
         snapshot_gate: SnapshotGateResult | None = None
         try:
-            prepared = self.workspace_manager.prepare(
-                cell_id=cell.cell_id,
-                workspace=cell.task.workspace,
-                caveats=workspace_caveats,
-            )
-            snapshot_gate = self._snapshot_gate(cell, prepared, workspace_caveats)
-            if self._uses_conversation(cell):
-                outcome = await self._invoke_conversation(cell, prepared)
-            else:
-                adapter_result, redactor = await self.adapter.invoke(
-                    agent=cell.configuration.agent,
-                    input_payload=cell.task.input_payload,
-                    cwd=prepared.path,
+            try:
+                if self._uses_conversation(cell) and cell.task.workspace.isolation_level != IsolationLevel.logical:
+                    raise WorkspaceError("conversational execution is supported only by logical workspaces")
+                prepared = await self.workspace_manager.prepare_async(
+                    cell_id=cell.cell_id,
+                    workspace=cell.task.workspace,
                     output_dir=self.artifact_store.cell_dir(cell.cell_id),
-                    trace_id=cell.cell_id,
+                    caveats=workspace_caveats,
                 )
-                outcome = InvocationOutcome(adapter_result=adapter_result, redactor=redactor)
-        except (WorkspaceError, AdapterError) as exc:
-            redactor = Redactor.from_env()
-            outcome = InvocationOutcome(
-                adapter_result=AdapterResult(
-                    status=CellStatus.error,
-                    stderr=redactor.redact(str(exc)),
-                    failure_mode=exc.__class__.__name__,
-                    trace_id=cell.cell_id,
-                ),
-                redactor=redactor,
-            )
-            if prepared is None:
-                prepared = PreparedWorkspace(
-                    path=self.project_root,
-                    snapshot=CellSnapshot(
-                        workspace_path=str(self.project_root),
-                        timestamp=self.record.created_at,
+                snapshot_gate = self._snapshot_gate(cell, prepared, workspace_caveats)
+                if self._uses_conversation(cell):
+                    outcome = await self._invoke_conversation(cell, prepared)
+                else:
+                    adapter_result, redactor = await self.adapter.invoke(
+                        agent=cell.configuration.agent,
+                        input_payload=cell.task.input_payload,
+                        cwd=prepared.path,
+                        output_dir=self.artifact_store.cell_dir(cell.cell_id),
+                        trace_id=cell.cell_id,
+                        execution_context=prepared.execution_context,
+                    )
+                    outcome = InvocationOutcome(adapter_result=adapter_result, redactor=redactor)
+            except (WorkspaceError, WorkspaceProviderError, AdapterError) as exc:
+                redactor = Redactor.from_env()
+                redactor.values.update({
+                    key: value for key, value in cell.configuration.agent.env.items()
+                    if key.startswith(Redactor.SECRET_ENV_PREFIX) and value
+                })
+                outcome = InvocationOutcome(
+                    adapter_result=AdapterResult(
+                        status=CellStatus.error,
+                        stderr=redactor.redact(str(exc)),
+                        failure_mode=exc.__class__.__name__,
+                        trace_id=cell.cell_id,
+                        timed_out=bool(prepared and prepared.handle and prepared.handle.metadata.get("execution_timed_out") == "true"),
                     ),
-                    cleanup_kind="none",
+                    redactor=redactor,
                 )
-
-        if prepared is None:
-            raise RuntimeError("cell lifecycle did not produce a prepared workspace")
-        if snapshot_gate is None:
-            snapshot_gate = self._snapshot_gate(cell, prepared, workspace_caveats)
-        return await self._finalize(cell, prepared, outcome, snapshot_gate)
+                prepared = prepared or getattr(exc, "prepared_workspace", None)
+                if prepared is None:
+                    prepared = PreparedWorkspace(
+                        path=self.project_root,
+                        snapshot=CellSnapshot(
+                            workspace_path=str(self.project_root), timestamp=self.record.created_at,
+                        ),
+                        cleanup_kind="none",
+                    )
+            if snapshot_gate is None:
+                snapshot_gate = self._snapshot_gate(cell, prepared, workspace_caveats)
+            finalized = await self._finalize_live(cell, prepared, outcome, snapshot_gate)
+            return finalized
+        except BaseException as exc:
+            if prepared is not None:
+                exc.prepared_workspace = prepared
+            raise
+        finally:
+            if prepared is not None and prepared.cleanup_kind != "none":
+                snapshot = await self.workspace_manager.cleanup_workspace_async(prepared)
+                if outcome is not None and snapshot.cleanup_error:
+                    snapshot.cleanup_error = outcome.redactor.redact(snapshot.cleanup_error)
+                if finalized is not None:
+                    finalized.result.cell_snapshot = snapshot
+                    if snapshot.cleanup_status == "cleanup_failed":
+                        gate = finalized.result.snapshot_gate_result
+                        gate.status = "warn"
+                        gate.caveats.append("workspace cleanup failed; inspect cleanup_error")
 
     def _snapshot_gate(
         self,
@@ -158,13 +185,20 @@ class CellLifecycle:
     ) -> InvocationOutcome:
         """Run the conversational adapter only; scoring stays in finalization."""
         cell_dir = self.artifact_store.cell_dir(cell.cell_id)
+        if prepared.execution_context is None:
+            raise WorkspaceError("conversation has no provider execution context")
+        execution_output = await prepared.execution_context.prepare_output(cell_dir)
         env, redactor = self.adapter.build_env(
             cell.configuration.agent,
-            cell_dir,
-            cell_dir / "output.txt",
+            execution_output,
+            execution_output / "output.txt",
             cell.cell_id,
         )
         started = time.monotonic()
+        bridge = prepared.execution_context.create_conversation_bridge(
+            agent=cell.configuration.agent, env=env,
+            turn_timeout_s=self.plan.judge.turn_timeout_s,
+        )
         simulation = await simulate_conversation(
             cell=cell,
             config=self.plan.judge,
@@ -172,6 +206,7 @@ class CellLifecycle:
             cwd=prepared.path,
             env=env,
             redactor=redactor,
+            bridge=bridge,
         )
         if simulation is None:
             return InvocationOutcome(
@@ -193,26 +228,6 @@ class CellLifecycle:
             conversation_test_case=test_case,
             conversation_log=conversation_log,
         )
-
-    async def _finalize(
-        self,
-        cell: RunCell,
-        prepared: PreparedWorkspace,
-        outcome: InvocationOutcome,
-        snapshot_gate: SnapshotGateResult,
-    ) -> FinalizedCell:
-        """Finalize a cell and clean it even if finalization is interrupted."""
-        try:
-            finalized = await self._finalize_live(
-                cell, prepared, outcome, snapshot_gate
-            )
-        except BaseException:
-            if prepared.cleanup_kind != "none":
-                self.workspace_manager.cleanup_workspace(prepared)
-            raise
-        if prepared.cleanup_kind != "none":
-            finalized.result.cell_snapshot = self.workspace_manager.cleanup_workspace(prepared)
-        return finalized
 
     async def _finalize_live(
         self,
@@ -325,6 +340,9 @@ class CellLifecycle:
                 "workspace_type": observation.workspace_type.value,
                 "diff_truncated": observation.diff_truncated,
                 "warning_count": len(observation.warnings),
+                "provider": prepared.handle.provider_name if prepared.handle else None,
+                "network_requested": cell.task.workspace.network_policy.value if cell.task.workspace.network_policy else None,
+                "network_effective": prepared.handle.metadata.get("network_policy") if prepared.handle else None,
             },
         )
         self.artifact_store.add_evidence(workspace_evidence)
@@ -368,6 +386,15 @@ class CellLifecycle:
             evidence_prefix=evidence_prefix,
             redactor=redactor,
             workspace_dir=prepared.path,
+            execution_context=prepared.execution_context,
+            execution_available=(
+                prepared.cleanup_kind != "none" and prepared.snapshot.cleanup_status is None
+                and (prepared.handle is None or (
+                    prepared.handle.metadata.get("sandbox_cleanup") not in {"confirmed", "failed"}
+                    and prepared.handle.metadata.get("execution_unavailable") != "true"
+                    and prepared.handle.metadata.get("execution_timed_out") != "true"
+                ))
+            ),
         )
         for evidence in validation_evidence:
             self.artifact_store.add_evidence(evidence)
@@ -375,7 +402,7 @@ class CellLifecycle:
         evaluations = [validation]
         judge_evidence: EvidenceItem | None = None
         if outcome.conversation_test_case is not None:
-            if validation.pass_fail != "fail" and adapter_result.status != CellStatus.error:
+            if validation.pass_fail != "fail" and adapter_result.status not in {CellStatus.error, CellStatus.timeout}:
                 scored = await score_conversation(
                     cell=cell,
                     config=self.plan.judge,
@@ -411,8 +438,8 @@ class CellLifecycle:
 
         final_evaluation = evaluations[-1]
         if outcome.conversation_test_case is not None:
-            if adapter_result.status == CellStatus.error:
-                cell_status = CellStatus.error
+            if adapter_result.status in {CellStatus.error, CellStatus.timeout}:
+                cell_status = adapter_result.status
                 cell_pass_fail = None
                 cell_score = None
             else:

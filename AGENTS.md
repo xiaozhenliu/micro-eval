@@ -18,6 +18,24 @@ branch-sensitive rule, determine the actual current branch with
 - Do not manually merge `dev` into `main`, and do not check out `main` in the active `dev` worktree merely to publish a release.
 - If the current branch is neither `dev` nor `main`, treat it as non-publishable work: do not infer release authority, and return to a clean `dev` branch before release preparation or publication.
 
+## Private dev Pull Request workflow
+
+- `origin` is the public remote. It must never receive `dev`, `agent/*`, or
+  `human/*` refs, nor any private development path.
+- `private` is the private development remote. Once it is configured,
+  `private/dev` is the daily source authority; non-emergency changes enter it
+  only through a Pull Request from `agent/<slug>` or `human/<slug>`.
+- Do not provision a private repository, add or push `private`, change branch
+  protection, create a Pull Request, or merge one without the maintainer's
+  separately explicit authorization. Do not use `--all`, `--mirror`, or
+  force-push for either remote.
+- Pull Requests must link their ticket and include scope, acceptance mapping,
+  verification evidence, risk, and public-projection impact. Authors cannot
+  approve their own work. Security, schema, release, breaking, and high-risk
+  changes require an independent human approval.
+- Emergency bypasses require a separate ticket and evidence in the next normal
+  Pull Request. `main` remains exclusively managed by `release-to-main.sh`.
+
 ## Release model
 
 - Release from `dev` to `main` only through `scripts/release-to-main.sh`.
@@ -29,33 +47,31 @@ branch-sensitive rule, determine the actual current branch with
 
 ## Work tracking
 
-- On `dev`, `TODOS.md` is the only Work Register for unfinished work. Before a
-  non-trivial behavior, schema, security, release, or multi-file change, add
-  one `LOCAL-<WORKSTREAM>-<NN>` ticket or `GH-<number>` Issue pointer there; keep
-  the details only in that authority source.
-- Local tickets are the default for internal work. Use a GitHub Issue only
-  when public feedback or collaboration is genuinely needed.
-- A ticket carries its metadata in YAML front matter only. Never put metadata
-  in the body, never invent a key, and never guess a field value: copy
-  `docs/agents/ticket-template.md` and fill it in. The contract is
-  `docs/agents/issue-tracker.md` and the field vocabularies are
-  `docs/agents/triage-labels.md`; read them for an edge case, not to write an
-  ordinary ticket.
-- Before choosing a local ticket's workstream, follow `Workstream routing` in
-  `docs/agents/issue-tracker.md`; the `TODOS.md` lane, not the workstream name,
-  expresses timing.
+- The Linear project `micro-eval` (team `GRO`) is the only Work Register.
+  Before a non-trivial behavior, schema, security, release, or multi-file
+  change, create one Linear issue (`GRO-<number>`) that carries the scope and
+  acceptance criteria; keep the details only there. The contract is
+  `docs/agents/issue-tracker.md` and the state vocabulary is
+  `docs/agents/triage-labels.md`.
+- Use a GitHub Issue (`GH-<number>`) only when public feedback or
+  collaboration is genuinely needed.
+- Before implementation starts, split an issue into sub-issues: one per
+  independently deliverable, verifiable implementation step. The parent issue
+  keeps the goal and acceptance criteria; each sub-issue carries one step and
+  its own completion evidence.
 - A one-file typo, formatting-only edit, or similarly trivial documentation
-  correction may proceed without a ticket. When uncertain, create the ticket
+  correction may proceed without an issue. When uncertain, create the issue
   first.
-- Resolve work with completion evidence, remove it from `TODOS.md`, and record
-  user-visible facts in `CHANGELOG.md` or implementation evidence in a dev log.
-- `.scratch/**`, `TODOS.md`, and dev logs are development-only records. Keep
-  them tracked on `dev` and out of public projection; never use `main` for
-  source development.
-- Verify work records once, immediately before committing:
-  `uv run python scripts/check-work-governance.py`. It is a fail-closed check
-  over the whole register, so re-running it after each edit spends tokens
-  without catching anything the pre-commit run would miss.
+- Resolve work by moving the issue to `Done` with completion evidence, and
+  record user-visible facts in `CHANGELOG.md` or implementation evidence in a
+  dev log.
+- `.scratch/**` and dev logs are development-only records: `.scratch/` now
+  holds the read-only pre-2026-09-05 ticket archive. Keep them tracked on
+  `dev` and out of public projection; never use `main` for source development.
+- The offline governance check validates the archived records and their
+  projection classification. Run it once, immediately before committing:
+  `uv run python scripts/check-work-governance.py`.
+
 
 This file is generated into `main` from the development-only release
 instruction template during release. On `dev`, edit that template and keep

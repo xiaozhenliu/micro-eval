@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+from dataclasses import replace
 import difflib
 import selectors
 import shutil
@@ -11,8 +13,10 @@ import subprocess
 from pathlib import Path
 
 from micro_eval.engine.command import resolve_command_argv
+from micro_eval.engine.git_refs import GitRefResolutionError, resolve_commit
 from micro_eval.engine.providers.base import (
     CommandResult,
+    ExecutionRequest,
     IsolationLevel,
     WorkspaceHandle,
     WorkspaceProvider,
@@ -65,13 +69,24 @@ class GitWorktreeProvider:
             )
         elif spec.type == WorkspaceType.files:
             workspace_path = self._create_local_workspace_dir(safe_cell, workspace_root)
-            self._copy_files(spec, workspace_path)
+            try:
+                self._copy_files(spec, workspace_path)
+            except BaseException:
+                shutil.rmtree(workspace_path)
+                raise
         else:
             workspace_path = self._create_local_workspace_dir(safe_cell, workspace_root)
 
         setup_exit_code: int | None = None
         if spec.setup:
-            setup_exit_code = self._run_setup(spec.setup, workspace_path)
+            try:
+                setup_exit_code = self._run_setup(spec.setup, workspace_path)
+            except BaseException:
+                self.cleanup(WorkspaceHandle(
+                    workspace_path=workspace_path, provider_name=self.name,
+                    isolation_level=IsolationLevel.logical, source_repo=source_repo,
+                ))
+                raise
 
         setup_modified = (
             spec.type == WorkspaceType.git_repo
@@ -87,6 +102,9 @@ class GitWorktreeProvider:
             workspace_type=spec.type,
             setup_exit_code=setup_exit_code,
             metadata={
+                "network_policy": "full",
+                "network_policy_requested": spec.network_policy.value if spec.network_policy else "full",
+                "network_policy_effective": "full",
                 **({"source_commit": source_commit} if source_commit else {}),
                 **({"setup_modified": "true"} if setup_modified else {}),
             },
@@ -100,25 +118,34 @@ class GitWorktreeProvider:
         env: dict[str, str] | None = None,
         timeout_s: float | None = None,
     ) -> CommandResult:
-        if not argv or not all(isinstance(a, str) and a for a in argv):
+        if not argv or not all(isinstance(part, str) and part for part in argv):
             raise ValueError("exec_command requires a non-empty argv list of non-empty strings")
-        try:
-            result = subprocess.run(
-                argv,
-                cwd=handle.workspace_path,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout_s,
-            )
-            return CommandResult(
-                exit_code=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-            )
-        except subprocess.TimeoutExpired:
-            return CommandResult(exit_code=-1, timed_out=True)
+        result = asyncio.run(self.execute(handle, ExecutionRequest(
+            argv=argv, env=env, timeout_s=timeout_s,
+        )))
+        return replace(result, exit_code=-1) if result.timed_out else result
+
+    async def execute(self, handle: WorkspaceHandle, request: ExecutionRequest) -> CommandResult:
+        from micro_eval.engine.process_runner import run_process
+
+        env = request.env if request.env is not None else {
+            key: value for key, value in os.environ.items() if key in self.SETUP_ENV_KEYS
+        }
+        return await run_process(replace(request, cwd=request.cwd or handle.workspace_path, env=env))
+
+    def create_conversation_bridge(self, handle: WorkspaceHandle, *, agent, env, turn_timeout_s):
+        from micro_eval.engine.agent_bridge import SubprocessBridge
+
+        output = Path(handle.metadata["output_path"])
+        resolved_agent = agent.model_copy(update={"command": resolve_command_argv(
+            agent.command, replacements={
+                "{output_dir}": str(output), "{output_file}": str(output / "output.txt"),
+                "{input_file}": str(output / "input.txt"),
+            },
+        )})
+        return SubprocessBridge(
+            agent=resolved_agent, cwd=handle.workspace_path, env=env, turn_timeout_s=turn_timeout_s,
+        )
 
     def collect_artifacts(self, handle: WorkspaceHandle) -> list:
         """Legacy compatibility shim; Environment no longer creates artifacts."""
@@ -174,7 +201,8 @@ class GitWorktreeProvider:
                 return
             except (subprocess.CalledProcessError, FileNotFoundError):
                 pass
-        shutil.rmtree(handle.workspace_path, ignore_errors=True)
+        if handle.workspace_path.exists():
+            shutil.rmtree(handle.workspace_path)
 
     def _resolve_source_path(self, path_value: str | None) -> Path:
         source = Path(path_value) if path_value else self._project_root
@@ -233,15 +261,9 @@ class GitWorktreeProvider:
         for command in setup:
             if not command or any(not isinstance(part, str) or not part for part in command):
                 raise WorkspaceProviderError("workspace setup commands must be non-empty argv lists")
-            result = subprocess.run(
-                resolve_command_argv(command),
-                cwd=workspace_path,
-                env={key: value for key, value in os.environ.items() if key in self.SETUP_ENV_KEYS},
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            exit_code = result.returncode
+            handle = WorkspaceHandle(workspace_path, self.name, IsolationLevel.logical)
+            result = self.exec_command(handle, resolve_command_argv(command), timeout_s=300)
+            exit_code = result.exit_code
             if exit_code != 0:
                 break
         return exit_code
@@ -573,20 +595,13 @@ def _is_git_repo(path: Path) -> bool:
 
 
 def _resolve_git_commit(repo: Path, ref: str | None) -> str:
-    target = ref or "HEAD"
+    """Resolve the requested ref to a commit before any worktree is created."""
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", target],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-        raise WorkspaceProviderError(
-            f"Failed to resolve git ref {target!r} in {repo}"
-        ) from exc
+        return resolve_commit(ref, repo=repo)
+    except GitRefResolutionError as exc:
+        # The message is fixed and carries neither the raw ref nor git
+        # output; the provider layer has no channel for structured reasons.
+        raise WorkspaceProviderError(str(exc)) from exc
 
 
 def _run_capped(argv: list[str], *, cwd: Path, byte_limit: int) -> tuple[int, bytes, bool]:

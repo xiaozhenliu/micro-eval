@@ -48,24 +48,6 @@ def _write_ticket(
     return path
 
 
-def _write_register(root: Path, local_pointer: str) -> None:
-    todos = root / "TODOS.md"
-    todos.write_text(
-        "# 未完成工作总目录\n\n"
-        "## 当前执行（Now）\n\n"
-        f"- [{local_pointer}](.scratch/example/issues/01-first-ticket.md) — active work.\n\n"
-        "## 下一步（Next）\n\n"
-        "- [GH-15](https://github.com/xiaozhenliu/micro-eval/issues/15) — 升级。\n\n"
-        "## 等待解除（Waiting）\n\n"
-        "（无）\n\n"
-        "## 路线图（Roadmap）\n\n"
-        "- Future option. 规划状态：路线图（未阻塞）。触发/晋升时机：a real need appears.\n\n"
-        "## 收件箱（Inbox）\n\n"
-        "（无）\n",
-        encoding="utf-8",
-    )
-
-
 def _write_workstream_map(
     root: Path, *, effort: str = "example", status: str = "active"
 ) -> Path:
@@ -89,27 +71,24 @@ def _write_workstream_map(
     return path
 
 
-def test_work_register_accepts_ticket_pointer_and_trigger(tmp_path: Path) -> None:
+def test_ticket_contract_accepts_valid_frontmatter(tmp_path: Path) -> None:
     _write_ticket(tmp_path)
-    _write_register(tmp_path, "LOCAL-EXAMPLE-01")
-    tickets, ticket_errors = work_governance._read_tickets(tmp_path)
 
-    assert ticket_errors == []
-    assert work_governance._check_todos(tmp_path, tickets) == []
+    tickets, errors = work_governance._read_tickets(tmp_path)
+
+    assert errors == []
+    assert [ticket.identifier for ticket in tickets] == ["LOCAL-EXAMPLE-01"]
 
 
-def test_work_register_rejects_terminal_ticket_in_active_lane(tmp_path: Path) -> None:
+def test_ticket_contract_rejects_terminal_ticket_outside_archive(tmp_path: Path) -> None:
     _write_ticket(tmp_path, status="resolved", completion_evidence=True)
-    _write_register(tmp_path, "LOCAL-EXAMPLE-01")
-    tickets, ticket_errors = work_governance._read_tickets(tmp_path)
+
+    _, errors = work_governance._read_tickets(tmp_path)
 
     assert any(
         "terminal ticket must be filed under issues/resolved" in error
-        for error in ticket_errors
+        for error in errors
     )
-    errors = work_governance._check_todos(tmp_path, tickets)
-
-    assert any("active pointer LOCAL-EXAMPLE-01 targets resolved" in error for error in errors)
 
 
 def test_ticket_contract_rejects_completed_alias(tmp_path: Path) -> None:
@@ -220,6 +199,17 @@ def test_archived_ticket_rejects_duplicate_of_active_id(tmp_path: Path) -> None:
         "archived ID LOCAL-EXAMPLE-01 duplicates an active ticket" in error
         for error in errors
     )
+
+
+def test_archived_ticket_rejects_non_terminal_status(tmp_path: Path) -> None:
+    _write_ticket(tmp_path, status="ready")
+    _archive_ticket(tmp_path)
+    tickets, ticket_errors = work_governance._read_tickets(tmp_path)
+
+    assert ticket_errors == []
+    errors = work_governance._check_archived_tickets(tmp_path, tickets)
+
+    assert any("archived ticket must be resolved or archived" in error for error in errors)
 
 
 def test_workstream_rejects_missing_map(tmp_path: Path) -> None:

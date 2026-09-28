@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Validate the development work register and local ticket contract."""
+"""Validate the archived local ticket records and their projection policy.
+
+Since 2026-09-05 the Work Register lives in Linear (project ``micro-eval``,
+team ``GRO``) and this repository no longer owns register state. This
+fail-closed check therefore validates only what the repository still owns:
+
+* the read-only ticket archive under ``.scratch/<effort>/issues/`` keeps its
+  front-matter contract and never holds active tickets;
+* workstream maps stay valid;
+* every work record stays tracked on ``dev`` and classified private by the
+  public projection policy.
+"""
 
 from __future__ import annotations
 
@@ -12,21 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
-LANES = ("Now", "Next", "Waiting", "Roadmap", "Inbox")
-ACTIVE_LANES = ("Now", "Next", "Waiting")
-LANE_ALIASES = {
-    "Now": "Now",
-    "Next": "Next",
-    "Waiting": "Waiting",
-    "Roadmap": "Roadmap",
-    "Inbox": "Inbox",
-    "当前执行（Now）": "Now",
-    "下一步（Next）": "Next",
-    "等待解除（Waiting）": "Waiting",
-    "路线图（Roadmap）": "Roadmap",
-    "收件箱（Inbox）": "Inbox",
-}
 TICKET_STATUSES = {"inbox", "ready", "in_progress", "blocked", "resolved", "archived"}
 TRIAGE_ROLES = {
     "needs-triage",
@@ -304,6 +300,7 @@ def _ticket_paths(root: Path) -> list[Path]:
 
 
 def _read_tickets(root: Path) -> tuple[list[Ticket], list[str]]:
+    """Read non-archived tickets; the archive must not contain any."""
     tickets: list[Ticket] = []
     errors: list[str] = []
     identifiers: dict[str, Path] = {}
@@ -326,118 +323,6 @@ def _read_tickets(root: Path) -> tuple[list[Ticket], list[str]]:
             identifiers[ticket.identifier] = path
         tickets.append(ticket)
     return tickets, errors
-
-
-def _lane_bodies(text: str) -> dict[str, str]:
-    heading_pattern = "|".join(re.escape(alias) for alias in LANE_ALIASES)
-    matches = list(re.finditer(rf"^## ({heading_pattern})\s*$", text, re.M))
-    bodies: dict[str, str] = {}
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        bodies[LANE_ALIASES[match.group(1)]] = text[match.end() : end]
-    return bodies
-
-
-def _relative_link(root: Path, todos: Path, target: str) -> Path | None:
-    if "://" in target:
-        return None
-    target = target.split("#", 1)[0]
-    candidate = (todos.parent / target).resolve()
-    try:
-        candidate.relative_to(root.resolve())
-    except ValueError:
-        return None
-    return candidate
-
-
-def _check_todos(root: Path, tickets: list[Ticket]) -> list[str]:
-    todos = root / "TODOS.md"
-    if not todos.is_file():
-        return ["TODOS.md: Work Register is missing"]
-    text = todos.read_text(encoding="utf-8")
-    errors: list[str] = []
-    bodies = _lane_bodies(text)
-    missing_lanes = [lane for lane in LANES if lane not in bodies]
-    if missing_lanes:
-        errors.append(f"TODOS.md: missing portfolio lanes {', '.join(missing_lanes)}")
-    if re.search(r"^## (Blocked|Done)\s*$|^### P[0-9]+\s*$", text, re.M):
-        errors.append("TODOS.md: use portfolio lanes, not Blocked/Done/Pn priority headings")
-    if re.search(r"(?<![A-Za-z0-9])#[0-9]+\b", text):
-        errors.append("TODOS.md: use GH-<number>, never a bare GitHub issue number")
-
-    active_ids: set[str] = set()
-    active_pointers: dict[str, str] = {}
-    for lane in ACTIVE_LANES:
-        body = bodies.get(lane, "")
-        for line_number, line in enumerate(body.splitlines(), start=1):
-            stripped = line.strip()
-            if not stripped or stripped in {"*(none)*", "（无）", "(none)"}:
-                continue
-            if not stripped.startswith("-"):
-                continue
-            pointers = POINTER_RE.findall(stripped)
-            if len(pointers) != 1:
-                errors.append(
-                    f"TODOS.md {lane} line {line_number}: exactly one LOCAL/GH pointer required"
-                )
-                continue
-            pointer = pointers[0]
-            if pointer in active_pointers:
-                errors.append(f"TODOS.md: duplicate active pointer {pointer}")
-            active_pointers[pointer] = lane
-            if pointer.startswith("LOCAL-"):
-                link = re.search(rf"\[{re.escape(pointer)}\]\(([^)]+)\)", stripped)
-                if not link:
-                    errors.append(f"TODOS.md: local pointer {pointer} must be a markdown link")
-                    continue
-                target = _relative_link(root, todos, link.group(1))
-                if target is None or not target.is_file():
-                    errors.append(f"TODOS.md: local pointer {pointer} target does not exist")
-                    continue
-                target_fields, _, _ = _parse_frontmatter(target.read_text(encoding="utf-8"))
-                target_status = target_fields.get("status", "")
-                if target_fields.get("id") != pointer:
-                    errors.append(f"TODOS.md: {pointer} link target has a different ID")
-                if target_status in TERMINAL_STATUSES:
-                    errors.append(f"TODOS.md: active pointer {pointer} targets {target_status}")
-                if target_status == "blocked" and lane != "Waiting":
-                    errors.append(f"TODOS.md: blocked pointer {pointer} belongs in Waiting")
-                active_ids.add(pointer)
-            else:
-                issue_number = pointer.removeprefix("GH-")
-                link = re.search(
-                    rf"\[[^\]]*{re.escape(pointer)}[^\]]*\]\([^)]*/issues/{issue_number}(?:[?#][^)]*)?\)",
-                    stripped,
-                )
-                if not link:
-                    errors.append(f"TODOS.md: {pointer} must link to its GitHub Issue")
-
-    for lane in ("Roadmap",):
-        for line_number, line in enumerate(bodies.get(lane, "").splitlines(), start=1):
-            stripped = line.strip()
-            if not stripped.startswith("-"):
-                continue
-            if not re.search(
-                r"(?:Trigger\s*/\s*promote\s+when|Trigger|Promote\s+when|触发/晋升时机|触发条件)\s*[:：]\*{0,2}",
-                stripped,
-                re.IGNORECASE,
-            ):
-                errors.append(f"TODOS.md {lane} line {line_number}: missing trigger/promote-when field")
-            if not re.search(
-                r"(?:Planning\s+state|规划状态)\s*[:：]\*{0,2}\s*(?:Roadmap|路线图)\s*(?:\([^)]*not\s+blocked[^)]*\)|（[^）]*(?:未\s*blocked|未阻塞)[^）]*）)",
-                stripped,
-                re.IGNORECASE,
-            ):
-                errors.append(f"TODOS.md {lane} line {line_number}: Roadmap item must say not blocked/未阻塞")
-
-    for ticket in tickets:
-        if ticket.status not in TERMINAL_STATUSES and ticket.identifier not in active_ids:
-            errors.append(
-                f"TODOS.md: non-terminal ticket {ticket.identifier} is not in Now/Next/Waiting"
-            )
-    if "GH-15" not in active_pointers:
-        errors.append("TODOS.md: GH-15 must be present as a Work Register pointer")
-    return errors
 
 
 def _load_projection_module(root: Path) -> Any:
@@ -521,12 +406,6 @@ def _check_scratch(root: Path) -> list[str]:
             errors.append("public projection policy classifies .scratch/** as public")
         if not module._matches_any(probe, policy.forbidden_public):
             errors.append("public projection policy must forbid .scratch/** in public output")
-        if not module._matches_any("TODOS.md", policy.private_patterns):
-            errors.append("public projection policy must classify TODOS.md as private")
-        if module._matches_any("TODOS.md", policy.public_patterns):
-            errors.append("public projection policy classifies TODOS.md as public")
-        if not module._matches_any("TODOS.md", policy.forbidden_public):
-            errors.append("public projection policy must forbid TODOS.md in public output")
         plan = policy.plan(root, "WORKTREE")
         for path in paths:
             relative = path.relative_to(root).as_posix()
@@ -625,7 +504,6 @@ def check_repository(root: Path) -> list[str]:
     tickets, ticket_errors = _read_tickets(root)
     return [
         *ticket_errors,
-        *_check_todos(root, tickets),
         *_check_workstream_maps(root),
         *_check_scratch(root),
         *_check_archived_tickets(root, tickets),

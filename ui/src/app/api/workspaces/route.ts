@@ -38,8 +38,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid request body", detail: String(err) }, { status: 400 });
   }
 
+  // `--data-root` must be explicit: the CLI defaults to ~/.micro-eval-server and
+  // ignores both cwd and MICRO_EVAL_DATA_ROOT, so without it a server started
+  // with a custom data root creates workspaces it can never resolve (GRO-555).
   const args = [
     "run", "micro-eval", "workspace", "create",
+    "--data-root", getServerDataRoot(),
     "--name", input.name,
     "--owner", member,
   ];

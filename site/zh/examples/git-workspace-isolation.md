@@ -105,31 +105,11 @@ workspace:
 | Linux | Bubblewrap | `bwrap` 命名空间隔离 |
 | 两者均不可用 | Logical（降级） | 仅 git worktree 隔离 + 记录 caveat |
 
-::: warning 优雅降级
-当 Seatbelt 和 Bubblewrap 都不可用时，micro-eval 不会失败 —— 它会降级到 `logical` 隔离（仅 git worktree），并在 `same_start_snapshot.sandbox_policy` 中记录一条 `caveat`。该 caveat 会在 Web UI 中显示，并包含在报告中，确保你始终了解实际应用的隔离级别。
+::: warning OS provider 不可用
+如果在选择前 Seatbelt 和 Bubblewrap 均不可用，micro-eval 降级为 `logical`，并记录 snapshot-gate caveat，例如 `requested isolation os_policy unavailable on Linux; ran at logical`。已选定的 provider 启动或执行失败时，不会在沙箱外重试。
 :::
 
-`run.json` 中的 `same_start_snapshot.sandbox_policy` 字段记录了实际使用的隔离级别：
-
-```json
-{
-  "same_start_snapshot": {
-    "sandbox_policy": "seatbelt",
-    "caveats": []
-  }
-}
-```
-
-当 OS 策略不可用时：
-
-```json
-{
-  "same_start_snapshot": {
-    "sandbox_policy": "logical",
-    "caveats": ["os_policy requested but Seatbelt/Bubblewrap not available; degraded to logical"]
-  }
-}
-```
+`same_start_snapshot.sandbox_policy` 记录请求的隔离级别。判断隔离效果或可比性前，应查看每个 cell 的 workspace evidence 中实际 `provider`、`network_effective`，以及 `snapshot_gate_result.caveats`。OS 策略将宿主写入限制在 cell 工作区和输出 staging，但不保护可读宿主文件的保密性。
 
 ## Fixture Digest 与 Toolchain Fingerprint
 
@@ -315,33 +295,35 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 export LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-### 远程 VM 隔离（E2B / Modal）
+### 远程隔离：E2B VM / Modal 容器
 
-将隔离级别从 `os_policy` 升级到 `vm`，实现完整的远程沙箱执行。修改两个 task 文件中的 workspace 块：
+在 Git Workspace Isolation 示例中保留既有工作区来源，使用 `vm` 选择 E2B，或使用 `container` 选择 Modal：
 
-```yaml{4-5}
+```yaml
 workspace:
   type: git_repo
   path: fixture-repo
-  isolation_level: vm
+  ref: HEAD
+  isolation_level: vm  # Modal 使用 container
   trust_level: untrusted
+  network_policy: none
 ```
 
-然后为所选 provider 设置凭证：
+安装所选 provider 的 extra，并设置宿主侧控制凭据：
 
-::: code-group
+```bash
+# E2B（isolation_level: vm）
+uv pip install 'micro-eval[e2b]'
+export MICRO_EVAL_SECRET_E2B_API_KEY=e2b_...
 
-```bash [E2B]
-export E2B_API_KEY=e2b_...
+# Modal（isolation_level: container）
+uv pip install 'micro-eval[modal]'
+export MICRO_EVAL_SECRET_MODAL_TOKEN_ID=...
+export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET=...
 ```
 
-```bash [Modal]
-export MODAL_TOKEN_ID=...
-export MODAL_TOKEN_SECRET=...
-```
+`micro-eval[remote]` 同时安装两个 SDK。控制凭据不属于 agent 的 `required_secrets`。缺少 SDK 或凭据会使 cell 失败；两个远程 provider 都不会回退本机。
 
-:::
+示例的 `command: ["{python}", "scripts/mock-refactor-agent.py"]` 使用沙箱中的 `python3` 和上传的 fixture 脚本。真实 agent 命令也必须已安装在远程运行环境中，或随工作区提供。不能直接复用宿主 Codex 或其他 CLI 的绝对路径。如果 setup 或 agent 需要访问包仓库或模型 API，请显式设置 `network_policy: full`；`none` 阻止出站访问，`allowlist` 会被拒绝。
 
-::: danger 远程 VM 不会静默降级
-远程 VM provider（`E2B`、`Modal`）在凭证缺失时会直接报错退出 —— 不会自动降级到更低的隔离级别。这是有意为之：静默降级会违背申请 `vm` 隔离的初衷，并可能在你不知情的情况下使结果失效。
-:::
+远程 `git_repo` 传输固定 ref 的文件，不包含 `.git` 历史。setup、agent 和 command validator 共享同一个沙箱。远程 git observation 当前不可用，因此 run 记录 caveat，不会声称已验证同起点。离线 SDK contract 测试与可选的带凭据 live 检查分别记录。

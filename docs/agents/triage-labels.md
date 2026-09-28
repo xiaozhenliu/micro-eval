@@ -1,9 +1,9 @@
 ---
-title: Triage Roles and Ticket Fields
+title: Triage Roles and Issue Fields
 doc_type: reference
 status: active
 created_at: 2026-08-29T12:39+08:00
-updated_at: 2026-08-29T16:52+08:00
+updated_at: 2026-09-05T13:20+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -14,49 +14,45 @@ related:
   - docs/agents/issue-tracker.md
 ---
 
-# Triage Roles and Ticket Fields
+# Triage Roles and Issue Fields
 
-Triage answers “what routing decision is needed?” It does not describe
-execution progress. A local ticket therefore carries separate `triage`,
-`executor`, and `status` front matter fields, defined in
-`issue-tracker.md`.
+Since 2026-09-05 work is tracked in Linear (team `GRO`, project
+`micro-eval`) and the workflow states below replace the retired local
+`triage` / `executor` / `status` front-matter fields. This page records
+the mapping so old archive tickets and dev logs stay readable.
 
-## Triage role
+## Workflow states
 
-These are the accepted values of the `triage` field. They are intake and
-routing labels:
-
-| Role | Meaning |
+| Linear state | Meaning |
 | --- | --- |
-| `needs-triage` | Maintainer still needs to evaluate scope and priority. |
-| `needs-info` | Work is waiting for information from the requester or reporter. |
+| `Backlog` | Roadmap option, not yet committed; description keeps the trigger condition. |
+| `Todo` | Committed and ready, executor not yet routed (old `needs-triage`). |
 | `ready-for-agent` | Scope and acceptance criteria are ready for an agent. |
-| `ready-for-human` | A human must implement or decide the next step. |
-| `wontfix` | The request has been evaluated and will not be actioned. |
+| `ready-for-human` | A human must implement or decide the next step (old `ready-for-human` / `needs-info`). |
+| `In Progress` | Work is currently being implemented (old `in_progress`). |
+| `Done` | Acceptance criteria and completion evidence are satisfied (old `resolved`). |
+| `Canceled` | Evaluated and will not be actioned (old `wontfix` / `archived`). |
 
-## Executor
+Blocked work keeps its current state and records the dependency with
+Linear's blocked-by relation; there is no blocked state.
 
-`executor` identifies the expected implementer: `unassigned`, `agent`,
-`human`, or `pair`. It may change without changing the lifecycle status.
+## Executor routing
 
-## Lifecycle status
+The retired `executor` field (`agent`, `human`, `pair`, `unassigned`)
+maps to state plus assignee: `ready-for-agent`/`ready-for-human`
+express the routing decision, and the Linear assignee names who is
+expected to do the work. Routing may change without changing lifecycle
+state.
 
-`status` records the ticket lifecycle:
+## Priority
 
-| Status | Meaning |
-| --- | --- |
-| `inbox` | Recorded but not yet ready for execution. |
-| `ready` | Accepted with clear criteria and ready to start. |
-| `in_progress` | Work is currently being implemented or investigated. |
-| `blocked` | Committed work cannot proceed until `blocked_by` is cleared. |
-| `resolved` | Acceptance criteria and completion evidence are satisfied. |
-| `archived` | A resolved record was intentionally retired from active history. |
+Priority is a Linear field (`Urgent` / `High` / `Medium` / `Low`),
+independent of state. For the 2026-07-07 security audit it mapped
+finding severity; for roadmap items it records the current relative
+importance and promotion ordering only.
 
-Use `resolved` as the only normal completion spelling. Do not substitute
-`completed`, `done`, `in-progress`, or a triage label for lifecycle status.
+## Sub-issues
 
-## Portfolio lane mapping
-
-`Now`, `Next`, `Waiting`, `Roadmap`, and `Inbox` are Work Register planning
-lanes, not ticket statuses. A `blocked` committed ticket belongs in `Waiting`;
-an uncommitted future option belongs in `Roadmap` and may have no ticket yet.
+Before implementation starts, a parent issue is split into sub-issues:
+one per independently deliverable, verifiable step. Sub-issues inherit
+the parent's `area/*` label and carry their own completion evidence.

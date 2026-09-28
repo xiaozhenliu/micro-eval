@@ -25,7 +25,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 |---|---|---|
 | `id` | `string` | UUID v4，重试时保持不变。 |
 | `project_name` | `string` | 来自 `eval.yaml` 的项目名称。 |
-| `status` | `"planned" \| "running" \| "completed" \| "failed" \| "partial"` | 生命周期状态。`partial` 表示部分 cell 执行出错。 |
+| `status` | `"planned" \| "running" \| "completed" \| "failed" \| "partial" \| "cancelled"` | 生命周期状态。`partial` 表示结果数少于计划 cell 数；`cancelled` 会保留取消前已完成 cell 的结果。 |
 | `created_at` | `string` | ISO-8601 UTC 时间戳。 |
 | `completed_at` | `string \| null` | run 完成或失败时设置。 |
 | `failure_reason` | `string \| null` | run 失败或异常终止时的说明信息；成功时为 `null`。 |
@@ -34,7 +34,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 | `tasks` | `TaskSpec[]` | 每个 task 定义的内联副本。 |
 | `configurations` | `ConfigurationSpec[]` | 每个 configuration 定义的内联副本。 |
 | `cells` | `CellSpec[]` | 所有 `(task, configuration, repetition)` 三元组的扁平列表。 |
-| `results` | `CellResult[]` | 每个 cell 对应一条记录，`running` 状态下可能是部分列表。 |
+| `results` | `CellResult[]` | 每个已完成 cell 对应一条记录；`running` 或已取消时可能是部分列表。 |
 | `execution_order` | `string[]` | 实际执行的 `cell_id` 有序列表。 |
 | `execution_seed` | `integer` | 用于打乱执行顺序的随机种子。 |
 | `same_start_snapshot` | `SameStartSnapshot` | 执行前捕获的可复现性信封。 |
@@ -43,8 +43,8 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 | `evidence` | `EvidenceItem[]` | run 级别的证据条目。 |
 | `traces` | `TraceRef[]` | run 级别的 Langfuse trace 引用。 |
 | `evaluations` | `EvaluationResult[]` | 所有 cell 的全部评测结果。 |
-| `decision` | `DecisionReport \| null` | 最终裁决，所有 cell 完成前为 `null`。 |
-| `denominator_policy` | `"all_cells" \| "successful_cells"` | 计算 run 通过率时的分母策略。 |
+| `decision` | `DecisionReport \| null` | 已完成及已取消的 run 都会获得决策摘要；已取消的结果不能完成整体比较。 |
+| `denominator_policy` | `"include_failed" \| "exclude_failed"` | 根据已完成 cell 的结果计算通过率时的分母策略。 |
 | `owner` | `string \| null` | 发起本次 run 的成员。本地模式下为 `null`；服务器模式下由 worker 从任务的 `X-Micro-Eval-Member` 请求头中设置。 |
 | `server_context` | `ServerContext \| null` | 强类型的团队服务器归属溯源信息（`workspace_id`、`owner`、`template_id`、`template_version`、`job_id`、`server_name`）；本地模式下为 `null`。 |
 
@@ -71,7 +71,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
   "traces": [],
   "evaluations": ["..."],
   "decision": { "...": "see DecisionReport" },
-  "denominator_policy": "successful_cells",
+  "denominator_policy": "exclude_failed",
   "owner": null,
   "server_context": null
 }
@@ -154,13 +154,15 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 
 ## DecisionReport
 
-所有 cell 完成后计算出的最终裁决，汇总各 configuration 的统计数据，并附带置信度给出 `DecisionStatus`。
+比较 run 还会在 `comparison` 中保存 baseline/candidate 主语、task 级通过率差、方向、样本数以及 cell/evaluation/evidence 引用；`RunRecord` 同时保存规划时的 `configuration_roles` 和完整 `evaluation_contract`，重算不读取当前 `eval.yaml`。
+
+所有 cell 完成后计算出的最终裁决，汇总各 configuration 的统计数据；对于两配置 run，还会生成可审计的 task 级比较。当前 MVP 的自动比较统一使用 `confidence: low`。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `decision_report_id` | `string` | UUID。 |
 | `verdict` | `DecisionStatus` | 六种状态之一（见下文）。 |
-| `confidence` | `"high" \| "medium" \| "low"` | 对裁决的置信度。 |
+| `confidence` | `"high" \| "medium" \| "low"` | 当前自动决策使用 `low`；较宽的枚举保留用于记录兼容。 |
 | `evaluation_refs` | `string[]` | 支撑裁决的评测 ID 列表。 |
 | `evidence_refs` | `string[]` | 支撑裁决的证据 ID 列表。 |
 | `caveats` | `string[]` | 人类可读的注意事项（如"仅 2 次重复"）。 |
@@ -172,29 +174,42 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 
 | 状态 | 含义 |
 |---|---|
-| `improved` | 挑战者 configuration 在统计上更优。 |
-| `regressed` | 挑战者 configuration 在统计上更差。 |
+| `improved` | 至少一个 task 达到改进阈值，且没有 task 回退。 |
+| `regressed` | 至少一个 task 达到回退阈值，且没有 task 改进。 |
 | `mixed` | 部分 task 有提升，部分有退化。 |
-| `inconclusive` | 结果在噪声范围内，无明确胜者。 |
+| `inconclusive` | 没有 task 跨越阈值，或不满足比较条件。 |
 | `not_comparable` | 各 cell 的起始条件不同，不可比较。 |
-| `needs_human_review` | LLM judge 或自动评测器无法得出裁决。 |
+| `needs_human_review` | contract 要求非 validator 的评测。 |
 
 ```json
 {
-  "decision_report_id": "dr-2026-0615-001",
+  "decision_report_id": "run-example::decision::20260928",
   "verdict": "improved",
-  "confidence": "high",
-  "evaluation_refs": ["eval-001", "eval-002", "eval-003"],
-  "evidence_refs": ["ev-001"],
-  "caveats": ["Only 3 repetitions per configuration"],
+  "confidence": "low",
+  "evaluation_refs": ["eval-baseline", "eval-candidate"],
+  "evidence_refs": ["evidence-baseline", "evidence-candidate"],
+  "caveats": ["low sample size for repair: repetitions < 3"],
   "aggregation": {
-    "configurations": {
-      "gpt4o": { "pass_rate": 0.67, "mean_latency_ms": 18400 },
-      "claude-sonnet": { "pass_rate": 0.89, "mean_latency_ms": 12200 }
+    "per_configuration": {
+      "baseline": {"n_cells": 2, "pass_rate": 0.5},
+      "candidate": {"n_cells": 2, "pass_rate": 1.0}
     }
   },
-  "timestamp": "2026-06-15T09:04:30Z",
-  "recommended_action": "Adopt claude-sonnet configuration for production."
+  "comparison": {
+    "baseline_configuration_id": "baseline",
+    "candidate_configuration_id": "candidate",
+    "decision_threshold": 0.1,
+    "tasks": [{
+      "task_id": "repair",
+      "baseline_sample_count": 2,
+      "candidate_sample_count": 2,
+      "baseline_pass_rate": 0.5,
+      "candidate_pass_rate": 1.0,
+      "delta": 0.5,
+      "direction": "improved"
+    }]
+  },
+  "recommended_action": "Review task-level evidence before rollout."
 }
 ```
 
@@ -208,13 +223,13 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
 |---|---|---|
 | `n_cells` | `integer` | 该 configuration 的总 cell 数。 |
 | `n_successful` | `integer` | 未出错且未超时的 cell 数。 |
-| `pass_rate` | `float` | 分母 cell 中通过的比例。 |
-| `pass_at_k` | `float \| null` | pass@k：k 次重复中至少有一次通过的概率。 |
-| `pass_hat_k` | `float \| null` | pass^k：k 次重复中预期通过的比例。 |
-| `mean_latency_ms` | `float \| null` | 成功 cell 的平均实际耗时（毫秒）。 |
+| `pass_rate` | `float \| null` | 分母 cell 中通过的比例。 |
+| `pass_at_k` | `Record<int, float> \| null` | pass@k：k 次重复中至少有一次通过的概率。 |
+| `pass_hat_k` | `Record<int, float> \| null` | pass^k：全部 k 次尝试通过的估计概率。 |
+| `mean_latency_ms` | `float \| null` | 所有已记录 cell 的平均实际耗时（毫秒）。 |
 | `median_latency_ms` | `float \| null` | 实际耗时中位数（毫秒）。 |
 | `total_cost` | `CostMetric` | 该 configuration 所有 cell 的成本总和。 |
-| `denominator_policy` | `"all_cells" \| "successful_cells"` | 计入 `pass_rate` 的 cell 范围。 |
+| `denominator_policy` | `"include_failed" \| "exclude_failed"` | 计入 `pass_rate` 的 cell 范围。 |
 | `caveats` | `string[]` | 如 `["2 cells timed out"]`。 |
 
 ```json
@@ -222,8 +237,8 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
   "n_cells": 9,
   "n_successful": 9,
   "pass_rate": 0.889,
-  "pass_at_k": 0.999,
-  "pass_hat_k": 0.889,
+  "pass_at_k": {"1": 0.8888888888888888, "2": 1.0},
+  "pass_hat_k": {"1": 0.8888888888888888, "2": 0.7901234567901234},
   "mean_latency_ms": 12200,
   "median_latency_ms": 11800,
   "total_cost": {
@@ -231,7 +246,7 @@ micro-eval 将所有评测数据以 JSON 文件的形式存储在 `.micro-eval/r
     "currency": "USD",
     "source": "langfuse"
   },
-  "denominator_policy": "successful_cells",
+  "denominator_policy": "exclude_failed",
   "caveats": []
 }
 ```
@@ -321,7 +336,7 @@ micro-eval 按顺序运行各评测器：**确定性验证器 → LLM judge → 
 | `warning` | `string \| null` | 当脱敏不完整或文件存在异常时设置。 |
 
 ::: warning 敏感信息脱敏
-内容匹配 `MICRO_EVAL_SECRET_*` 环境变量模式的 artifact 在写入磁盘前会自动脱敏。`redacted` 标志将被设为 `true`，`warning` 字段将包含脱敏摘要。
+捕获文本在持久化前按 secret 值脱敏。未超限的完整二进制产物会保留，标记 `redacted: false` 和 `warning: binary_redaction_skipped`。超额产物正文省略；文本摘要可以保留经过脱敏的有界前缀。
 :::
 
 ```json
@@ -421,7 +436,7 @@ micro-eval 按顺序运行各评测器：**确定性验证器 → LLM judge → 
 | `setup_commands_digest` | `string \| null` | 所有 setup 命令拼接后的哈希值。 |
 | `guardrails_digest` | `string \| null` | 当前有效 guardrail 策略文件的哈希值。 |
 | `sandbox_policy` | `string` | 隔离级别：`"logical"`、`"os_policy"`、`"container"` 或 `"vm"`。 |
-| `network_policy` | `string` | 网络访问策略：`"none"`、`"localhost"` 或 `"unrestricted"`。 |
+| `network_policy` | `string` | 请求的网络策略：`"full"`、`"allowlist"` 或 `"none"`；OS 和远程 provider 拒绝尚不支持的 `allowlist`。实际策略记录在 workspace evidence 中。 |
 | `toolchain_fingerprint` | `object` | 关键工具版本（如 `{"uv": "0.4.1", "node": "22.0.0"}`）。 |
 | `fixture_digests` | `object` | 多源 fixture 的路径到 SHA-256 映射。 |
 | `timestamp` | `string` | ISO-8601 UTC 时间戳。 |
@@ -436,10 +451,10 @@ micro-eval 按顺序运行各评测器：**确定性验证器 → LLM judge → 
 |---|---|---|
 | `logical` | git worktree | 默认。速度快，无 OS 级隔离。 |
 | `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | 在不使用容器的情况下限制文件系统与网络。 |
-| `container` | Docker / OCI | 完整容器隔离。 |
-| `vm` | E2B / Modal | 远程云端执行，隔离最强。 |
+| `container` | Modal | 每个 cell 一个远程容器；需要 SDK 与凭据。 |
+| `vm` | E2B | 每个 cell 一个远程 VM；需要 SDK 与凭据。 |
 
-若请求的策略不可用，将回退到 `logical` 并添加一条 caveat。
+仅不可用的 `os_policy` provider 可以回退至 `logical`，并记录 caveat。远程 provider 失败时不会回退本机。
 :::
 
 ```json
@@ -609,14 +624,14 @@ console.log(record.decision?.verdict); // "improved"
 | `job_id` | `TEXT` | UUID v4，主键。 |
 | `workspace_id` | `TEXT` | 外键——拥有该任务的 workspace。 |
 | `owner` | `TEXT` | 入队时 `X-Micro-Eval-Member` 请求头的值。 |
-| `plan_json` | `TEXT` | 序列化的 `RunPlan` JSON，由 workspace `eval.yaml` 加上覆盖字段构建。 |
+| `plan_json` | `TEXT` | 由 workspace 配置和 task 构建并通过准入检查的序列化 `RunPlan`。enqueue 不接受 `config_overrides`。 |
 | `status` | `TEXT` | 任务生命周期状态（见下文）。 |
 | `enqueued_at` | `TEXT` | ISO-8601 UTC 时间戳。 |
 | `started_at` | `TEXT \| null` | worker 取出任务时设置。 |
 | `finished_at` | `TEXT \| null` | 任务进入终态时设置。 |
 | `run_id` | `TEXT \| null` | 为该任务创建的 `RunRecord.id`，执行开始前为 `null`。 |
 | `error` | `TEXT \| null` | `status = "failed"` 时的错误信息。 |
-| `progress` | `TEXT \| null` | worker 在执行过程中更新的 JSON 进度快照（如 `{"done": 3, "total": 12}`）。 |
+| `progress` | `TEXT \| null` | 包含 `completed_cells` 和 `total_cells` 的 JSON 进度快照；取消后仍保留已完成数量。 |
 | `cancel_requested_at` | `TEXT \| null` | 任务运行时收到取消请求时设置。 |
 | `cancelled_by` | `TEXT \| null` | 请求取消的成员。 |
 

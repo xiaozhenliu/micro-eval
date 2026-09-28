@@ -8,7 +8,13 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from micro_eval.models.artifact import ArtifactRef, EvidenceItem, TraceRef
-from micro_eval.models.configuration import ConfigurationSpec, Guardrails, JudgeConfig, TraceConfig
+from micro_eval.models.configuration import (
+    ConfigurationSpec,
+    EvaluationContract,
+    Guardrails,
+    JudgeConfig,
+    TraceConfig,
+)
 from micro_eval.models.decision import DecisionReport
 from micro_eval.models.environment import CellSnapshot, ReplayCanonical, SameStartSnapshot, SnapshotGateResult
 from micro_eval.models.evaluation import EvaluationResult
@@ -25,6 +31,7 @@ class RunStatus(str, Enum):
     completed = "completed"
     failed = "failed"
     partial = "partial"
+    cancelled = "cancelled"
 
 
 class CellStatus(str, Enum):
@@ -76,6 +83,8 @@ class RunPlan(BaseModel):
     migration_warnings: list[str] = Field(default_factory=list)
     same_start_snapshot: SameStartSnapshot | None = None
     replay_canonical: ReplayCanonical | None = None
+    configuration_roles: dict[str, str | None] = Field(default_factory=dict)
+    evaluation_contract: EvaluationContract | None = None
     denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"
     owner: str | None = None
     server_context: ServerContext | None = None
@@ -161,6 +170,9 @@ class RunRecord(BaseModel):
     traces: list[TraceRef] = Field(default_factory=list)
     evaluations: list[EvaluationResult] = Field(default_factory=list)
     decision: DecisionReport | None = None
+    # Immutable planning inputs for artifact-only comparative recomputation.
+    configuration_roles: dict[str, str | None] = Field(default_factory=dict)
+    evaluation_contract: EvaluationContract | None = None
     # Copied from project config at plan time; default keeps old run.json files compatible.
     denominator_policy: Literal["include_failed", "exclude_failed"] = "include_failed"
     # Server mode fields (optional, backward compatible)

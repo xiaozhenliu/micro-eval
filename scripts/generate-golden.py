@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
+from micro_eval.cli.init import CANONICAL_EVAL_YAML, STARTER_TASK
+from micro_eval.config.editor import build_project_draft
 from micro_eval.decision.summary import build_decision
 from micro_eval.models.run import RunRecord
 
@@ -874,6 +877,29 @@ def _write_decision_equivalence_fixture() -> None:
     _write("decision-equivalence.json", payload)
 
 
+def _write_project_draft_fixture() -> None:
+    """Produce project-draft.json via the real `config show` logic (GRO-550).
+
+    Seeds a throwaway project directory with the exact init.py starter
+    content (2 configurations + 1 task) and calls build_project_draft, the
+    same function `micro-eval config show` calls, so the fixture exercises
+    the real contract instead of a hand-written literal. The output never
+    contains absolute paths (task paths are project-relative; revision_id is
+    a content hash), so it stays byte-identical across machines and reruns.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        # Resolve like the CLI does (config_cmd.resolve_project_dir) so
+        # build_project_draft's realpath containment checks compare like
+        # for like — on macOS /tmp is itself a symlink (/var -> /private/var).
+        project_dir = Path(tmp).resolve()
+        (project_dir / "eval.yaml").write_text(CANONICAL_EVAL_YAML, encoding="utf-8")
+        tasks_dir = project_dir / "tasks"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        (tasks_dir / "hello.yaml").write_text(STARTER_TASK, encoding="utf-8")
+        draft = build_project_draft(project_dir)
+    _write("project-draft.json", draft)
+
+
 def generate_all() -> None:
     """Write all golden fixtures."""
     print("Generating golden fixtures...")
@@ -886,6 +912,7 @@ def generate_all() -> None:
     _write("run-plan.json", RUN_PLAN)
     _write("run-legacy-v01x.json", RUN_LEGACY_V01X)
     _write_decision_equivalence_fixture()
+    _write_project_draft_fixture()
 
     # Write canonical-run-p0.json to its original path for check-version-consistency.py.
     # This is the P0 fixture that the release preflight script reads tool_version from.

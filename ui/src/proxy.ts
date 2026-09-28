@@ -12,12 +12,11 @@ import type { NextRequest } from "next/server";
  * mode is single-user and explicitly out of scope per the security service
  * guidelines appendix, so we pass those requests through untouched.
  *
- * The allowlist is the localhost defaults (built from the bound port) plus any
- * `allowed_hosts` the admin configured in server.json, injected by `serve.py`
+ * The allowlist is the localhost defaults (built from the bound port) plus
+ * `allowed_hosts` from server.json and the bind address, injected by `serve.py`
  * via MICRO_EVAL_BIND_PORT / MICRO_EVAL_ALLOWED_HOSTS. Building localhost
- * defaults here (rather than trusting the injected list alone) keeps the common
- * case working even if MICRO_EVAL_ALLOWED_HOSTS is empty — fail-open only for
- * loopback, never for arbitrary rebinding targets.
+ * defaults here keeps the common case working even if the injected list is
+ * empty, without accepting arbitrary rebinding targets.
  */
 function allowedHosts(): Set<string> {
   const port = process.env.MICRO_EVAL_BIND_PORT || "3000";
@@ -39,7 +38,10 @@ export function proxy(request: NextRequest) {
   }
   const host = (request.headers.get("host") || "").toLowerCase();
   if (!allowedHosts().has(host)) {
-    return NextResponse.json({ error: "host not allowed" }, { status: 400 });
+    return NextResponse.json(
+      { error: "host not allowed; add it to allowed_hosts in server.json" },
+      { status: 400 },
+    );
   }
   return NextResponse.next();
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,12 @@ class QueueDB:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path))
+        # Plans are stored verbatim; keep the database owner-only (best effort).
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.chmod(f"{self.db_path}{suffix}", 0o600)
+            except OSError:
+                pass
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._init_schema()
@@ -52,21 +59,32 @@ class QueueDB:
         plan_json: str,
         max_queue_size: int = 100,
     ) -> dict:
-        cur = self._conn.execute(
-            "SELECT COUNT(*) as cnt FROM jobs WHERE status IN ('queued', 'running')"
-        )
-        count = cur.fetchone()["cnt"]
-        if count >= max_queue_size:
-            raise QueueFullError(count, max_queue_size)
+        # The capacity check and the insert must be one write transaction:
+        # BEGIN IMMEDIATE takes the database write lock up front, so two
+        # processes enqueueing at once cannot both see "one slot left"
+        # (round-9 review, 2026-09-13).
+        if self._conn.in_transaction:
+            self._conn.commit()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = self._conn.execute(
+                "SELECT COUNT(*) as cnt FROM jobs WHERE status IN ('queued', 'running')"
+            )
+            count = cur.fetchone()["cnt"]
+            if count >= max_queue_size:
+                raise QueueFullError(count, max_queue_size)
 
-        job_id = new_job_id()
-        now = _utcnow()
-        self._conn.execute(
-            """INSERT INTO jobs (job_id, workspace_id, owner, plan_json, status, enqueued_at)
-               VALUES (?, ?, ?, ?, 'queued', ?)""",
-            (job_id, workspace_id, owner, plan_json, now),
-        )
-        self._conn.commit()
+            job_id = new_job_id()
+            now = _utcnow()
+            self._conn.execute(
+                """INSERT INTO jobs (job_id, workspace_id, owner, plan_json, status, enqueued_at)
+                   VALUES (?, ?, ?, ?, 'queued', ?)""",
+                (job_id, workspace_id, owner, plan_json, now),
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
 
         position = self._conn.execute(
             "SELECT COUNT(*) as cnt FROM jobs WHERE status = 'queued' AND enqueued_at <= ?",
@@ -124,29 +142,52 @@ class QueueDB:
         )
         self._conn.commit()
 
-    def request_cancel(self, job_id: str, cancelled_by: str) -> dict | None:
-        row = self.get_job(job_id)
-        if row is None:
-            return None
-        status = row["status"]
-        if status in ("done", "failed", "cancelled"):
-            return {"error": "job_already_terminated", "status": status}
-        now = _utcnow()
-        if status == "queued":
-            self._conn.execute(
-                """UPDATE jobs SET status = 'cancelled', cancel_requested_at = ?,
-                   cancelled_by = ?, finished_at = ? WHERE job_id = ?""",
-                (now, cancelled_by, now, job_id),
-            )
-            self._conn.commit()
-            return {"job_id": job_id, "status": "cancelled", "cancel_requested_at": now}
-        # status == 'running': stop-after-run
-        self._conn.execute(
-            "UPDATE jobs SET cancel_requested_at = ?, cancelled_by = ? WHERE job_id = ?",
-            (now, cancelled_by, job_id),
-        )
+    def finish_running(self, job_id: str) -> str:
+        """Atomically finish a run without losing a concurrent cancel request."""
+        row = self._conn.execute(
+            """UPDATE jobs SET
+                   status = CASE WHEN cancel_requested_at IS NULL THEN 'done' ELSE 'cancelled' END,
+                   finished_at = ?
+               WHERE job_id = ? AND status = 'running' RETURNING status""",
+            (_utcnow(), job_id),
+        ).fetchone()
         self._conn.commit()
-        return {"job_id": job_id, "status": "running", "cancel_requested_at": now}
+        if row is None:
+            raise RuntimeError(f"running job not found: {job_id}")
+        return row["status"]
+
+    def request_cancel(self, job_id: str, cancelled_by: str) -> dict | None:
+        # A queued job can become running, or a running job can finish, between
+        # the read and write. Only update the state actually observed.
+        for _ in range(3):
+            row = self.get_job(job_id)
+            if row is None:
+                return None
+            status = row["status"]
+            if status in ("done", "failed", "cancelled"):
+                return {"error": "job_already_terminated", "status": status}
+            now = _utcnow()
+            if status == "queued":
+                updated = self._conn.execute(
+                    """UPDATE jobs SET status = 'cancelled', cancel_requested_at = ?,
+                       cancelled_by = ?, finished_at = ?
+                       WHERE job_id = ? AND status = 'queued' RETURNING job_id""",
+                    (now, cancelled_by, now, job_id),
+                ).fetchone()
+                self._conn.commit()
+                if updated is not None:
+                    return {"job_id": job_id, "status": "cancelled", "cancel_requested_at": now}
+            else:
+                # The kernel checks this marker before each cell dispatch.
+                updated = self._conn.execute(
+                    """UPDATE jobs SET cancel_requested_at = ?, cancelled_by = ?
+                       WHERE job_id = ? AND status = 'running' RETURNING job_id""",
+                    (now, cancelled_by, job_id),
+                ).fetchone()
+                self._conn.commit()
+                if updated is not None:
+                    return {"job_id": job_id, "status": "running", "cancel_requested_at": now}
+        raise RuntimeError(f"job status changed while requesting cancellation: {job_id}")
 
     def is_cancel_requested(self, job_id: str) -> bool:
         row = self._conn.execute(
@@ -158,23 +199,20 @@ class QueueDB:
         row = self._conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         if row is None:
             return None
-        result = dict(row)
-        if result.get("progress"):
-            result["progress"] = json.loads(result["progress"])
-        return result
+        return _job_dict(row)
 
     def get_queue_dashboard(self) -> dict:
         running_row = self._conn.execute(
             "SELECT * FROM jobs WHERE status = 'running' LIMIT 1"
         ).fetchone()
-        running = dict(running_row) if running_row else None
+        running = _job_dict(running_row) if running_row else None
 
         queued_rows = self._conn.execute(
             "SELECT * FROM jobs WHERE status = 'queued' ORDER BY enqueued_at"
         ).fetchall()
         queued = []
         for i, row in enumerate(queued_rows):
-            d = dict(row)
+            d = _job_dict(row)
             d["position"] = i + 1
             queued.append(d)
 
@@ -182,7 +220,7 @@ class QueueDB:
             "SELECT * FROM jobs WHERE status IN ('done', 'failed', 'cancelled') "
             "ORDER BY finished_at DESC LIMIT 10"
         ).fetchall()
-        recent = [dict(r) for r in recent_rows]
+        recent = [_job_dict(row) for row in recent_rows]
 
         return {"running": running, "queued": queued, "recent_completed": recent}
 
@@ -241,6 +279,14 @@ class QueueDB:
 
     def close(self) -> None:
         self._conn.close()
+
+
+def _job_dict(row: sqlite3.Row) -> dict:
+    """Decode the stored progress JSON for every public queue read path."""
+    job = dict(row)
+    if job["progress"] is not None:
+        job["progress"] = json.loads(job["progress"])
+    return job
 
 
 def _resolve_run_json_path(workspace_path: Path, job: dict, run_id: str) -> Path | None:

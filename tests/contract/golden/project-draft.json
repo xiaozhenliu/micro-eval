@@ -1,0 +1,95 @@
+{
+  "project_name": "demo-agent-eval",
+  "description": "Local deterministic starter project",
+  "configurations": [
+    {
+      "id": "baseline",
+      "name": "echo-baseline",
+      "agent": {
+        "name": "echo-baseline",
+        "command": [
+          "cat"
+        ],
+        "input_mode": "stdin",
+        "output_mode": "stdout",
+        "timeout_s": 10.0,
+        "env": {},
+        "required_secrets": []
+      },
+      "repetitions": 1,
+      "role": "baseline",
+      "skills_profile": {},
+      "parameters": {}
+    },
+    {
+      "id": "candidate",
+      "name": "echo-candidate",
+      "agent": {
+        "name": "echo-candidate",
+        "command": [
+          "cat"
+        ],
+        "input_mode": "stdin",
+        "output_mode": "stdout",
+        "timeout_s": 10.0,
+        "env": {},
+        "required_secrets": []
+      },
+      "repetitions": 1,
+      "role": "candidate",
+      "skills_profile": {},
+      "parameters": {}
+    }
+  ],
+  "configuration_errors": [],
+  "tasks": [
+    {
+      "path": "tasks/hello.yaml",
+      "task": {
+        "id": "hello",
+        "name": "Hello echo",
+        "description": "Verify a local agent can echo stdin.",
+        "input_payload": "Hello, micro-eval!",
+        "expected_output": "Hello, micro-eval!",
+        "rubric": "Output should contain the input exactly.",
+        "expectations": [
+          {
+            "type": "contains",
+            "value": "Hello, micro-eval!",
+            "path": null,
+            "target": null,
+            "stream": "output",
+            "command": null,
+            "argv": null,
+            "cwd": null,
+            "timeout_s": 30.0
+          }
+        ],
+        "workspace": {
+          "type": "blank",
+          "path": null,
+          "ref": null,
+          "files": [],
+          "setup": [],
+          "isolation_level": "logical",
+          "trust_level": "trusted",
+          "network_policy": null,
+          "fixtures": [],
+          "toolchain": null
+        },
+        "business_impact_tier": 3,
+        "tags": [
+          "smoke",
+          "deterministic"
+        ],
+        "revision_id": "f86e01c5a1af681ee120ee7b868439b9923a12a1bde48d44ef265be7693f7694",
+        "scenario": null,
+        "expected_outcome": null,
+        "user_description": null
+      },
+      "error": null
+    }
+  ],
+  "warnings": [],
+  "schema_version": "1.0"
+}

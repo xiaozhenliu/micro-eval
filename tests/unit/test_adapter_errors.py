@@ -406,11 +406,58 @@ class TestRedactor:
         assert "MICRO_EVAL_SECRET_EMPTY" not in redactor.values
         assert "MICRO_EVAL_SECRET_REAL" in redactor.values
 
-    def test_short_values_are_skipped(self) -> None:
-        """Secrets shorter than 4 chars are skipped to avoid over-replacement (GRO-188)."""
-        redactor = Redactor({"MICRO_EVAL_SECRET_SHORT": "abc", "MICRO_EVAL_SECRET_OK": "abcd"})
-        assert "MICRO_EVAL_SECRET_SHORT" not in redactor.values
-        assert "MICRO_EVAL_SECRET_OK" in redactor.values
+    def test_plain_agent_env_is_not_treated_as_declared_secret(self, tmp_path: Path) -> None:
+        agent = _agent([sys.executable], env={"MODE": "x", "MICRO_EVAL_SECRET_PIN": "abc"})
+        env, redactor = AgentAdapter()._build_env(agent, tmp_path, tmp_path / "output.txt", "")
+        assert env["MODE"] == "x"
+        assert redactor.values["MICRO_EVAL_SECRET_PIN"] == "abc"
+        assert "MODE" not in redactor.values
+
+    def test_short_values_and_overlapping_values_match_editor_rules(self) -> None:
+        redactor = Redactor({"MICRO_EVAL_SECRET_SHORT": "ab", "MICRO_EVAL_SECRET_LONG": "abc"})
+        assert redactor.redact("abc") == "[REDACTED:MICRO_EVAL_SECRET_LONG]"
+        assert redactor.redact("xabcx") == "x[REDACTED:MICRO_EVAL_SECRET_LONG]x"
+        assert redactor.redact("xabx") == "x[REDACTED:MICRO_EVAL_SECRET_SHORT]x"
+        one_char = Redactor({"MICRO_EVAL_SECRET_ONE": "q"})
+        assert one_char.redact("q") == "[REDACTED:MICRO_EVAL_SECRET_ONE]"
+        assert one_char.redact("xqx") == "x[REDACTED:MICRO_EVAL_SECRET_ONE]x"
+
+    async def test_short_secret_is_redacted_in_result_and_text_artifact(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MICRO_EVAL_SECRET_PIN", "abc")
+        code = (
+            "import os, pathlib; "
+            "value = 'x' + os.environ['MICRO_EVAL_SECRET_PIN'] + 'x'; "
+            "pathlib.Path(os.environ['MICRO_EVAL_OUTPUT_DIR'], 'answer.txt').write_text(value); "
+            "print(value)"
+        )
+        agent = _agent(
+            [sys.executable, "-c", code],
+            output_mode=OutputMode.directory,
+            required_secrets=["MICRO_EVAL_SECRET_PIN"],
+        )
+        result, _ = await _invoke(agent, tmp_path)
+
+        assert result.status == CellStatus.passed
+        assert "abc" not in result.stdout + result.stderr + result.output
+        assert "[REDACTED:MICRO_EVAL_SECRET_PIN]" in result.stdout
+        assert len(result.output_artifacts) == 1
+        artifact = Path(result.output_artifacts[0])
+        assert artifact.read_text() == "x[REDACTED:MICRO_EVAL_SECRET_PIN]x"
+
+    def test_binary_artifact_keeps_existing_skip_rule(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "binary.dat"
+        data = b"abc\x00tail"
+        artifact.write_bytes(data)
+
+        text, truncated = AgentAdapter()._redact_text_file(
+            artifact, Redactor({"MICRO_EVAL_SECRET_PIN": "abc"})
+        )
+
+        assert text == "[binary artifact skipped: binary.dat]"
+        assert truncated is False
+        assert artifact.read_bytes() == data
 
     async def test_secret_in_stderr_is_redacted_in_result(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MICRO_EVAL_SECRET_PASS", "top-secret-password")

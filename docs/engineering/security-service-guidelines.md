@@ -1,9 +1,11 @@
 ---
-title: micro-eval 产品/服务安全规范
+title: micro-eval Product/Service Security Guidelines
+language: en
+authoritative: true
 doc_type: reference
 status: active
 created_at: 2026-06-03T09:28+08:00
-updated_at: 2026-08-29T09:41+08:00
+updated_at: 2026-09-27T16:00+08:00
 owner: micro-eval maintainers
 source_of_truth: true
 tags:
@@ -16,65 +18,69 @@ related:
   - docs/releases/
 ---
 
-# micro-eval 产品/服务安全规范
+# micro-eval Product/Service Security Guidelines
 
-本文件约束 `micro-eval` 作为产品表面对用户暴露的安全边界，包括 CLI、本地 UI/API、静态报告、发布包，以及未来可能的服务化形态。
+This file constrains the security boundaries `micro-eval` exposes to users as a product surface, covering the CLI, local UI/API, static reports, release packages, and possible future service offerings.
 
-## 当前 MVP 服务边界
+## Current MVP service boundary
 
-- MVP 是 local-first 工具，不提供多团队协作、RBAC/SSO、复杂审计或托管服务能力。
-- 本地 UI/API 只应读取当前项目允许的 `.micro-eval/` run 数据和 manifest-bound artifact。
-- 报告和 UI 不得直接暴露未经过 manifest/ref 边界校验的 raw filesystem path。
-- 发布包不得依赖 dev-only 文档或运行时私有资料。
+- The MVP is a local-first tool; it provides no multi-team collaboration, RBAC/SSO, complex auditing, or hosted service capabilities.
+- The local UI/API may only read `.micro-eval/` run data of the current project and manifest-bound artifacts.
+- Reports and the UI must never expose raw filesystem paths that have not passed the manifest/ref boundary validation.
+- Release packages must not depend on dev-only documents or private runtime material.
 
-## UI/API 与报告暴露
+## UI/API and report exposure
 
-- API route 必须验证 run/artifact 边界，不能把任意路径作为文件读取入口。
-- artifact 内容只通过明确的 `artifact_id` / manifest ref 暴露。
-- text/html 报告必须避免注入风险；渲染用户/agent 输出时必须转义或使用安全模板策略。
-- UI/Decision 面向用户展示 caveat，而不是隐藏安全降级。
+- API routes must validate run/artifact boundaries; they never act as an arbitrary-path file-read entry point.
+- Artifact content is exposed only through explicit `artifact_id` / manifest refs.
+- Text/HTML reports must avoid injection risk; rendering user/agent output requires escaping or a safe template policy.
+- The UI/Decision surfaces caveats to users instead of hiding security degradations.
 
-## 发布与分支边界
+## Release and branch boundaries
 
-- `scripts/release/public-projection.toml` 是公开路径分类的唯一 source of truth；所有 tracked 路径必须明确属于 public、private 或 generated，未知/冲突路径必须中止发布。
-- `main` 必须与白名单生成的候选公开树完全一致；private、本地产物和历史泄漏路径不得因 merge 继承进入候选树。
-- 候选版本必须先完成测试、构建和归档验证，再通过 compare-and-swap 原子更新本地 `main`；失败不得移动 `main`。
-- wheel/sdist 必须从候选公开树构建并逐项校验归档清单，不能读取日常 `dev` 工作区中的未跟踪日志、缓存或本地 issue。
-- public Git remote 只能接收 verified `main` 和明确批准、指向同一 SHA 的 annotated tag；public remote 出现 `dev` 时发布必须中止，禁止 `--all` 和 `--mirror`。
-- 发布 evidence 必须记录安全相关验证结果。
-- 发布脚本生成的 `AGENTS.md` / `CLAUDE.md` 只能提供 main 分支必要 guardrails，不应泄露 dev-only 内容。
+- `scripts/release/public-projection.toml` is the single source of truth for public path classification; every tracked path must be explicitly public, private, or generated, and unknown/conflicting paths abort the release.
+- `main` must exactly match the candidate public tree generated from the allowlist; private paths, local artifacts, and historically leaked paths must not enter the candidate tree through merges.
+- A candidate version must pass tests, build, and archive verification before local `main` moves via a compare-and-swap update; a failure must not move `main`.
+- wheel/sdist artifacts are built from the candidate public tree and their archive manifests are verified item by item; untracked logs, caches, or local issue files from the daily `dev` workspace are never read.
+- The public Git remote may receive only the verified `main` and an explicitly approved annotated tag pointing at the same SHA; if `dev` appears on the public remote, the release aborts — `--all` and `--mirror` are forbidden.
+- Release evidence must record security-relevant verification results.
+- The release-generated `AGENTS.md` / `CLAUDE.md` carry only the guardrails needed on the main branch and must not leak dev-only content.
 
-## 未来服务化边界
+## Future service boundaries
 
-如果 `micro-eval` 从本地工具演进为托管服务，必须先补充新的服务安全规范，至少覆盖：
+If `micro-eval` evolves from a local tool into a hosted service, new service security guidelines must be written first, covering at least:
 
-- authentication / authorization；
-- tenant isolation；
-- audit logging；
-- hosted sandbox / network isolation；
-- secret storage and rotation；
-- data retention and deletion；
-- abuse prevention and rate limiting。
+- authentication / authorization;
+- tenant isolation;
+- audit logging;
+- hosted sandbox / network isolation;
+- secret storage and rotation;
+- data retention and deletion;
+- abuse prevention and rate limiting.
 
-## Team Server 服务化安全附录（v0.4）
+## Team Server service security appendix (v0.4)
 
-### 信任模型
-- **可信内网假设**：server 部署在团队内网，所有成员互信。
-- **无认证**：`X-Micro-Eval-Member` header 为自报身份，仅用于归属记录，不做鉴权。
-- 此假设的边界条件：server 不暴露到公网；团队成员不主动伪造身份；浏览器可能访问恶意外部网页。
+### Trust model
+- **Trusted intranet assumption**: the server runs on a team intranet and all members trust each other.
+- **No authentication**: the `X-Micro-Eval-Member` header is a self-declared identity used only for attribution records, not authorization.
+- Boundary conditions of this assumption: the server is never exposed to the public internet; team members do not forge identities on purpose; browsers may still visit malicious external pages.
 
-### CSRF 防护（四层）
-1. Content-Type 强制：写接口只接受 `application/json`。
-2. 自定义 header 检查：写接口要求 `X-Micro-Eval-Member` header。
-3. 无 CORS headers：不返回 `Access-Control-Allow-Origin`。
-4. Host header allowlist：拒绝非 allowlist 的 Host header（防 DNS rebinding）。
+### CSRF protection (four layers)
+1. Content-Type enforcement: write endpoints accept only `application/json`.
+2. Custom header check: write endpoints require the `X-Micro-Eval-Member` header.
+3. No CORS headers: no `Access-Control-Allow-Origin` is ever returned.
+4. Host header allowlist: Host headers outside the allowlist are rejected (mitigates DNS rebinding).
 
-### config_overrides 白名单
-仅允许覆盖：`repetitions`、`timeout_s`、`max_concurrency`。
-禁止覆盖：`agent.command`、`workspace`、`output_dir`、`project_root`。
+### Enqueue configuration overrides
+The v0.4 `POST /api/workspaces/[id]/runs/enqueue` does not accept `config_overrides`;
+a request body containing that field returns `400 Bad Request` instead of silently ignoring it.
+The only supported browser request field is the optional `expected_plan_digest`; the run plan is
+built server-side from the workspace configuration. Members cannot override `agent.command`,
+`workspace`, `output_dir`, or `project_root` through an enqueue request.
 
-### 归属记录（最小审计）
-所有写操作记录 `X-Micro-Eval-Member`。归属记录不可变（workspace.owner 创建后不可更改）。
+### Attribution records (minimal auditing)
+All write operations record `X-Micro-Eval-Member`. Attribution records are immutable
+(`workspace.owner` cannot change after creation).
 
-### 适用范围
-本附录仅适用于 `micro-eval serve` 模式。`micro-eval ui` 本地模式不受影响。
+### Scope
+This appendix applies only to `micro-eval serve` mode. The `micro-eval ui` local mode is unaffected.

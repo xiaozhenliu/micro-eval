@@ -35,7 +35,7 @@ cd micro-eval
 |---|---|
 | Python 3.11+ | Required |
 | micro-eval installed | `uv sync --all-extras` from repo root, or `pip install micro-eval` |
-| Node.js 18+ | Optional — only needed for the Web UI (`--ui` flag) |
+| Node.js 20.9+ | Optional — only needed for the Web UI (`--ui` flag) |
 | Local agent CLIs | Optional — only needed for `--real` mode |
 
 ::: tip No model calls required
@@ -323,7 +323,7 @@ This example runs agent CLIs directly on your machine. Agents may access externa
 
 - Each cell receives a **fresh copy** of `workspace/` in a disposable temporary directory. The fixture source is never modified.
 - Agent subprocesses receive a **narrow environment** — `PATH`, `HOME`, temp directory variables, and `NO_COLOR` only. Broad environment credentials are not forwarded.
-- **`MICRO_EVAL_SECRET_*` variables** declared in `required_secrets` are injected at runtime and **auto-redacted** from all logs, traces, and stored artifacts.
+- **`MICRO_EVAL_SECRET_*` variables** declared in `required_secrets` are injected at runtime and **redacted** from captured text before persistence. Binary artifacts are not text-redacted and carry a warning.
 - Output is capped at `output_cap_bytes` and artifact size at `artifact_cap_bytes` to prevent runaway writes.
 
 **What you must handle:**
@@ -333,7 +333,7 @@ This example runs agent CLIs directly on your machine. Agents may access externa
 - Inspect artifacts under `.micro-eval/runs/` before sharing reports.
 - If your agents need secrets, use the `MICRO_EVAL_SECRET_` channel — never hardcode values into YAML, prompts, or fixture files.
 
-For stronger isolation, see [Git Workspace Isolation](/examples/git-workspace-isolation), which demonstrates OS-policy sandboxing (Seatbelt on macOS, Bubblewrap on Linux) and remote VM execution via E2B/Modal.
+For stronger isolation, see [Git Workspace Isolation](/examples/git-workspace-isolation), which demonstrates OS-policy sandboxing (Seatbelt on macOS, Bubblewrap on Linux) and remote VM execution via E2B or container execution via Modal. The remote runtime must contain the agent command; host CLI paths cannot be reused there.
 
 ---
 

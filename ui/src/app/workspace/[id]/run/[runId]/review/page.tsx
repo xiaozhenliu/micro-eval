@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import fs from "node:fs";
-import path from "node:path";
-import { getWorkspaceRunsDir } from "@/lib/workspace-api";
+import { resolveWorkspaceRunDir, resolveInsideRunDir } from "@/lib/workspace-api";
 import { RunSchema, DecisionReportSchema } from "@/lib/schema";
 import type { Run } from "@/lib/schema";
 import { CaveatBanner } from "@/components/CaveatBanner";
@@ -15,25 +14,17 @@ interface PageProps {
   params: Promise<{ id: string; runId: string }>;
 }
 
-function safeRunId(id: string): string | null {
-  return /^(?!\.+$)[A-Za-z0-9_.:-]+$/.test(id) ? id : null;
-}
-
 function loadWorkspaceRun(workspaceId: string, runId: string): Run | null {
-  const safe = safeRunId(runId);
-  if (!safe) return null;
+  const runDir = resolveWorkspaceRunDir(workspaceId, runId);
+  if (!runDir) return null;
 
-  const runsDir = getWorkspaceRunsDir(workspaceId);
-  if (!runsDir) return null;
-
-  const runDir = path.join(runsDir, safe);
-  const runFile = path.join(runDir, "run.json");
-  if (!fs.existsSync(runFile)) return null;
+  const runFile = resolveInsideRunDir(runDir, "run.json");
+  if (!runFile || !fs.existsSync(runFile)) return null;
 
   try {
     const run = RunSchema.parse(JSON.parse(fs.readFileSync(runFile, "utf-8")));
-    const decisionFile = path.join(runDir, "decision.json");
-    if (fs.existsSync(decisionFile)) {
+    const decisionFile = resolveInsideRunDir(runDir, "decision.json");
+    if (decisionFile && fs.existsSync(decisionFile)) {
       const decision = DecisionReportSchema.parse(JSON.parse(fs.readFileSync(decisionFile, "utf-8")));
       return { ...run, decision };
     }

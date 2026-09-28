@@ -169,6 +169,13 @@ class EvaluationContract(BaseModel):
             raise ValueError("min_repetitions must be >= 1")
         return value
 
+    @field_validator("decision_threshold")
+    @classmethod
+    def decision_threshold_must_be_a_rate_delta(cls, value: float | None) -> float | None:
+        if value is not None and not 0 < value <= 1:
+            raise ValueError("decision_threshold must be null or greater than 0 and less than or equal to 1")
+        return value
+
 
 class JudgeConfig(BaseModel):
     """Optional LLM judge configuration without inline credentials."""

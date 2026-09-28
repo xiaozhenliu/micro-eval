@@ -8,9 +8,10 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape as rich_markup_escape
 from rich.table import Table
 
-from micro_eval.config.loader import ConfigError, load_config, load_task_paths
+from micro_eval.config.loader import ConfigError, config_error_hint, load_config, load_task_paths
 from micro_eval.config.planner import build_run_plan, plan_summary
 
 console = Console()
@@ -27,7 +28,10 @@ def validate_command(
         tasks = load_task_paths(config_path, project)
         plan = build_run_plan(project, tasks, project_root=config_path.parent)
     except ConfigError as exc:
-        _emit_error("config", str(exc), output_format)
+        # A structured reason carries its own fixed hint; it replaces the
+        # generic checklist hint in both text and JSON so the two stay
+        # consistent (GRO-972 review round 1).
+        _emit_error("config", str(exc), output_format, specific_hint=config_error_hint(exc) or None)
         raise typer.Exit(1)
     except ValueError as exc:
         _emit_error("validation", str(exc), output_format)
@@ -68,16 +72,19 @@ def _resolve_config_path(config: Path | None) -> Path:
     return Path("eval.yaml")
 
 
-def _emit_error(kind: str, message: str, output_format: str) -> None:
-    payload = {
-        "error": {
-            "type": kind,
-            "message": message,
-            "hint": "Check eval.yaml configurations[], tasks paths, argv command lists, and workspace paths.",
-        }
-    }
+def _emit_error(
+    kind: str,
+    message: str,
+    output_format: str,
+    specific_hint: str | None = None,
+) -> None:
+    generic_hint = "Check eval.yaml configurations[], tasks paths, argv command lists, and workspace paths."
+    hint = specific_hint if specific_hint else generic_hint
+    payload = {"error": {"type": kind, "message": message, "hint": hint}}
     if output_format == "json":
         typer.echo(json.dumps(payload, indent=2), err=True)
     else:
-        console.print(f"[red]{kind} error:[/red] {message}")
-        console.print("Hint: Check eval.yaml configurations[], tasks paths, argv command lists, and workspace paths.")
+        # Escape the message: snapshot errors carry "[task=...]" context that
+        # rich would otherwise swallow as a style tag.
+        console.print(f"[red]{kind} error:[/red] {rich_markup_escape(message)}")
+        console.print(f"Hint: {hint}")

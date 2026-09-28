@@ -6,7 +6,7 @@ import re
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import ConfigDict, BaseModel, Field, field_validator, model_validator
 
 SCHEMA_VERSION = "1.0"
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
@@ -77,7 +77,14 @@ class WorkspaceSpec(BaseModel):
 
 
 class ExpectationSpec(BaseModel):
-    """Deterministic validation expectation."""
+    """Deterministic validation expectation.
+
+    Unknown ``type`` values are accepted, so fields belonging to such an
+    expectation (e.g. ``pattern``) are kept rather than dropped: the config
+    editor round-trips tasks through this model (round-14 review).
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     schema_version: str = SCHEMA_VERSION
     type: str

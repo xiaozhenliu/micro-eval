@@ -146,7 +146,7 @@ Use `stream: stdout` rather than `output` when you want to assert that the agent
 
 ### `file_exists` — Output file presence
 
-A file at the given path must exist after the agent finishes. Use `{output_dir}` as a placeholder for the task's workspace directory — micro-eval substitutes the actual path at runtime.
+A file at the given path must exist after the agent finishes. Relative paths resolve inside the cell workspace. Use `{output_dir}` explicitly to check the provider's output directory instead.
 
 ```yaml
 expectations:
@@ -154,48 +154,57 @@ expectations:
     path: "{output_dir}/report.md"
 
   - type: file_exists
-    path: "{output_dir}/src/utils.py"
+    path: "src/utils.py"
 
   - type: file_exists
-    path: "{output_dir}/dist/bundle.js"
+    path: "dist/bundle.js"
 ```
 
 ::: warning
-The agent's working directory is the workspace root, which is the same path that `{output_dir}` resolves to. Do not write paths relative to the project root — the agent does not run in your project directory.
+The workspace root and `{output_dir}` are different scopes. The output directory may be a private staging directory or remote path. Do not use a host project path to refer to a file inside the cell.
 :::
 
 ### `command` — External validation script
 
 Run an arbitrary command as a validator. The command must exit with code `0` for the expectation to pass. This is the most powerful expectation type: it lets you run your existing test suite, a linter, a diff check, or any other validation logic.
 
+Unknown expectation types and their extra fields survive configuration editing for forward compatibility. The built-in validator reports an unsupported type as a failed expectation; preserving it does not add an evaluator implementation.
+
 ```yaml
 expectations:
   - type: command
     command: ["python", "-m", "pytest", "tests/", "-q", "--tb=short"]
-    cwd: "{output_dir}"
+    cwd: "."
 
   - type: command
     command: ["npx", "tsc", "--noEmit"]
-    cwd: "{output_dir}"
+    cwd: "."
 
   - type: command
     command: ["git", "diff", "--exit-code"]
-    cwd: "{output_dir}"
+    cwd: "."
 
   - type: command
     command: ["bash", "scripts/validate_output.sh"]
-    cwd: "{output_dir}"
+    cwd: "."
 ```
 
 **Important constraints on `command` expectations:**
 
 - `command` must be a list — never a shell string. micro-eval passes arguments directly to the subprocess without a shell, which prevents injection attacks and quoting surprises.
-- `cwd` defaults to `{output_dir}` if omitted.
+- `cwd` defaults to the cell workspace if omitted. Use `{output_dir}` to inspect provider output explicitly.
 - Stdout and stderr from the command are captured and attached to the run result for debugging, but they do not affect the pass/fail determination — only the exit code matters.
 
 ::: warning
 Do not use `command: ["sh", "-c", "some command string"]`. If you need shell features, write a script file, commit it to your fixture, and invoke it with `command: ["bash", "scripts/my-check.sh"]`.
 :::
+
+### Protected tests in starter tasks
+
+The bundled `starter-tasks` template includes five small bug-fix tasks. Their command expectation invokes the installed `micro_eval.tools.verify_protected` module from the fixture directory. It checks the expected digest of `tests/`, runs those tests from a read-only temporary copy, then checks the workspace tests again. Editing or adding test files causes rejection; the agent should fix the module under test.
+
+This digest check is not process isolation. The module under test and the tests share a Python process, so malicious import-time code can still interfere with the test runner or files it can access. A passing result means the protected tests were unchanged at the digest checks and passed; inspect the workspace evidence and use an appropriate sandbox for adversarial agents.
+
 
 ## Workspace Types
 
@@ -259,10 +268,10 @@ The `isolation_level` field controls how strongly the workspace is sandboxed fro
 
 | Level | Mechanism | Use when |
 |---|---|---|
-| `logical` | git worktree — filesystem isolation only | Day-to-day development, trusted agents |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) — syscall restrictions | You want OS-level containment without a container runtime |
-| `container` | OCI container | You have Docker/Podman available and need full isolation |
-| `vm` | E2B or Modal remote VM | Maximum isolation; runs outside your machine entirely |
+| `logical` | Per-cell directory/worktree; no OS access restriction | Day-to-day development, trusted agents |
+| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) — host write and network restrictions | Reviewed agents that need local tools; readable host files remain exposed |
+| `container` | Modal remote container | A per-cell remote environment with SDK and credentials |
+| `vm` | E2B remote VM | A per-cell remote environment with SDK and credentials |
 
 ::: tip
 `logical` is the default and requires no additional tooling. Upgrade to `os_policy` when you start evaluating agents that make filesystem or network calls you want to restrict.
@@ -313,13 +322,13 @@ The `digest` field is optional but recommended. When provided, micro-eval verifi
 
 ## The `{output_dir}` Placeholder
 
-The string `{output_dir}` is substituted at runtime with the absolute path to the workspace directory for the current `(task, configuration, repetition)` cell. It is available in:
+The string `{output_dir}` is substituted with the output directory of the current cell execution context. This differs from the workspace and may be private staging or remote storage. It is available in:
 
 - `file_exists` → `path`
-- `command` → `cwd`
+- `command` → argv and `cwd`
 
 ::: tip
-Always use `{output_dir}` instead of hardcoding a path. micro-eval creates a fresh directory per cell, and the actual path includes run-specific components like the run ID and repetition index.
+Use relative paths for workspace files and `{output_dir}` for provider output. Avoid hardcoded host paths; each cell owns its paths.
 :::
 
 ## Rubric Structure

@@ -1,6 +1,6 @@
 # Multi-Task Matrix
 
-Demonstrates a full 2D evaluation matrix: **2 configurations × 3 tasks × 2 repetitions = 12 cells**. All four expectation types are exercised, workspace setup commands run before each agent invocation, and the run intentionally produces an `inconclusive` decision — showing how micro-eval surfaces partial failures rather than hiding them.
+Demonstrates a full 2D evaluation matrix: **2 configurations × 3 tasks × 2 repetitions = 12 cells**. All four expectation types are exercised, workspace setup commands run before each agent invocation, and the run produces an auditable task-level comparative decision.
 
 ::: tip No API keys required
 This example runs entirely offline using deterministic mock agents. No LLM credentials, no external services.
@@ -12,7 +12,7 @@ This example runs entirely offline using deterministic mock agents. No LLM crede
 - All four expectation types (`exit_code`, `contains`, `file_exists`, `command`) and when to use each
 - How `setup` commands prepare a workspace before the agent starts
 - How the caveat system surfaces partial failures and sets the decision status
-- What `inconclusive` means and how to read the pass-rate table
+- How a task-level comparative verdict is derived from the pass-rate table
 
 ## Run the Example
 
@@ -26,7 +26,7 @@ The launcher runs `validate` → `run` → `list` → text report → HTML repor
 - Open `examples/multi-task-matrix/report.html` in a browser to view the matrix.
 - `checker-alpha` (baseline) shows **PASS** across all three tasks.
 - `checker-beta` (candidate) shows **FAIL** on `generate-report`, PASS on the other two.
-- The overall decision is `inconclusive`.
+- The overall decision is `regressed (low)`: `checker-beta` relative to `checker-alpha`.
 
 To explore the result in the web UI instead:
 
@@ -184,7 +184,7 @@ All executable commands are argv arrays. Placeholder replacement happens per arg
 | Workspace setup command | `{python}` |
 | Command expectation | `{python}`, `{output_dir}` |
 
-`{python}` always resolves to the interpreter running micro-eval. Setup runs before cell artifact paths are available, so input/output placeholders are intentionally limited to agent and validation contexts.
+For local providers, `{python}` resolves to the interpreter running micro-eval; remote providers use the sandbox's `python3`. Setup supports `{python}`; input/output placeholders remain limited to agent and validation contexts. Command expectations execute in the agent's provider context, so `{output_dir}` selects its output directory, including staging or remote storage where applicable.
 
 Use setup commands to:
 - Verify required files or directories exist
@@ -203,12 +203,12 @@ The example is designed to produce a clear, readable partial failure:
 
 `checker-beta` intentionally skips creating `report/summary.json`. The `command` expectation runs `python3 -c "import json; json.load(open('report/summary.json'))"` in the artifact output directory and receives a `FileNotFoundError`, making both repetitions of the `generate-report` task a FAIL.
 
-The resulting decision status is **`inconclusive`** with a low-confidence signal. micro-eval does not automatically declare a regression from a single failing task when it lacks a configured `decision_threshold`, but it makes the difference visible in the matrix and the pass-rate summary:
+The resulting decision status is **`regressed`** with low confidence. The config sets `decision_threshold: 0.5`; two tasks are unchanged and `generate-report` regresses by 100 percentage points. Each task has two repetitions, so the report retains a `low_sample` caveat:
 
 ```
 checker-alpha  @1=100%  (baseline)
 checker-beta   @1= 67%  (candidate)
-decision: inconclusive (low)
+decision: regressed (low)
 ```
 
 ::: tip When `inconclusive` is the right outcome

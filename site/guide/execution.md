@@ -23,7 +23,7 @@ When you run `micro-eval run`, the engine performs these stages in order:
 A `RunPlan` is the Cartesian product of every task, every configuration, and every repetition index:
 
 ```
-RunCells = Tasks × Configurations × range(repetitions)
+Cells = Tasks × Configurations × range(repetitions)
 ```
 
 For example, three tasks, two configurations, and two repetitions yields **12 cells**:
@@ -214,26 +214,27 @@ After output capture and scoring complete, the workspace is removed. Cleanup run
 
 ## Timeout and Signal Escalation
 
-Each cell has a configurable timeout. When the agent exceeds it, the engine escalates signals:
+Each agent has a `timeout_s` setting (default: 300 seconds). For local providers, the shared process runner starts a new session. A timeout signals the entire process group:
 
 ```
 timeout exceeded
-  → SIGTERM (graceful shutdown)
-  → grace_window seconds (default: 10)
-  → SIGKILL (forced)
+  → SIGTERM to the process group
+  → up to 1 second of grace
+  → SIGKILL to the process group if it still exists
 ```
 
-Configure per configuration or globally:
+Set the timeout in the agent configuration:
 
-```yaml{4,5}
+```yaml
 configurations:
   - id: slow-agent
     agent:
-      timeout: 300          # seconds; overrides run-level default
-      grace_window: 15      # seconds between SIGTERM and SIGKILL
+      name: slow-agent
+      command: ["python", "agent.py"]
+      timeout_s: 300
 ```
 
-The `CellResult` records `exit_reason: timeout` and the actual wall-clock duration.
+The adapter returns a timeout result with `timed_out: true` and `failure_mode: timeout`. Group signals cover local descendants that remain in the agent's process group; a descendant that starts a separate session is outside this guarantee. See [Workspace Isolation](./workspace-isolation) for provider-specific limits.
 
 ## Cell Failure Isolation
 
@@ -244,7 +245,7 @@ guardrails:
   stop_on_cell_error: false   # default — continue on error
 ```
 
-Set `stop_on_cell_error: true` if you want the entire run to halt on the first failure. This is useful during initial configuration to surface problems quickly.
+`stop_on_cell_error` is currently recorded as policy intent; the dispatcher continues after a cell error even when it is `true`. Use the recorded cell status and caveats when reviewing an incomplete or failed evaluation.
 
 ::: tip Partial results are always written
 Even when a run is interrupted (Ctrl-C, OOM, network drop), every completed cell's result is flushed to disk as it finishes. You will never lose results from cells that completed before the interruption.
@@ -314,7 +315,7 @@ Runs execute one at a time. Cells within a run still use `max_concurrency` for p
 ### Cancellation
 
 - **Queued jobs** are cancelled immediately.
-- **Running jobs** use "stop-after-run" semantics: the current run finishes, then the job is marked as cancelled. Cell-level interruption is not supported in v0.4.
+- **Running jobs** stop starting new cells once the worker observes the cancellation request. Already active cells finish, and their results remain readable. The run is marked `cancelled` with a decision summary of completed cells; the job records `cancelled` and `finished_at`. The worker does not interrupt active agent processes.
 
 ## Next Steps
 

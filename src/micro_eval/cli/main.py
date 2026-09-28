@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from micro_eval.cli.build_plan import build_plan_command
+from micro_eval.cli.config_cmd import config_app
 from micro_eval.cli.evaluate import apply_evaluation_command
 from micro_eval.cli.init import init_command
 from micro_eval.cli.list import list_command
@@ -37,6 +38,7 @@ app.command(name="worker")(worker_command)
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(template_app, name="template")
 app.add_typer(queue_app, name="queue")
+app.add_typer(config_app, name="config")
 
 
 @app.command()

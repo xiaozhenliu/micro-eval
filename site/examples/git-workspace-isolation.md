@@ -105,31 +105,11 @@ workspace:
 | Linux | Bubblewrap | `bwrap` namespace isolation |
 | Neither available | Logical (degraded) | git worktree isolation only + caveat recorded |
 
-::: warning Graceful degradation
-When neither Seatbelt nor Bubblewrap is available, micro-eval does not fail — it downgrades to `logical` isolation (git worktree only) and records a `caveat` in `same_start_snapshot.sandbox_policy`. The caveat is visible in the Web UI and included in reports so you always know what level of isolation was actually applied.
+::: warning OS provider unavailable
+If neither Seatbelt nor Bubblewrap is available before selection, micro-eval degrades to `logical` and records a snapshot-gate caveat such as `requested isolation os_policy unavailable on Linux; ran at logical`. A selected provider that fails to launch or execute does not retry outside its sandbox.
 :::
 
-The `same_start_snapshot.sandbox_policy` field in `run.json` records the level that was used:
-
-```json
-{
-  "same_start_snapshot": {
-    "sandbox_policy": "seatbelt",
-    "caveats": []
-  }
-}
-```
-
-On a system where OS policy is unavailable:
-
-```json
-{
-  "same_start_snapshot": {
-    "sandbox_policy": "logical",
-    "caveats": ["os_policy requested but Seatbelt/Bubblewrap not available; degraded to logical"]
-  }
-}
-```
+`same_start_snapshot.sandbox_policy` records the requested isolation. Check each cell's workspace evidence for its actual `provider` and `network_effective`, together with `snapshot_gate_result.caveats`, before interpreting isolation or comparability. An OS policy restricts host writes to the cell workspace and output staging, but readable host files are not confidential.
 
 ## Fixture Digest and Toolchain Fingerprint
 
@@ -315,33 +295,35 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 export LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-### Remote VM Isolation (E2B / Modal)
+### Remote Isolation: E2B VM / Modal Container
 
-Upgrade isolation from `os_policy` to `vm` for full remote sandbox execution. Change the workspace block in both task files:
+In the Git Workspace Isolation example, keep the workspace's existing source and choose `vm` for E2B or `container` for Modal:
 
-```yaml{4-5}
+```yaml
 workspace:
   type: git_repo
   path: fixture-repo
-  isolation_level: vm
+  ref: HEAD
+  isolation_level: vm  # use container for Modal
   trust_level: untrusted
+  network_policy: none
 ```
 
-Then set credentials for your chosen provider:
+Install the extra and set host-side control credentials for the chosen provider:
 
-::: code-group
+```bash
+# E2B (isolation_level: vm)
+uv pip install 'micro-eval[e2b]'
+export MICRO_EVAL_SECRET_E2B_API_KEY=e2b_...
 
-```bash [E2B]
-export E2B_API_KEY=e2b_...
+# Modal (isolation_level: container)
+uv pip install 'micro-eval[modal]'
+export MICRO_EVAL_SECRET_MODAL_TOKEN_ID=...
+export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET=...
 ```
 
-```bash [Modal]
-export MODAL_TOKEN_ID=...
-export MODAL_TOKEN_SECRET=...
-```
+`micro-eval[remote]` installs both SDKs. Control credentials are not agent `required_secrets`. Missing SDKs or credentials fail the cell; neither remote provider falls back locally.
 
-:::
+The example's `command: ["{python}", "scripts/mock-refactor-agent.py"]` uses the sandbox's `python3` and an uploaded fixture script. A real agent command must also be installed in, or supplied to, the remote runtime. Host absolute paths to Codex or another CLI cannot be reused there. If setup or the agent needs a package registry or model API, explicitly choose `network_policy: full`; `none` blocks outbound access and `allowlist` is rejected.
 
-::: danger No silent downgrade for remote VM
-Remote VM providers (`E2B`, `Modal`) fail hard when credentials are absent — there is no automatic fallback to a lower isolation level. This is intentional: silent downgrade would defeat the purpose of requesting `vm` isolation and could silently invalidate your results.
-:::
+Remote `git_repo` transfers the pinned ref's files without `.git` history. Setup, the agent, and command validators share one sandbox. Remote git observation remains unavailable, so the run records a caveat instead of claiming a verified same start. Offline SDK contract tests are separate from optional credentialed live checks.

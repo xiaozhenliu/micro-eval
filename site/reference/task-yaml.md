@@ -259,9 +259,11 @@ The path must point to a directory that is itself a git repository (contains a `
 | Level | Backend | Description |
 |---|---|---|
 | `logical` | git worktree | Each run gets its own worktree. Fast, no OS-level sandboxing. Default. |
-| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | OS-enforced syscall and filesystem policy. Falls back to `logical` with a caveat if unavailable. |
-| `container` | Reserved | Not yet implemented. |
-| `vm` | E2B / Modal | Remote VM execution. Requires provider credentials. Fails hard if unconfigured — does not fall back. |
+| `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | Applies to setup, the single-turn agent, and command validators. Limits host writes to the cell workspace/output staging and supports `full`/`none` networking. Falls back to `logical` with a caveat only when unavailable before selection. |
+| `container` | Modal | One remote container per cell, shared by setup, the single-turn agent, and command validators. Requires SDK and provider credentials; no local fallback. |
+| `vm` | E2B | One remote VM per cell, shared by setup, the single-turn agent, and command validators. Requires SDK and provider credentials; no local fallback. |
+
+OS and remote providers reject `network_policy: allowlist`; explicit allowlist rules are not implemented. `logical` does not enforce network restrictions. Multi-turn conversations require `logical`. See [Workspace Isolation](/guide/workspace-isolation) for read access, cleanup, and remote observation limitations.
 
 ::: code-group
 
@@ -530,7 +532,7 @@ tags: [sandboxed, untrusted]
 ```
 
 ::: warning vm isolation requires credentials
-`isolation_level: vm` uses E2B or Modal as the remote provider. If the provider credentials are not configured, the run fails immediately — there is no fallback to a less-isolated level. Set `MICRO_EVAL_SECRET_E2B_API_KEY` or `MICRO_EVAL_SECRET_MODAL_TOKEN` before use.
+`isolation_level: vm` uses E2B; `container` uses Modal. Missing SDKs or provider credentials fail the run without a local fallback. Set `MICRO_EVAL_SECRET_E2B_API_KEY` for E2B, or both `MICRO_EVAL_SECRET_MODAL_TOKEN_ID` and `MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET` for Modal.
 :::
 
 ---
@@ -559,6 +561,6 @@ tags: [sandboxed, untrusted]
 | `isolation_level` | Backend | Availability |
 |---|---|---|
 | `logical` | git worktree | Always available |
-| `os_policy` | Seatbelt / Bubblewrap | macOS / Linux; degrades gracefully |
-| `container` | Reserved | Not yet implemented |
-| `vm` | E2B / Modal | Requires credentials; no fallback |
+| `os_policy` | Seatbelt / Bubblewrap | macOS / Linux; degrades to logical with a caveat only when unavailable before selection |
+| `container` | Modal | Requires SDK and credentials; no local fallback |
+| `vm` | E2B | Requires SDK and credentials; no local fallback |

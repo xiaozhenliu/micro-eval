@@ -133,6 +133,20 @@ async def test_command_output_is_redacted(tmp_path: Path) -> None:
     assert "[REDACTED:MICRO_EVAL_SECRET_X]" in evaluation.comment
 
 
+async def test_timed_out_agent_does_not_start_legacy_validation_command(tmp_path: Path) -> None:
+    expectation = ExpectationSpec(
+        type="command",
+        command=["{python}", "-c", "from pathlib import Path; Path('side-effect').write_text('ran')"],
+    )
+    evaluation, _ = await _validate(
+        [expectation], AdapterResult(status=CellStatus.timeout, timed_out=True), tmp_path
+    )
+
+    assert evaluation.pass_fail == "fail"
+    assert "skipped because agent execution timed out" in evaluation.comment
+    assert not (tmp_path / "side-effect").exists()
+
+
 async def test_unsupported_expectation_type_fails(tmp_path: Path) -> None:
     evaluation, _ = await _validate(
         [ExpectationSpec(type="telepathy")], AdapterResult(status=CellStatus.passed), tmp_path

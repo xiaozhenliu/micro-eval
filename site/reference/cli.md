@@ -1,6 +1,6 @@
 # CLI Commands
 
-Complete reference for all `micro-eval` commands. Current version: **0.4.6**.
+Complete reference for all `micro-eval` commands. Current version: **0.5.0**.
 
 ## Configuration Lookup Order
 
@@ -90,6 +90,7 @@ micro-eval validate [OPTIONS]
 - `eval.yaml` parses against the Pydantic schema without errors.
 - Every task file referenced under `tasks:` exists and is valid.
 - Each `WorkspaceSpec` has a reachable `git_repo` (for `git_repo` type) or valid file list.
+- A `git_repo` `ref` resolves strictly to exactly one commit (branches, tags — annotated tags peeled to their commit —, SHAs and expressions like `HEAD~1`; option-like values, tree/blob objects, missing or ambiguous refs are refused). An invalid `ref` fails the plan phase with a non-zero exit and a fixed hint; there is no fallback to `HEAD` or another version. The same rule applies to `run --dry-run`, `build-plan`, and `workspace enqueue`.
 - All `expectations` reference a supported type: `exit_code`, `contains`, `file_exists`, or `command`.
 - Isolation level is available on the current platform (warns if Seatbelt/Bubblewrap is missing and falls back to `logical`).
 
@@ -156,7 +157,7 @@ micro-eval run [OPTIONS]
 - The RunPlan is expanded into an ordered list of `(task, config, repetition)` cells.
 - Cells run under `asyncio` with bounded concurrency (`--max-concurrency`).
 - Each agent is launched with `argv`-only argument passing — no shell string interpolation.
-- Secrets matching `MICRO_EVAL_SECRET_*` are passed to the subprocess environment but **redacted** from all logs and stored artifacts.
+- Only declared agent secrets are injected. Captured text is redacted before persistence; retained binary artifacts carry `redacted: false` and a warning.
 - After execution, a deterministic validator checks `expectations`; an optional LLM judge runs if configured.
 
 **Isolation levels** (resolved at run time)
@@ -165,11 +166,11 @@ micro-eval run [OPTIONS]
 |-------|-----------|----------|
 | `logical` | git worktree per cell | All |
 | `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | macOS / Linux |
-| `container` | Container runtime | Requires Docker or equivalent |
-| `vm` | E2B / Modal remote sandbox | Requires credentials |
+| `container` | Modal remote container | Requires SDK and credentials |
+| `vm` | E2B remote VM | Requires SDK and credentials |
 
 ::: warning
-If `os_policy` isolation is requested but the platform binary is unavailable, execution falls back to `logical` and records a caveat in the run result. Remote providers (`vm`) do **not** fall back — they fail hard if credentials are missing.
+If `os_policy` isolation is requested but the platform binary is unavailable, execution falls back to `logical` and records a caveat in the run result. Remote providers (`container` and `vm`) do **not** fall back — they fail hard if SDKs or credentials are missing. Commands must be installed or supplied inside the remote runtime; host executable paths are not portable.
 :::
 
 **Examples**
@@ -278,7 +279,7 @@ run-20260613-172300-11223344          2026-06-13 17:23:00      3        3  parti
 
 ## micro-eval report
 
-Renders the ResultMatrix for a completed run, including per-cell scores, aggregate statistics, the overall decision, caveats, and artifact references.
+Renders the ResultMatrix for a completed run, including per-cell scores, aggregate statistics, the candidate-relative-to-baseline task comparison, caveats, and artifact references.
 
 **Synopsis**
 
@@ -341,7 +342,8 @@ Tasks: 3  Configurations: 2  Repetitions: 1
   task: classify            0.74            0.68  ▼
   task: extract             0.90            0.90  —
 
-Decision: mixed
+Comparison: candidate-new relative to config-baseline (threshold 10pp)
+Decision: mixed (low)
 Caveats:
   - Isolation fell back to logical (seatbelt unavailable)
   - LLM judge used for task:summarize (deterministic score N/A)
@@ -501,6 +503,8 @@ micro-eval serve [OPTIONS]
 
 `micro-eval serve` starts both processes and keeps them alive together. Stopping it (Ctrl-C) shuts down both. For production-like deployments where you want to manage the worker separately, use `micro-eval serve` for the frontend and `micro-eval worker` for the worker.
 
+On first start, the generated `server.json` allows Host values for the machine hostname, FQDN, and `--host` binding address at the serving port; loopback values are also allowed. Startup prints the effective Host allowlist. To accept another name, add its `name:port` value to `allowed_hosts` in `server.json` and restart. An existing explicit list is kept as configured.
+
 **Examples**
 
 ::: code-group
@@ -653,6 +657,39 @@ micro-eval workspace delete WORKSPACE_ID [OPTIONS]
 |--------|------|---------|-------------|
 | `--force` | flag | `false` | Skip the confirmation prompt. |
 | `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+---
+
+### micro-eval workspace enqueue
+
+Build the workspace's run plan and add it to the server queue in one locked step. This is what the Team Server UI calls when you confirm **Enqueue Run**; with `--dry-run` it only builds the plan and prints it with its admission digest (the UI's preview).
+
+**Synopsis**
+
+```
+micro-eval workspace enqueue WORKSPACE_ID [OPTIONS]
+```
+
+**Arguments**
+
+| Argument | Description |
+|----------|-------------|
+| `WORKSPACE_ID` | Workspace identifier. |
+
+**Options**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--owner TEXT` | string | — | Member submitting the run (required unless `--dry-run`). |
+| `--expected-plan-digest TEXT` | string | — | Refuse unless the freshly built plan has this digest (as printed by `--dry-run`). |
+| `--dry-run` | flag | `false` | Print `{"plan_digest", "plan"}` without enqueueing. |
+| `--data-root PATH` | path | `~/.micro-eval-server` | Server data root. |
+
+**Output**
+
+Success prints the queued job as JSON on stdout. A refusal prints one JSON object on stderr (`{"error": "<kind>", ...}`) and exits non-zero: `workspace_not_found` (1), `queue_full` (2), `workspace_not_active` (3), `plan_build_failed` (4), `plan_changed` (5), `workspace_unavailable` (6). Admission requires an active workspace, `output_dir: .micro-eval/runs`, task paths that stay inside the workspace without symlinks, and free capacity (`max_queue_size` in `server.json`).
+
+The enqueue command has no `config_overrides` option. Edit the workspace configuration before previewing and enqueueing; the Team Server HTTP endpoint rejects a request containing `config_overrides` with `400`, and returns `202 Accepted` when the job enters the queue.
 
 ---
 
@@ -855,7 +892,7 @@ These options are accepted by every command:
 
 ```bash
 micro-eval --version
-# micro-eval 0.4.6
+# micro-eval 0.5.0
 ```
 
 ---
@@ -872,7 +909,7 @@ micro-eval --version
 | `LANGFUSE_HOST` | `run` | Optional Langfuse host override. |
 
 ::: danger
-Never hard-code secrets in `eval.yaml`. Use `MICRO_EVAL_SECRET_*` environment variables. They are automatically redacted from all stored artifacts and log output.
+Never hard-code secrets in `eval.yaml`. Use `MICRO_EVAL_SECRET_*` environment variables. Their values are redacted from captured text before persistence; binary artifacts are not sanitized and retain a warning.
 :::
 
 ---

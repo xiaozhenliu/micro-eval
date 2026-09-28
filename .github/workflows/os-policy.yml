@@ -1,0 +1,49 @@
+name: OS policy enforcement
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  os-policy:
+    name: Real ${{ matrix.provider }} cell execution
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            provider: seatbelt
+          - os: ubuntu-22.04
+            provider: bubblewrap
+    env:
+      MICRO_EVAL_REQUIRE_OS_POLICY: "1"
+      MICRO_EVAL_EXPECT_OS_PROVIDER: ${{ matrix.provider }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install Bubblewrap
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Install Python dependencies
+        run: uv sync --extra dev
+      - name: Run real cell isolation probes (unavailable provider fails)
+        run: >-
+          uv run pytest tests/e2e/test_os_policy_cell_execution.py
+          -q -rA --timeout=60 --junitxml=os-policy-results.xml -o junit_logging=all
+      - name: Preserve execution counts and provider evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-policy-${{ matrix.provider }}
+          path: os-policy-results.xml
+          if-no-files-found: error

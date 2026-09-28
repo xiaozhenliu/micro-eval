@@ -177,7 +177,7 @@ agent:
 | `command` | `string[]` | — | **是** | 启动 agent 的 argv 列表，不能为空。第一个元素必须是可执行文件。 |
 | `input_mode` | `"stdin" \| "file"` | `"stdin"` | 否 | task prompt 的传递方式。`stdin`：写入进程标准输入。`file`：写入临时文件，文件路径作为最后一个 argv 元素传入。 |
 | `output_mode` | `"stdout" \| "file" \| "directory"` | `"stdout"` | 否 | agent 写入结果的位置。`stdout`：从标准输出捕获。`file`：agent 写入已知文件路径。`directory`：agent 将多个 artifact 写入某目录。 |
-| `timeout_s` | `float` | `300.0` | 否 | 每个 cell 的执行超时时间（秒），必须大于 `0`。设置后会覆盖 `guardrails.timeout_s`。 |
+| `timeout_s` | `float` | `300.0` | 否 | agent 执行超时时间（秒），必须大于 `0`；当前 executor 实际使用此超时。 |
 | `env` | `dict` | `{}` | 否 | 注入 agent 子进程的额外环境变量，值必须为字符串。不要在此处放置 secret——请使用 `required_secrets`。 |
 | `required_secrets` | `string[]` | `[]` | 否 | agent 所需的 secret 名称列表。每个名称必须以 `MICRO_EVAL_SECRET_` 开头。micro-eval 从宿主环境读取并注入子进程，绝不记录或存储到输出文件中。 |
 
@@ -250,10 +250,10 @@ guardrails:
 | 字段 | 类型 | 默认值 | 是否必填 | 描述 |
 |---|---|---|---|---|
 | `max_concurrency` | `integer` | `4` | 否 | 并行执行的最大 cell 数，最小值为 `1`。控制 asyncio 有界并发。 |
-| `timeout_s` | `float` | `300.0` | 否 | 默认每 cell 超时时间（秒）。可通过 `agent.timeout_s` 按 agent 覆盖。 |
+| `timeout_s` | `float` | `300.0` | 否 | 记录的 guardrail 值。当前执行使用 `agent.timeout_s`，不使用此全局值。 |
 | `output_cap_bytes` | `integer` | `10485760` | 否 | 每 cell 从 stdout/stderr 捕获的最大字节数（10 MB），超出部分将被截断。 |
-| `artifact_cap_bytes` | `integer` | `52428800` | 否 | 每 cell 收集的文件 artifact 总字节数上限（50 MB）。 |
-| `stop_on_cell_error` | `boolean` | `false` | 否 | 为 `true` 时，cell 失败（非零退出、超时、报错）将立即中止整个运行。默认 `false` 会收集所有结果后再报告。 |
+| `artifact_cap_bytes` | `integer` | `52428800` | 否 | 产物持久化上限（50 MiB）；output mode 和 provider 传输上限可能更低。 |
+| `stop_on_cell_error` | `boolean` | `false` | 否 | 记录的策略意图。当前调度在 cell 错误后继续执行；该标志不会停止 run。 |
 | `randomize_execution_order` | `boolean` | `false` | 否 | 为 `true` 时，cell 以随机顺序执行。适用于检测顺序相关的不稳定性。 |
 
 ::: tip 调整并发数
@@ -288,10 +288,10 @@ evaluation:
 | `task_set_version` | `string` | — | 否 | task 集合的版本标签。存储在运行元数据中，用于趋势分析中检测不可比的运行。 |
 | `success_criteria` | `string[]` | `[]` | 否 | 人类可读的成功评测标准，作为文档存储在运行记录中。 |
 | `budget` | `dict \| null` | `null` | 否 | 可选的成本预算约束，键名和 schema 取决于 trace provider。 |
-| `decision_threshold` | `float \| null` | `null` | 否 | 声明结果为 `improved` 或 `regressed` 所需的最小分数差值，低于该阈值则判定为 `inconclusive`。 |
-| `inconclusive_policy` | `"warn" \| "block"` | `"warn"` | 否 | 决策为 `inconclusive` 时的处理方式。`warn` 发出警告并继续；`block` 以非零状态码退出。 |
-| `min_repetitions` | `integer` | `1` | 否 | cell 纳入决策所需的最小重复次数，成功重复次数不足的 cell 将被排除。 |
-| `required_evaluators` | `string[]` | `["validator"]` | 否 | cell 被计入结果所需的评估器列表，支持的值：`validator`、`judge`。 |
+| `decision_threshold` | `float \| null` | `null` | 否 | task 级 candidate 减 baseline 的通过率差阈值，合法范围为 `(0, 1]`；`null` 禁用自动 winner 判定。 |
+| `inconclusive_policy` | `"warn" \| "block"` | `"warn"` | 否 | 记录的策略意图（`warn` 或 `block`）。当前不改变受保护条件约束的 verdict 或 CLI 退出状态。 |
+| `min_repetitions` | `integer` | `1` | 否 | 每个 task 两侧所需的最少分母样本数。样本不足时决策为 inconclusive。 |
+| `required_evaluators` | `string[]` | `["validator"]` | 否 | 要求的 evaluator ID。自动比较当前仅支持 `["validator"]`；其他 contract 产生 `needs_human_review`。 |
 | `denominator_policy` | `"include_failed" \| "exclude_failed"` | `"include_failed"` | 否 | 计算通过率时失败的 cell（超时、报错）是否计入分母。`include_failed` 更为保守。 |
 
 ### 决策状态
@@ -401,8 +401,8 @@ Workspace 配置位于各个 task 文件中，但隔离级别是 micro-eval 启�
 |---|---|---|
 | 逻辑隔离 | `logical` | 每个 cell 使用独立的 git worktree。速度快，无 OS 级隔离。默认值。 |
 | OS 策略 | `os_policy` | Seatbelt（macOS）或 Bubblewrap（Linux）。不可用时降级为 `logical` 并附带警告。 |
-| 容器 | `container` | OCI 容器（非本地 Docker），计划中。 |
-| 虚拟机 / 远程 | `vm` | E2B 或 Modal 远程沙箱。需要凭证；未配置时直接报错（不会静默降级）。 |
+| 容器 | `container` | Modal 远程容器。需要 SDK 与凭据；不会回退本机。 |
+| 虚拟机 | `vm` | E2B 远程 VM。需要 SDK 与凭据；不会回退本机。 |
 
 三种 task workspace 类型如下：
 
@@ -433,7 +433,7 @@ micro-eval 的处理流程：
 1. 启动时从宿主环境读取已声明的 secret。
 2. 在启动任何 cell 之前验证所有 `required_secrets` 均已存在。
 3. 直接注入子进程环境——从不通过 shell 插值传递。
-4. 在写入磁盘前，自动从 stdout、stderr 及 artifact 捕获内容中脱敏所有 `MICRO_EVAL_SECRET_*` 的值。
+4. 捕获的 stdout、stderr 和文本产物在持久化前按 secret 值脱敏。二进制产物保留原始字节，不做文本脱敏，并记录 warning。
 
 ---
 

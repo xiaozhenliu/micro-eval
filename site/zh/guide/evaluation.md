@@ -127,7 +127,7 @@ export MICRO_EVAL_SECRET_ANTHROPIC_API_KEY="sk-ant-..."
 export MICRO_EVAL_SECRET_OPENAI_API_KEY="sk-..."
 ```
 
-所有 `MICRO_EVAL_SECRET_*` 变量会自动从日志、trace 和存储的 artifact 中脱敏。
+secret 值在捕获文本持久化前脱敏。二进制产物不做文本脱敏，并记录 warning。
 
 ### LLM 评判结果
 
@@ -235,62 +235,43 @@ micro-eval ui
 
 ## pass@k 与 pass^k 聚合
 
-当某个 configuration 有多次重复（`repetitions: N`）时，micro-eval 使用两个互补统计量对其进行聚合。
+micro-eval 为每个 configuration 汇总跨 task 和重复次数的分母 cell。这些汇总统计与比较决策使用的 task 级通过率分开。
 
 ### 定义
 
 **pass@k** —— 至少有一次尝试通过的概率：
 
 ```
-pass@k = 1 - P(all fail) = 1 - (fail_count / k)^k
+pass@k = 1 - C(n - c, k) / C(n, k)  # n denominator cells, c passes
 ```
 
 **pass^k** —— 所有 k 次尝试都通过的概率（严格可靠性）：
 
 ```
-pass^k = (pass_count / k)^k
+pass^k = (c / n)^k
 ```
 
 ### 读懂统计数据
 
 ```json
 {
-  "configuration_id": "cfg_gpt4",
-  "task_id": "refactor-sort",
-  "repetitions": 5,
-  "pass_count": 4,
-  "fail_count": 1,
-  "pass_at_k": 0.97,
-  "pass_all_k": 0.41,
-  "low_sample_caveat": false
+  "n_cells": 5,
+  "n_successful": 5,
+  "pass_rate": 0.8,
+  "pass_at_k": {"1": 0.8, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0},
+  "pass_hat_k": {"1": 0.8, "2": 0.64, "3": 0.512, "4": 0.4096, "5": 0.32768},
+  "denominator_policy": "include_failed",
+  "caveats": []
 }
 ```
 
 ::: warning 小样本警告
-当 `repetitions < 3` 时，micro-eval 会在聚合结果中附加 `"low_sample_caveat": true`。样本少于 3 时，pass@k 和 pass^k 的估计在统计上不可靠——仅将其视为方向性信号。
+任一 task 的分母样本少于三个时，configuration 统计的 `caveats` 包含 `"low_sample"`。这些估计只能作为方向性信号，不能当作统计置信度。结果以 `k=1..n` 的映射存储；失败数少于 k 时，pass@k 为 1。
 :::
 
 ### 如何选择
 
-::: code-group
-
-```yaml [Use pass@k when...]
-# You care whether the agent CAN do the task at all
-# (e.g., creative generation, exploratory coding)
-scoring:
-  aggregate: pass_at_k
-  repetitions: 5
-```
-
-```yaml [Use pass^k when...]
-# You care whether the agent RELIABLY does the task every time
-# (e.g., CI-facing automations, critical refactors)
-scoring:
-  aggregate: pass_all_k
-  repetitions: 5
-```
-
-:::
+两种统计自动计算，没有 `scoring.aggregate` 选择器。重复次数设置在每个 configuration 上。pass@k 用于观察尝试中是否存在成功，pass^k 用于观察连续成功，同时应保留 task 级证据和样本 caveat。
 
 ---
 
@@ -304,7 +285,7 @@ Run starts
        3. If judge.enabled: LLM judge runs → EvaluationResult (llm_judge)
        4. Results stored in evaluation.json
        5. Decision computed from all EvaluationResults
-  └─ pass@k / pass^k aggregated per (task × configuration)
+  └─ pass@k / pass^k aggregated per configuration; comparison rates per task
   └─ Web UI: human can annotate → triggers decision recompute
 ```
 

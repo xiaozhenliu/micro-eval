@@ -23,7 +23,7 @@ micro-eval 通过将声明式配置展开为隔离运行的矩阵、并发执行
 `RunPlan` 是每个任务、每个配置和每个重复索引的笛卡尔积：
 
 ```
-RunCells = Tasks × Configurations × range(repetitions)
+Cells = Tasks × Configurations × range(repetitions)
 ```
 
 例如，三个任务、两个配置和两次重复产生 **12 个单元格**：
@@ -214,26 +214,27 @@ LLM 评判失败（API 错误、JSON 响应格式错误）会在 `CellResult` �
 
 ## 超时与信号升级
 
-每个单元格都有可配置的超时。当 agent 超时时，引擎升级信号：
+每个 agent 可设置 `timeout_s`（默认 300 秒）。本机 provider 的共享进程 runner 创建新 session；超时后向整个进程组发送信号：
 
 ```
 timeout exceeded
-  → SIGTERM (graceful shutdown)
-  → grace_window seconds (default: 10)
-  → SIGKILL (forced)
+  → 向进程组发送 SIGTERM
+  → 最多等待 1 秒
+  → 若进程组仍存在，向其发送 SIGKILL
 ```
 
-按配置或全局配置：
+在 agent 配置中设置超时：
 
-```yaml{4,5}
+```yaml
 configurations:
   - id: slow-agent
     agent:
-      timeout: 300          # seconds; overrides run-level default
-      grace_window: 15      # seconds between SIGTERM and SIGKILL
+      name: slow-agent
+      command: ["python", "agent.py"]
+      timeout_s: 300
 ```
 
-`CellResult` 记录 `exit_reason: timeout` 以及实际的挂钟时长。
+Adapter 返回 `timed_out: true`、`failure_mode: timeout` 的超时结果。进程组信号覆盖仍留在 agent 进程组内的本机后代；自行创建新 session 的后代不在此保证内。各 provider 的限制见[工作区隔离](./workspace-isolation)。
 
 ## 单元格故障隔离
 
@@ -244,7 +245,7 @@ guardrails:
   stop_on_cell_error: false   # default — continue on error
 ```
 
-如果希望整个运行在第一次失败时停止，设置 `stop_on_cell_error: true`。这在初始配置阶段快速暴露问题时很有用。
+`stop_on_cell_error` 当前仅记录策略意图；即使设置为 `true`，调度仍会在 cell 错误后继续执行。审查未完成或失败的评测时，应查看已记录的 cell 状态和 caveat。
 
 ::: tip 部分结果始终会被写入
 即使运行被中断（Ctrl-C、OOM、网络断开），每个已完成单元格的结果在完成时都会被刷新到磁盘。中断之前已完成的单元格结果永远不会丢失。
@@ -314,7 +315,7 @@ Run 逐个执行。Run 内部的 cell 仍使用 `max_concurrency` 进行并行�
 ### 取消操作
 
 - **排队中的任务**立即取消。
-- **运行中的任务**采用"run 完成后停止"语义：当前 run 执行完毕后，任务才被标记为已取消。v0.4 不支持 cell 级别的中断。
+- **运行中的任务**在 worker 观察到取消请求后不再启动新 cell。已在执行的 cell 会完成，其结果仍可读取。run 标为 `cancelled`，决策摘要只汇总已完成 cell；job 写入 `cancelled` 和 `finished_at`。Worker 不会中断正在执行的 agent 进程。
 
 ## 下一步
 

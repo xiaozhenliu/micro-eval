@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-import json
+import fcntl
 import logging
+import os
 import re
 import shutil
+import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +24,51 @@ class WorkspaceError(Exception):
     pass
 
 
+_RUNTIME_DIR = ".micro-eval"
+_LOCK_FILE = "workspace.lock"
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
+def _open_workspace_lock(ws_dir: Path) -> int:
+    """Open ``<ws_dir>/.micro-eval/workspace.lock`` without following symlinks.
+
+    Each component is opened relative to its parent descriptor; the runtime
+    directory is created when missing. Returns the lock fd (caller closes).
+    """
+    try:
+        ws_fd = os.open(str(ws_dir), _DIR_FLAGS)
+    except OSError as exc:
+        raise WorkspaceError("workspace directory cannot be opened") from exc
+    try:
+        try:
+            runtime_fd = os.open(_RUNTIME_DIR, _DIR_FLAGS, dir_fd=ws_fd)
+        except FileNotFoundError:
+            try:
+                os.mkdir(_RUNTIME_DIR, 0o755, dir_fd=ws_fd)
+            except FileExistsError:
+                pass  # created concurrently; open it below
+            runtime_fd = os.open(_RUNTIME_DIR, _DIR_FLAGS, dir_fd=ws_fd)
+        except OSError as exc:
+            # ELOOP / ENOTDIR: .micro-eval is a symlink or a file.
+            raise WorkspaceError("workspace runtime directory must be a plain directory") from exc
+    finally:
+        os.close(ws_fd)
+    try:
+        fd = os.open(_LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=runtime_fd)
+    except OSError as exc:
+        raise WorkspaceError("workspace lock cannot be opened") from exc
+    finally:
+        os.close(runtime_fd)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            raise WorkspaceError("workspace lock must be a plain file")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 class WorkspaceManager:
     def __init__(self, data_root: Path):
         self.data_root = Path(data_root)
@@ -28,20 +77,52 @@ class WorkspaceManager:
     def resolve_path(self, workspace_id: str) -> Path | None:
         if not _WS_ID_RE.match(workspace_id):
             return None
-        ws_dir = (self.workspaces_dir / workspace_id).resolve()
         ws_root = self.workspaces_dir.resolve()
-        if not str(ws_dir).startswith(str(ws_root) + "/"):
-            return None
-        if not ws_dir.exists():
+        unresolved = ws_root / workspace_id
+        # A workspace directory that is itself a symlink (even to a sibling
+        # workspace under the same root) would let one id act as another;
+        # refuse it before resolving anything (round-6 review, 2026-09-12).
+        if unresolved.is_symlink() or not unresolved.is_dir():
             return None
         try:
-            real_ws = ws_dir.resolve(strict=True)
+            real_ws = unresolved.resolve(strict=True)
             real_root = ws_root.resolve(strict=True)
-            if not str(real_ws).startswith(str(real_root) + "/"):
-                return None
-            return real_ws
         except OSError:
             return None
+        if not str(real_ws).startswith(str(real_root) + "/"):
+            return None
+        meta_path = real_ws / "workspace.json"
+        if meta_path.is_symlink() or not meta_path.is_file():
+            return None
+        try:
+            meta = WorkspaceMeta.model_validate_json(meta_path.read_text())
+        except Exception:
+            return None
+        if meta.workspace_id != workspace_id:
+            return None
+        return real_ws
+
+    @staticmethod
+    @contextmanager
+    def lock(ws_dir: Path) -> Iterator[None]:
+        """Serialise workspace state transitions with queue admission.
+
+        Archiving, deleting and enqueueing take this same lock so a job can
+        never be admitted into a workspace that is being archived (round-6
+        review). The lock file is reached through directory descriptors with
+        ``O_NOFOLLOW`` at every step: a ``.micro-eval`` symlink would
+        otherwise redirect the lock outside the workspace and void the
+        mutual exclusion (round-7 review, 2026-09-13).
+        """
+        fd = _open_workspace_lock(ws_dir)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
 
     def create(
         self,
@@ -144,19 +225,46 @@ class WorkspaceManager:
         ws_dir = self.resolve_path(workspace_id)
         if ws_dir is None:
             return None
-        meta = self.get(workspace_id)
-        if meta is None:
-            return None
-        allowed = {"name", "description", "status"}
-        for key, value in fields.items():
-            if key in allowed:
-                setattr(meta, key, value)
-        (ws_dir / "workspace.json").write_text(meta.model_dump_json(indent=2))
-        return meta
+        with self.lock(ws_dir):
+            meta = self.get(workspace_id)
+            if meta is None:
+                return None
+            allowed = {"name", "description", "status"}
+            if fields.get("status") == "archived" and meta.status != "archived":
+                # Same lock as queue admission: no job can slip in between
+                # this check and the state change.
+                self._refuse_pending_jobs(workspace_id, "archiving")
+            for key, value in fields.items():
+                if key in allowed:
+                    setattr(meta, key, value)
+            (ws_dir / "workspace.json").write_text(meta.model_dump_json(indent=2))
+            return meta
 
     def delete(self, workspace_id: str) -> bool:
         ws_dir = self.resolve_path(workspace_id)
         if ws_dir is None:
             return False
-        shutil.rmtree(ws_dir)
+        with self.lock(ws_dir):
+            # Same lock as queue admission (round-6 review): a job cannot be
+            # admitted into a workspace that is being removed.
+            self._refuse_pending_jobs(workspace_id, "deleting")
+            shutil.rmtree(ws_dir)
         return True
+
+    def _refuse_pending_jobs(self, workspace_id: str, action: str) -> None:
+        """Raise when queued or running jobs still reference the workspace.
+
+        Callers hold :meth:`lock`, so queue admission cannot interleave with
+        the state change that follows this check.
+        """
+        from micro_eval.server.queue import QueueDB
+
+        db_path = self.data_root / "queue.db"
+        if not db_path.exists():
+            return
+        db = QueueDB(db_path)
+        try:
+            if db.has_pending_jobs(workspace_id):
+                raise WorkspaceError(f"workspace has pending jobs; cancel them before {action}")
+        finally:
+            db.close()

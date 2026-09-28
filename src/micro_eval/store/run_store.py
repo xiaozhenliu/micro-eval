@@ -55,6 +55,12 @@ class RunStore:
             migration_warnings=plan.migration_warnings,
             same_start_snapshot=plan.same_start_snapshot,
             replay_canonical=plan.replay_canonical,
+            configuration_roles=dict(plan.configuration_roles),
+            evaluation_contract=(
+                plan.evaluation_contract.model_copy(deep=True)
+                if plan.evaluation_contract is not None
+                else None
+            ),
             denominator_policy=plan.denominator_policy,
             owner=plan.owner,
             server_context=plan.server_context,
@@ -174,10 +180,14 @@ class RunStore:
         self.write_run(record)
         return record
 
-    def finalize_run(self, record: RunRecord) -> RunRecord:
-        """Mark a run complete or partial based on cell results."""
+    def finalize_run(self, record: RunRecord, *, cancelled: bool = False) -> RunRecord:
+        """Persist a terminal run, retaining every completed cell on cancellation."""
         record.completed_at = datetime.now(timezone.utc).isoformat()
-        record.status = RunStatus.completed if len(record.results) == len(record.cells) else RunStatus.partial
+        if cancelled:
+            record.status = RunStatus.cancelled
+        else:
+            record.status = RunStatus.completed if len(record.results) == len(record.cells) else RunStatus.partial
+        record.decision = build_decision(record)
         self.write_run(record)
         self._index_to_sqlite(record)
         return record

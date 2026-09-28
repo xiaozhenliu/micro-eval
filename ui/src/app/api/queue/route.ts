@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { queryQueue, sanitizeErrorDetail } from "@/lib/server-validation";
+import { queryQueue, sanitizeErrorDetail, stripPlanJson } from "@/lib/server-validation";
+
+interface DashboardRows {
+  running?: unknown;
+  queued?: unknown[];
+  recent_completed?: unknown[];
+}
 
 export async function GET() {
   if (!isServerMode()) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -8,8 +14,14 @@ export async function GET() {
   try {
     const dashboard = queryQueue(
       `result = db.get_queue_dashboard()\nprint(json.dumps(result))`,
-    );
-    return NextResponse.json(dashboard);
+    ) as DashboardRows;
+    // Job rows carry the full RunPlan (including agent.env); the dashboard
+    // never needs it and it must not leave the server.
+    return NextResponse.json({
+      running: dashboard.running ? stripPlanJson(dashboard.running) : null,
+      queued: (dashboard.queued ?? []).map(stripPlanJson),
+      recent_completed: (dashboard.recent_completed ?? []).map(stripPlanJson),
+    });
   } catch (err) {
     // queue.db may not exist yet (no jobs ever enqueued)
     const msg = err instanceof Error ? err.message : String(err);

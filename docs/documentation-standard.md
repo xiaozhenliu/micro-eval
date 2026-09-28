@@ -166,25 +166,23 @@ Use `doc_type: decision` for these files.
 - For release claims, include verification evidence or link to a release evidence document.
 - For docs that mention subprocess, environment variables, artifacts, or workspace boundaries, link to `docs/engineering/security-guidelines.md` when relevant.
 
-## Work records and tickets
+## Work records and issues
 
 The generic documentation metadata above applies to documents under `docs/`.
-Development-only work records use the ticket contract in
-`docs/agents/issue-tracker.md` instead of pretending that a ticket is a public
-documentation page.
+Since 2026-09-05 all work tracking lives in Linear (team `GRO`, project
+`micro-eval`) by the contract in `docs/agents/issue-tracker.md`; a work record
+is a Linear issue, not a public documentation page.
 
-- `TODOS.md` is the single Work Register for unfinished work on `dev`; it is
-  not a completion archive or a detailed specification.
-- A local ticket carries its own YAML front matter — a stable
-  `LOCAL-<WORKSTREAM>-<NN>` `id`, separate `status`, `triage`, and `executor`
-  fields, and `created_at` / `updated_at` under the same timestamp rules as
-  above — plus a `## Completion evidence` section when it reaches `resolved`
-  or `archived`. The exact field list is defined in
-  `docs/agents/issue-tracker.md`.
+- The Linear project `micro-eval` is the single Work Register for unfinished
+  work on `dev`; the repo does not keep a second backlog or completion archive.
+- A work record uses a `GRO-<number>` issue whose description carries the scope
+  and acceptance criteria; roadmap options stay in `Backlog` with a trigger
+  condition.
 - A GitHub reference uses `GH-<number>` and leaves the Issue body as the sole
   public detail source.
-- Completed work leaves the Work Register and is recorded in `CHANGELOG.md`, a
-  development log, and/or the ticket's completion evidence as appropriate.
-- Public documentation must not link to development-only `TODOS.md`,
-  `.scratch/`, ticket, or log paths that the public projection intentionally
-  omits.
+- Completed work is moved to `Done` with completion evidence in the issue and
+  is recorded in `CHANGELOG.md`, a development log, and/or release evidence as
+  appropriate.
+- Public documentation must not link to development-only Linear issue
+  identifiers, `.scratch/`, ticket, or log paths that the public projection
+  intentionally omits.

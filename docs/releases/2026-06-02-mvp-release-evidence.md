@@ -14,7 +14,7 @@ tags:
 related:
   - docs/DEVELOPMENT.md
   - docs/documentation-standard.md
-  - docs/superpowers/specs/2026-06-02-mvp-profile.md
+  - docs/_archive/2026-06-02-mvp-profile.md
 ---
 
 # MVP Release Evidence — 2026-06-02

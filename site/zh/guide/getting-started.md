@@ -8,7 +8,7 @@
 |---|---|---|
 | Python | 3.11+ | CLI 和引擎必需 |
 | [uv](https://docs.astral.sh/uv/) | 最新版 | 推荐的包管理器 |
-| Node.js | 18+ | 可选 — 仅 Web UI 需要 |
+| Node.js | 20.9+ | 可选 — 仅 Web UI 需要 |
 
 ::: tip 为什么用 uv？
 micro-eval 使用 `uv` 实现快速、可复现的依赖解析。如果你更习惯 `pip`，请参考下方的备用安装命令。
@@ -49,7 +49,7 @@ cd ui && npm install && cd ..
 
 ```bash
 uv run micro-eval --version
-# micro-eval 0.4.6
+# micro-eval 0.5.0
 ```
 
 ::: tip Shell 别名
@@ -232,7 +232,7 @@ micro-eval ui --port 3000
 然后打开 [http://localhost:3000](http://localhost:3000)。
 
 ::: tip 仅限本地
-Web UI 严格在本地运行——它直接读取 `.micro-eval/` JSON 文件，不发出任何外部网络请求。使用前需已安装 Node.js 18+ 并在安装阶段执行过 `cd ui && npm install`。
+Web UI 严格在本地运行——它直接读取 `.micro-eval/` JSON 文件，不发出任何外部网络请求。使用前需已安装 Node.js 20.9+ 并在安装阶段执行过 `cd ui && npm install`。
 :::
 
 UI 展示：

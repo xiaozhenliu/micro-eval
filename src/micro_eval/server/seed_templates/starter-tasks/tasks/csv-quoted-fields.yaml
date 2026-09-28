@@ -1,0 +1,37 @@
+id: csv-quoted-fields
+name: Fix CSV quoted-field parsing
+description: Fix a CSV line parser that breaks on quoted fields containing commas.
+input_payload: |
+  You are in a copied workspace. The code to fix is at
+  `csv-quoted-fields/csv_quoted_fields.py`.
+
+  Goal:
+  - `csv-quoted-fields/tests/test_csv_quoted_fields.py` describes the
+    expected behaviour of `parse_csv_line(line)`: a double-quoted field may
+    contain commas, and a doubled quote (`""`) inside a quoted field is an
+    escaped literal quote.
+  - Fix the bug in `csv_quoted_fields.py` so all the tests pass.
+
+  Constraints:
+  - Do not edit anything under `csv-quoted-fields/tests/`; the judge checks that
+    directory from outside the workspace.
+  - Only change `csv-quoted-fields/csv_quoted_fields.py`.
+
+  Done means:
+  - `python -m unittest discover -s tests` passes when run from `csv-quoted-fields/`.
+  - Your final response briefly explains the change.
+expectations:
+  - type: command
+    command: ["{python}", "-m", "micro_eval.tools.verify_protected", "--protected-dir", "tests", "--expected-sha256", "1474cc234334fc2e4a08f07bde4742583d54fc3e83db5f9dadc2fbfb5796b89d"]
+    cwd: "csv-quoted-fields"
+    timeout_s: 60
+workspace:
+  type: files
+  files:
+    - fixtures/csv-quoted-fields
+rubric: |
+  A useful result replaces the naive comma split with quote-aware parsing
+  without touching tests/, and the protected-tests judge
+  passing is the primary signal for this small, self-contained bug-fix task.
+business_impact_tier: 3
+tags: [starter, codefix]

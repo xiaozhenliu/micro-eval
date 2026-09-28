@@ -8,7 +8,7 @@ This guide walks you through installing micro-eval and running your first evalua
 |---|---|---|
 | Python | 3.11+ | Required for CLI and engine |
 | [uv](https://docs.astral.sh/uv/) | latest | Recommended package manager |
-| Node.js | 18+ | Optional — only needed for the Web UI |
+| Node.js | 20.9+ | Optional — only needed for the Web UI |
 
 ::: tip Why uv?
 micro-eval uses `uv` for fast, reproducible dependency resolution. If you prefer `pip`, see the alternative install commands below.
@@ -49,7 +49,7 @@ Verify the CLI is available:
 
 ```bash
 uv run micro-eval --version
-# micro-eval 0.4.6
+# micro-eval 0.5.0
 ```
 
 ::: tip Shell alias
@@ -232,7 +232,7 @@ micro-eval ui --port 3000
 Then open [http://localhost:3000](http://localhost:3000).
 
 ::: tip Local-only
-The Web UI is strictly local — it reads `.micro-eval/` JSON files directly and makes no outbound network requests. Node.js 18+ must be installed and `cd ui && npm install` must have been run during setup.
+The Web UI is strictly local — it reads `.micro-eval/` JSON files directly and makes no outbound network requests. Node.js 20.9+ must be installed and `cd ui && npm install` must have been run during setup.
 :::
 
 The UI shows:

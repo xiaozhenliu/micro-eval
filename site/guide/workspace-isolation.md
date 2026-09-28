@@ -50,7 +50,7 @@ When using `files`, micro-eval computes a SHA-256 digest of each source at run t
 
 ### `git_repo`
 
-Creates an isolated git worktree at a specific ref. This is the most reproducible option for code-editing tasks — the agent gets a real git history, can create branches, and its changes are fully isolated from your working tree.
+Local providers create an isolated git worktree at a specific ref. The agent gets git history and can create branches. Remote providers materialize that ref locally, then upload its files without `.git` or development control directories; remote agents do not receive the repository's git history.
 
 ```yaml
 workspace:
@@ -74,12 +74,12 @@ The `isolation_level` field on a workspace controls how tightly the agent's proc
 |-------|------|---------|--------------|
 | 0 | `logical` | Git worktree | Always available |
 | 1 | `os_policy` | Seatbelt (macOS) / Bubblewrap (Linux) | Host OS dependent |
-| 3 | `container` | Reserved | Future |
-| 4 | `vm` | E2B / Modal | Requires credentials |
+| 3 | `container` | Modal | Requires SDK and credentials |
+| 4 | `vm` | E2B | Requires SDK and credentials |
 
 ### Level 0 — `logical`
 
-The default. The agent process runs with your full user permissions, but receives an isolated git worktree as its working directory. Changes are contained to the worktree and do not affect your working tree.
+The default. The agent process runs with your full user permissions and receives its cell workspace as its working directory. Relative writes stay in that workspace, but this level does not prevent access to other host paths or the network.
 
 This is suitable for trusted agents (your own code) running against your own repositories.
 
@@ -93,7 +93,7 @@ workspace:
 
 ### Level 1 — `os_policy`
 
-Adds an OS-level sandbox policy around the agent process. This level prevents an agent from accidentally (or intentionally) reading secrets from `~/.ssh`, writing to paths outside the workspace, or modifying your global config files.
+Runs setup, the single-turn agent, and command validators through the same Seatbelt or Bubblewrap execution context. Host writes are limited to the current cell workspace and a separate per-cell output staging directory; run metadata and sibling cell workspaces are not writable. Seatbelt permits broad host reads; Bubblewrap exposes read-only runtime and project roots. Neither provider promises confidentiality for readable host files.
 
 ```yaml
 workspace:
@@ -102,20 +102,22 @@ workspace:
   ref: main
   isolation_level: os_policy
   trust_level: semi_trusted
-  network_policy: allowlist
+  network_policy: none
 ```
 
 ::: warning Degradation to logical
-If `os_policy` is requested but Seatbelt or Bubblewrap is not available on the host (e.g., Linux without `bwrap` installed), micro-eval **degrades to `logical`** and records a `mixed_isolation` caveat in the run result. The run is not aborted, but the caveat is surfaced in the UI and excluded from strict comparability checks.
+If `os_policy` is requested but Seatbelt or Bubblewrap is not available on the host (e.g., Linux without `bwrap` installed), micro-eval **degrades to `logical`** and records the unavailable provider and effective isolation in a run caveat. The cell's snapshot gate is marked with a warning; inspect that caveat before comparing results.
 :::
 
-### Level 4 — `vm` (Remote Execution)
+Once an OS provider is selected, wrapper startup, unsupported policy, and execution failures fail the cell without an unsandboxed retry. `full` permits network access; `none` denies it. `allowlist` is rejected because explicit rules are not implemented.
 
-Runs the agent inside a remote VM provided by E2B or Modal. This is the highest isolation level and is appropriate for:
+### Levels 3 and 4 — Remote Execution
 
-- Untrusted or adversarial agents
-- Agents that need a clean Linux environment regardless of host OS
-- Tasks that require specific OS packages or kernel features
+`container` selects Modal and `vm` selects E2B. Each cell owns one remote sandbox, reused for workspace preparation, setup, the single-turn agent, and command validators. Workspace inputs and output artifacts cross the provider's bounded file-transfer interface; local host paths are not treated as remote paths. Remote commands must be installed in the sandbox or supplied with the workspace.
+
+Install the provider extra: `uv pip install 'micro-eval[e2b]'`, `uv pip install 'micro-eval[modal]'`, or `uv pip install 'micro-eval[remote]'` for both. The supported SDK versions are pinned to `e2b==2.31.0` and `modal==1.5.5`.
+
+Remote input transfer accepts regular files only, up to 4,096 entries and 50 MiB in total. Output transfer also respects the configured artifact byte limit. Links, special files, path escapes, and development control directories such as `.git` and `.micro-eval` are not transferred.
 
 ```yaml
 workspace:
@@ -137,7 +139,21 @@ export MICRO_EVAL_SECRET_MODAL_TOKEN_ID="your-modal-token-id"
 export MICRO_EVAL_SECRET_MODAL_TOKEN_SECRET="your-modal-token-secret"
 ```
 
-Secrets prefixed with `MICRO_EVAL_SECRET_` are automatically redacted from logs, run artifacts, and LLM judge prompts.
+Declared agent secrets are redacted from captured text. Provider control credentials stay in the host environment; remote commands reject those credential names and values, including when listed in agent `required_secrets`.
+
+Remote network policy defaults to `none`; `full` and `none` are applied when the sandbox is created, with requested and effective policy recorded separately. `allowlist` is rejected. Offline SDK contract tests verify calls against the supported SDK interfaces; they do not prove live service isolation. Credentialed live probes are optional and must be reported separately.
+
+Remote sandboxes have a 3,600-second lifetime, which is a recovery bound rather than evidence that explicit cleanup succeeded. If creation or termination cannot be confirmed, the result reports an unknown allocation or termination state instead of claiming success. The credentialed checks in `tests/e2e/test_remote_provider_live.py` require explicit opt-in and are skipped by default.
+
+Remote git observation is currently unavailable. The result records that limitation instead of asserting a verified same start or an empty diff. Local post-agent observation occurs before validators, so validator writes do not become agent changes.
+
+After a timeout terminates a remote sandbox, its output artifacts are no longer available for download; the result records that transfer limitation.
+
+Remote output inventory is bounded to 512 KiB of encoded metadata; additional entries are omitted and reported as truncated. An invalid control response that exceeds its receive limit fails closed and triggers sandbox cleanup. Each output file is downloaded completely and atomically or omitted.
+
+For local single-turn commands, timeout and cancellation send TERM, then KILL, to the process group. Descendants that leave the group are not covered. Remote timeout and cancellation explicitly terminate the cell sandbox; normal completion also performs cleanup, and failures are recorded rather than hidden.
+
+Multi-turn conversations currently support only `logical`. The cell context opens its provider's persistent interactive bridge, separate from single-turn command execution. Selecting another isolation level is rejected before workspace preparation because it does not support that bridge.
 
 ## Trust Levels
 
@@ -156,13 +172,13 @@ Setting `trust_level: adversarial` does not automatically upgrade the isolation 
 
 ## Network Policy
 
-The `network_policy` field on the workspace controls outbound network access from the agent process. It applies at Level 1 and above.
+The `network_policy` field applies to setup, the single-turn agent, and command validators in the selected OS or remote provider. `logical` does not enforce network restrictions. An unavailable OS provider may degrade to `logical`, so check the effective isolation and caveats.
 
 | Policy | Behavior |
 |--------|----------|
-| `full` | No network restrictions (default for Level 0) |
-| `allowlist` | Only domains listed in `network_allowlist` are reachable |
-| `none` | All outbound network access blocked |
+| `full` | Provider permits network access; default for OS policy |
+| `allowlist` | Rejected by OS and remote providers; explicit rules are not implemented |
+| `none` | Seatbelt denies network operations; Bubblewrap creates an isolated network namespace; remote providers disable outbound access. Default for remote providers. |
 
 ```yaml{6-10}
 workspace:
@@ -171,7 +187,7 @@ workspace:
   ref: main
   isolation_level: os_policy
   trust_level: semi_trusted
-  network_policy: allowlist
+  network_policy: none
 ```
 
 ## SameStartSnapshot: Comparability Dimensions
@@ -242,7 +258,7 @@ workspace:
     - ./fixtures/tests/
   isolation_level: os_policy
   trust_level: semi_trusted
-  network_policy: allowlist
+  network_policy: none
 expectations:
   - type: exit_code
     value: 0
@@ -257,8 +273,6 @@ configurations:
       command: ["./downloaded-agent"]
       input_mode: stdin
       timeout_s: 300
-    required_secrets:
-      - MICRO_EVAL_SECRET_E2B_API_KEY
 
 tasks:
   - tasks/code-challenge.yaml

@@ -567,9 +567,18 @@ uv run micro-eval index import-json
 | `POST` | `/api/workspaces/[id]/runs/enqueue` | 入队新的运行任务 |
 | `GET` | `/api/workspaces/[id]/runs/[runId]` | 获取 workspace 内的某次 run |
 | `GET` | `/api/workspaces/[id]/config` | 获取 workspace 的 eval.yaml |
+| `PUT` | `/api/workspaces/[id]/config` | 替换 workspace 的 eval.yaml |
+| `GET` | `/api/workspaces/[id]/project` | 读取可编辑的配置、任务和校验问题 |
+| `PUT` | `/api/workspaces/[id]/project/configurations` | 创建或更新 configuration |
+| `DELETE` | `/api/workspaces/[id]/project/configurations/[configId]` | 删除 configuration |
+| `PUT` | `/api/workspaces/[id]/project/tasks` | 创建或更新 task |
+| `DELETE` | `/api/workspaces/[id]/project/tasks/[taskId]` | 删除 task |
+| `DELETE` | `/api/workspaces/[id]/project/tasks?path=...` | 按路径删除无法解析的 task 文件 |
+| `GET` | `/api/workspaces/[id]/plan-summary` | 预览运行计划和准入 digest |
 | `GET` | `/api/workspaces/[id]/trends` | 查询 workspace 作用域的趋势数据 |
+| `GET` | `/api/workspaces/[id]/jobs/[jobId]` | 查询属于该 workspace 的 job |
 | `GET` | `/api/queue` | 获取队列面板摘要 |
-| `GET` | `/api/jobs/[jobId]` | 获取单个任务记录 |
+| `GET` | `/api/jobs/[jobId]` | 跨 workspace 查询 job，供队列管理使用 |
 | `POST` | `/api/jobs/[jobId]/cancel` | 取消排队或运行中的任务 |
 | `GET` | `/api/templates` | 列出所有模板 |
 | `GET` | `/api/templates/[id]` | 获取单个模板 |
@@ -589,7 +598,17 @@ uv run micro-eval index import-json
 
 **DELETE /api/workspaces/[id]** — 删除 workspace 及其所有关联的 run 数据，返回 `204 No Content`。此操作不可恢复。
 
-**GET /api/workspaces/[id]/config** — 以 `text/plain` 格式返回 workspace 的原始 `eval.yaml` 内容。
+**GET /api/workspaces/[id]/config** — 返回 JSON `{ "content": "...", "redacted": boolean }`。YAML 中已声明的 secret 值会在到达浏览器前被替换。**PUT** 用于替换原始 YAML；请求体为 `{ "content": "..." }`。文件最大 1 MiB，写入前会先校验。保存时需要标准写入请求头。
+
+### 项目配置与任务路由
+
+这些路由为 workspace 的 Config 表单提供数据。`GET /api/workspaces/[id]/project` 返回项目 draft，包含 `schema_version`、`project_name`、`description`、`configurations`、`configuration_errors`、`tasks` 和 `warnings`。每个 task 条目包含相对于 workspace 的 `path`、解析出的 `task`（或 `null`）以及 `error`（或 `null`）。
+
+`PUT /api/workspaces/[id]/project/configurations` 按 `id` 创建或更新一个 configuration；JSON 请求体包含 `id`、`name`、`agent`，以及可选的 `repetitions`、`role`、`skills_profile` 和 `parameters`。`DELETE /api/workspaces/[id]/project/configurations/[configId]` 删除指定 configuration。两者均返回更新后的项目 draft。
+
+`PUT /api/workspaces/[id]/project/tasks` 按 `id` 创建或更新一个 task；JSON 请求体为 task 对象（包含 `name`、`input_payload`，以及可选的 task、expectation 和 workspace 字段）。`DELETE /api/workspaces/[id]/project/tasks/[taskId]` 按 ID 删除 task。两者均返回更新后的项目 draft。若 task 文件无法解析、没有可用 ID，可使用 `DELETE /api/workspaces/[id]/project/tasks?path=tasks/<file>.yaml` 删除；路径必须是安全的 workspace 相对 task 路径。
+
+所有项目写入路由都需要 `X-Micro-Eval-Member` 和 `Content-Type: application/json`。这些路由仅在服务器模式和可写（active）workspace 中可用。无效请求数据返回 `400`；workspace 或条目不存在时返回 `404`。
 
 **GET /api/workspaces/[id]/trends** — 与本地 `/api/trends` 路由格式相同，但仅限于该 workspace 的 run。支持 `config_id`、`since`、`limit` 查询参数。
 
@@ -605,15 +624,28 @@ uv run micro-eval index import-json
 
 ```json
 {
-  "overrides": {}
+  "expected_plan_digest": "<64-character SHA-256 hex>"
 }
 ```
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| `overrides` | object | 否 | 在构建计划前，叠加到 workspace `eval.yaml` 之上的 JSON 覆盖字段。 |
+| `expected_plan_digest` | string | 否 | 计划预览的 digest；计划变化时返回 `409`。请求体可以为空。 |
 
-响应：创建的 `Job` 记录（状态：`queued`）。
+响应：`202 Accepted`，返回已入队的 job（`job_id`、`status`、`position`、`plan_digest`）。这表示异步接受，不代表运行已经完成。自 v0.5.0 起不支持 `config_overrides`；请求体包含该字段时返回 `400 Bad Request`。
+
+| 状态码 | 拒绝原因 |
+|--------|---------|
+| `400` | 请求包含 `config_overrides`，或 `expected_plan_digest` 不是 64 位小写 SHA-256 十六进制字符串。 |
+| `404` | workspace 不存在。 |
+| `409` | workspace 不处于 active 状态，或当前计划 digest 与 `expected_plan_digest` 不同；请先检查新的预览再重试。 |
+| `429` | 已达到 `server.json` 中配置的队列容量。 |
+| `502` | 无法构建运行计划，包括 task/workspace 源无效或 Git ref 无法解析。 |
+| `503` | workspace 不可用。 |
+
+返回 `502` 且 `error: "failed to build run plan"` 带 `detail` 字段时，表示计划无法构建（例如 workspace 源无效，或 Git `ref` 无法解析为 commit）。当原因是 `ref` 无法解析为 commit 时，响应额外携带 `reason: "invalid_git_ref"` 和固定 `hint`；route 只会对这一个已知 reason 回显自己的常量提示，绝不透传任意后端消息。`GET /api/workspaces/[id]/plan-summary` 使用相同的拒绝结构。
+
+**GET /api/workspaces/[id]/plan-summary** — 使用与入队相同的准入检查构建预览，返回 `{ tasks, configurations, repetitions, repetitions_uniform, total_cells, agent_commands, plan_digest }`。计划构建失败时返回带 error 和 detail 的 `502`；Git ref 无效时还会返回上述固定 `reason` 和 `hint`。workspace 不存在时返回 `404`，不处于 active 状态时返回 `409`。
 
 必填请求头：`X-Micro-Eval-Member`、`Content-Type: application/json`。
 
@@ -627,14 +659,24 @@ uv run micro-eval index import-json
 
 ```json
 {
-  "queued": 2,
-  "running": 1,
-  "done_today": 14,
-  "jobs": [ /* 任务记录，最新的在前 */ ]
+  "running": null,
+  "queued": [],
+  "recent_completed": []
 }
 ```
 
-**GET /api/jobs/[jobId]** — 通过 ID 获取单条 `Job` 记录，包含 `status`、`progress`、时间戳及错误信息。
+`running` 为一个 job 或 `null`；`queued` 中的 job 带有从 1 开始的 `position`；
+`recent_completed` 最多包含 10 个 `done`、`failed` 或 `cancelled` job。job 的
+`progress` 是 `null` 或包含 `completed_cells`、`total_cells`、`current_task`、
+`current_config` 的对象。前两个字段是非负整数，后两个是可为 `null` 的字符串。
+状态只允许 `queued`、`running`、`done`、`failed`、`cancelled`。
+
+**GET /api/workspaces/[id]/jobs/[jobId]** — 仅在 job 属于指定 workspace 时返回。
+workspace 不存在、job 不存在或属于其他 workspace 时返回 `404`。workspace 的 job
+页面轮询此路由。
+
+**GET /api/jobs/[jobId]** — 跨 workspace 查询单个 job，供队列管理使用。两个 job
+查询路由均不返回存储的 `plan_json`，其中可能含有 agent 环境变量值。
 
 **POST /api/jobs/[jobId]/cancel** — 请求取消排队或运行中的任务。排队中的任务立即取消；运行中的任务完成当前 cell 后停止。请求体：`{}`。必填请求头：`X-Micro-Eval-Member`、`Content-Type: application/json`。
 
@@ -664,6 +706,6 @@ uv run micro-eval index import-json
     "queued": 2,
     "running": 1
   },
-  "ui_version": "0.4.6"
+  "ui_version": "0.5.0"
 }
 ```

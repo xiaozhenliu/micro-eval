@@ -1,8 +1,7 @@
-import path from "node:path";
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { isServerMode } from "@/lib/server-mode";
-import { getWorkspaceRunsDir } from "@/lib/workspace-api";
+import { getWorkspaceRunsDir, resolveWorkspaceRunDir, resolveInsideRunDir } from "@/lib/workspace-api";
 import { RunSchema, DecisionReportSchema } from "@/lib/schema";
 
 interface RouteContext {
@@ -22,9 +21,13 @@ export async function GET(_request: Request, context: RouteContext) {
   const runsDir = getWorkspaceRunsDir(id);
   if (!runsDir) return NextResponse.json({ error: "workspace not found" }, { status: 404 });
 
-  const runDir = path.join(runsDir, runId);
-  const runJsonPath = path.join(runDir, "run.json");
-  if (!fs.existsSync(runJsonPath)) {
+  // resolveWorkspaceRunDir rejects a run directory that is itself a symlink
+  // or whose realpath escapes runsDir (round-6 review, 2026-09-12).
+  const runDir = resolveWorkspaceRunDir(id, runId);
+  if (!runDir) return NextResponse.json({ error: "run not found" }, { status: 404 });
+
+  const runJsonPath = resolveInsideRunDir(runDir, "run.json");
+  if (!runJsonPath || !fs.existsSync(runJsonPath)) {
     return NextResponse.json({ error: "run not found" }, { status: 404 });
   }
 
@@ -32,8 +35,8 @@ export async function GET(_request: Request, context: RouteContext) {
     const raw = JSON.parse(fs.readFileSync(runJsonPath, "utf-8"));
     const run = RunSchema.parse(raw);
 
-    const decisionPath = path.join(runDir, "decision.json");
-    if (fs.existsSync(decisionPath)) {
+    const decisionPath = resolveInsideRunDir(runDir, "decision.json");
+    if (decisionPath && fs.existsSync(decisionPath)) {
       const decision = DecisionReportSchema.parse(
         JSON.parse(fs.readFileSync(decisionPath, "utf-8")),
       );

@@ -1,0 +1,37 @@
+id: date-range-overlap
+name: Fix date range overlap check
+description: Fix a half-open date-range overlap bug in a copied workspace.
+input_payload: |
+  You are in a copied workspace. The code to fix is at
+  `date-range-overlap/date_range_overlap.py`.
+
+  Goal:
+  - `date-range-overlap/tests/test_date_range_overlap.py` describes the
+    expected behaviour of `overlaps(a_start, a_end, b_start, b_end)`: both
+    ranges are half-open `[start, end)`, so two ranges that only touch at a
+    boundary do not overlap.
+  - Fix the bug in `date_range_overlap.py` so all the tests pass.
+
+  Constraints:
+  - Do not edit anything under `date-range-overlap/tests/`; the judge checks that
+    directory from outside the workspace.
+  - Only change `date-range-overlap/date_range_overlap.py`.
+
+  Done means:
+  - `python -m unittest discover -s tests` passes when run from `date-range-overlap/`.
+  - Your final response briefly explains the change.
+expectations:
+  - type: command
+    command: ["{python}", "-m", "micro_eval.tools.verify_protected", "--protected-dir", "tests", "--expected-sha256", "edbc6bc0950eedd56230335ce7bd191433b7e2dbf76da7a1c5599cfb5c520db0"]
+    cwd: "date-range-overlap"
+    timeout_s: 60
+workspace:
+  type: files
+  files:
+    - fixtures/date-range-overlap
+rubric: |
+  A useful result fixes the off-by-one comparison in overlaps() without
+  touching tests/, and the protected-tests judge passing
+  is the primary signal for this small, self-contained bug-fix task.
+business_impact_tier: 3
+tags: [starter, codefix]

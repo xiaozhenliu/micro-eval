@@ -127,7 +127,7 @@ export MICRO_EVAL_SECRET_ANTHROPIC_API_KEY="sk-ant-..."
 export MICRO_EVAL_SECRET_OPENAI_API_KEY="sk-..."
 ```
 
-All `MICRO_EVAL_SECRET_*` variables are automatically redacted from logs, traces, and stored artifacts.
+Secret values are redacted from captured text before persistence. Binary artifacts are not text-redacted and carry a warning.
 
 ### LLM Judge Result
 
@@ -235,62 +235,43 @@ All three layers emit the same `EvaluationResult` structure, making them composa
 
 ## Pass@k and Pass^k Aggregation
 
-When a configuration has multiple repetitions (`repetitions: N`), micro-eval aggregates across them using two complementary statistics.
+For each configuration, micro-eval aggregates the selected denominator cells across tasks and repetitions. These summary statistics are separate from the task-level rates used by comparative decisions.
 
 ### Definitions
 
 **pass@k** — probability that at least one of k attempts passes:
 
 ```
-pass@k = 1 - P(all fail) = 1 - (fail_count / k)^k
+pass@k = 1 - C(n - c, k) / C(n, k)  # n denominator cells, c passes
 ```
 
 **pass^k** — probability that all k attempts pass (strict reliability):
 
 ```
-pass^k = (pass_count / k)^k
+pass^k = (c / n)^k
 ```
 
 ### Reading the Stats
 
 ```json
 {
-  "configuration_id": "cfg_gpt4",
-  "task_id": "refactor-sort",
-  "repetitions": 5,
-  "pass_count": 4,
-  "fail_count": 1,
-  "pass_at_k": 0.97,
-  "pass_all_k": 0.41,
-  "low_sample_caveat": false
+  "n_cells": 5,
+  "n_successful": 5,
+  "pass_rate": 0.8,
+  "pass_at_k": {"1": 0.8, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0},
+  "pass_hat_k": {"1": 0.8, "2": 0.64, "3": 0.512, "4": 0.4096, "5": 0.32768},
+  "denominator_policy": "include_failed",
+  "caveats": []
 }
 ```
 
 ::: warning Low-sample caveat
-When `repetitions < 3`, micro-eval attaches `"low_sample_caveat": true` to the aggregation. pass@k and pass^k estimates are statistically unreliable with fewer than 3 samples — treat them as directional signals only.
+If any task has fewer than three denominator samples, the configuration statistics include `"low_sample"` in `caveats`. Treat these estimates as directional signals rather than statistical confidence. Values are stored as maps for `k=1..n`; when fewer than k failures exist, pass@k is 1.
 :::
 
 ### Choosing Between Them
 
-::: code-group
-
-```yaml [Use pass@k when...]
-# You care whether the agent CAN do the task at all
-# (e.g., creative generation, exploratory coding)
-scoring:
-  aggregate: pass_at_k
-  repetitions: 5
-```
-
-```yaml [Use pass^k when...]
-# You care whether the agent RELIABLY does the task every time
-# (e.g., CI-facing automations, critical refactors)
-scoring:
-  aggregate: pass_all_k
-  repetitions: 5
-```
-
-:::
+Both statistics are computed automatically; there is no `scoring.aggregate` selector. Set repetitions on each configuration. Use pass@k to examine whether any attempt can succeed and pass^k to examine repeated success, while retaining the task-level evidence and sample caveats.
 
 ---
 
@@ -304,7 +285,7 @@ Run starts
        3. If judge.enabled: LLM judge runs → EvaluationResult (llm_judge)
        4. Results stored in evaluation.json
        5. Decision computed from all EvaluationResults
-  └─ pass@k / pass^k aggregated per (task × configuration)
+  └─ pass@k / pass^k aggregated per configuration; comparison rates per task
   └─ Web UI: human can annotate → triggers decision recompute
 ```
 

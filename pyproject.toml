@@ -18,6 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+e2b = ["e2b==2.31.0"]
+modal = ["modal==1.5.5"]
+remote = ["e2b==2.31.0", "modal==1.5.5"]
 scoring = ["deepeval>=0.20"]
 judge = ["deepeval>=0.20"]
 observability = ["langfuse>=2.0"]

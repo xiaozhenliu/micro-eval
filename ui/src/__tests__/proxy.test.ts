@@ -71,11 +71,21 @@ describe("proxy (Host header allowlist)", () => {
       expect(proxy(requestWithHost("other:3000")).status).toBe(200);
     });
 
+    it("allows the machine hostname and FQDN injected by serve", () => {
+      process.env.MICRO_EVAL_ALLOWED_HOSTS =
+        "eval-box:3000,eval-box.example.test:3000,0.0.0.0:3000";
+      expect(proxy(requestWithHost("eval-box:3000")).status).toBe(200);
+      expect(proxy(requestWithHost("eval-box.example.test:3000")).status).toBe(200);
+      expect(proxy(requestWithHost("other-box:3000")).status).toBe(400);
+    });
+
     // test_host_header_allowlist_rejects_unknown
     it("rejects an unknown host with 400", async () => {
       const res = proxy(requestWithHost("attacker.example.com:3000"));
       expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: "host not allowed" });
+      expect(await res.json()).toEqual({
+        error: "host not allowed; add it to allowed_hosts in server.json",
+      });
     });
 
     // test_host_header_dns_rebinding
